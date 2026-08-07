@@ -1,0 +1,17 @@
+{
+  "sourceArtifact": "AI-SYSTEM-V2.2.0-complete.zip",
+  "sourceArtifactSha256": "4e17a75864f9adb796918e62725819d657a7cf7864834ca83018f1fb14b5628f",
+  "sourceVersion": "2.2.0",
+  "targetVersion": "2.2.1",
+  "upgradeScope": [
+    "Evidence kind/source 封闭枚举",
+    "Artifact 仓库边界与内容哈希",
+    "Acceptance-aware Check Planner",
+    "spec-map Glob 展开与仓库路径边界",
+    "Decision 元数据门禁",
+    "Markdown Experience 去重修复",
+    "低质量 Experience Candidate 保存门禁",
+    "规格编排服务拆分"
+  ],
+  "note": "以 V2.2.0 完整源码包为唯一增量基线；保持 Task Schema V6，不引入常驻 Host Adapter 或自动 Agent 编排。"
+}

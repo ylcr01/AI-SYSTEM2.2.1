@@ -1,0 +1,773 @@
+{
+  "schemaVersion": 1,
+  "version": "2.2.1",
+  "sourceFileCount": 153,
+  "sourceBytes": 356911,
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 272,
+      "sha256": "b6c750518d3891cf3a9a304ab38829b3118a2dda6063f22acb5185142db892a7"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 3933,
+      "sha256": "fcf575e3979c322f07a817afebcd4a102aea82585acb5c09fea1b113331a921a"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 1869,
+      "sha256": "5b7d79c25ac1bc5a5ec10589cc152f625a15ada5afb9e9a18728fb8293a68e1d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3394,
+      "sha256": "704a66d05c27155e398f9501e3bb24693090d8a5dd5fbb40d7e8b9f50eaa037f"
+    },
+    {
+      "path": "package.json",
+      "bytes": 2056,
+      "sha256": "256e1d44e7eb706108810d75ad0f142cb1cb5c6e5394d8a2c84dff2715c9f72e"
+    },
+    {
+      "path": "release-manifest.json",
+      "bytes": 1184,
+      "sha256": "5fd95bbcb45b6e96e45d2c12a157b5514b625a615c566403dd6eb08d437e704a"
+    },
+    {
+      "path": "source-baseline.json",
+      "bytes": 699,
+      "sha256": "f7f150f6825d50fbb654cb9c426a0d970855a73c775cb94c7b5ec94f4c48f86d"
+    },
+    {
+      "path": ".ai/checks.json",
+      "bytes": 1450,
+      "sha256": "45496f8205ecc64890fd5f6601d9f52db5fde0642cb75dbcf89351fa7aad8651"
+    },
+    {
+      "path": ".ai/templates/decision-template.md",
+      "bytes": 477,
+      "sha256": "780abfda1abba727af78c935beb9a8df4f2cfb1a34c65cd74b8b93669ddb503d"
+    },
+    {
+      "path": ".ai/templates/module-spec-template.md",
+      "bytes": 1630,
+      "sha256": "6421649eb313458564c74321b469c3360c15e1070b1e1b718cd249c597114d5b"
+    },
+    {
+      "path": ".ai/templates/project-AGENTS-template.md",
+      "bytes": 501,
+      "sha256": "95281797b941ce916819802e627a15a22c0358faae7216dc10de24ad7e4de3f0"
+    },
+    {
+      "path": ".ai/templates/spec-map.example.json",
+      "bytes": 572,
+      "sha256": "3814ade46e803e72b4093bcd846870a83cd902d008b98f8eea4b3845cba89e6d"
+    },
+    {
+      "path": ".ai/templates/spec-policy.example.json",
+      "bytes": 283,
+      "sha256": "5857ad0fcc2a259e04d577513758b9dbb3347693cc4267e883b5e4b054202e4a"
+    },
+    {
+      "path": "00-大模型接入/Claude-Code-接入说明.md",
+      "bytes": 468,
+      "sha256": "c218b66d8e687d11218690fcb4c06b2064ac1c46e90e62006b9a53922cefa88a"
+    },
+    {
+      "path": "00-大模型接入/Codex-接入说明.md",
+      "bytes": 949,
+      "sha256": "9cb79a051a5aeb5739a6f62dd7a5cd8f09508430f4571fa943269e6b77544be6"
+    },
+    {
+      "path": "00-大模型接入/使用边界.md",
+      "bytes": 527,
+      "sha256": "af57dfade03a8aa6d8c5663a20eb58fa6fe33c339b73aa0e94bc529336bc14ab"
+    },
+    {
+      "path": "00-大模型接入/通用自定义指令.md",
+      "bytes": 1199,
+      "sha256": "4d3095e5110310b75d0a9952936890361279aff7f350b6516fafd199896c800e"
+    },
+    {
+      "path": "10-注册表/README.md",
+      "bytes": 481,
+      "sha256": "a6488a5d128d5115eb6ebdb633677d301f98472322bad6b01679e7f3ff22dc8a"
+    },
+    {
+      "path": "10-注册表/local.paths.example.json",
+      "bytes": 153,
+      "sha256": "6d3fce30eec19e0b602bde86040afa467b07a25c031db2c34f1b156cd43d5558"
+    },
+    {
+      "path": "10-注册表/projects.json",
+      "bytes": 43,
+      "sha256": "211a77112c07ac15538b81d8de7148b52d12d9160aac0240334cdc1a00c4306f"
+    },
+    {
+      "path": "10-注册表/templates.json",
+      "bytes": 44,
+      "sha256": "01d41e6024c2e3cf2da7bb77912edf67741823fb91d6df7b5afd2b06ef5daf28"
+    },
+    {
+      "path": "20-能力模块/00-质量宪法.md",
+      "bytes": 673,
+      "sha256": "6921538f886a88fc598ee02ee962b80fdce3a8446fa08f2186b9651599e27731"
+    },
+    {
+      "path": "20-能力模块/10-通用工程契约.md",
+      "bytes": 1446,
+      "sha256": "b36f90f326ad02de3c31a710b77503dde4eb9812f5d7a2c629abd7d8a05e8ae9"
+    },
+    {
+      "path": "20-能力模块/README.md",
+      "bytes": 624,
+      "sha256": "d20e8e87226e150af70966289fa8e43d27603b1ea574ac4b90f65da9c5b96be9"
+    },
+    {
+      "path": "20-能力模块/manifest.json",
+      "bytes": 4015,
+      "sha256": "413aa072179caad85dcf9a6701bdb29ea31be41ccc8e5e93c0ae740bfc80d06c"
+    },
+    {
+      "path": "20-能力模块/clarify-requirements/CONTRACT.md",
+      "bytes": 796,
+      "sha256": "f0d3bcd6e583b25b13e862149d9725c5b3c97082bba5df14c6dcbde111659f41"
+    },
+    {
+      "path": "20-能力模块/clarify-requirements/SKILL.md",
+      "bytes": 402,
+      "sha256": "5e984db88a705676692d89c5cfcfc864ba9bd894ad32c958edc0a1c2f2ffed05"
+    },
+    {
+      "path": "20-能力模块/clarify-requirements/VERIFICATION.md",
+      "bytes": 275,
+      "sha256": "22dd37f7c3a1a48373bc795a5a1258ab756b11fd9cc4a05f1c69f886918001b0"
+    },
+    {
+      "path": "20-能力模块/curate-knowledge/CONTRACT.md",
+      "bytes": 627,
+      "sha256": "a55e4a948163aeaeb8944d5fe64e01582ed21d14632b1fbb5a6d83678462531e"
+    },
+    {
+      "path": "20-能力模块/curate-knowledge/SKILL.md",
+      "bytes": 385,
+      "sha256": "1fe341080587f7dbaea634bd5ab32a9d04348f98f8ad22497a1ff28d76d6278f"
+    },
+    {
+      "path": "20-能力模块/curate-knowledge/VERIFICATION.md",
+      "bytes": 243,
+      "sha256": "cadafca00e18986e34f58c90ebedbadf69886b7651ce2993eb88817b418af417"
+    },
+    {
+      "path": "20-能力模块/design-product/CONTRACT.md",
+      "bytes": 828,
+      "sha256": "1f0d71daffb37b3a103073f481167373cf86dcf346b7011af4252fef98eb7e6e"
+    },
+    {
+      "path": "20-能力模块/design-product/SKILL.md",
+      "bytes": 393,
+      "sha256": "1191e62c83427e6894d49d6337602d34d3006d49d9d4448fd826f6503ebe699e"
+    },
+    {
+      "path": "20-能力模块/design-product/VERIFICATION.md",
+      "bytes": 249,
+      "sha256": "ef75dcb2d28c27f33e9cca23e22d82a828512499dd1776e6bea4e99482670361"
+    },
+    {
+      "path": "20-能力模块/design-product/样板/10-标准范式.md",
+      "bytes": 600,
+      "sha256": "16838dac1c0836f50edfa418ddffb30f7a5c69c975e01f037613ae59cf9254bb"
+    },
+    {
+      "path": "20-能力模块/design-product/样板/索引.json",
+      "bytes": 844,
+      "sha256": "fcd8142561a9aa52e2147357dbca65aee8f8317f7f3b5e2a0c090afc5e671b2e"
+    },
+    {
+      "path": "20-能力模块/design-ui/CONTRACT.md",
+      "bytes": 860,
+      "sha256": "139c14c1cb6a9118c5d0c9a1f498af91d83415b8a68b21645dd3be4daa5175dd"
+    },
+    {
+      "path": "20-能力模块/design-ui/SKILL.md",
+      "bytes": 380,
+      "sha256": "f9abd8cd1918029c9cd77b6c47fd13ef8fd14554b55cb36519e1f43f43d540fc"
+    },
+    {
+      "path": "20-能力模块/design-ui/VERIFICATION.md",
+      "bytes": 280,
+      "sha256": "e966603f9d22986a0a0b3364448b710a66ab2a8d992950e3dd61eced6008bab7"
+    },
+    {
+      "path": "20-能力模块/design-ui/样板/10-标准范式.md",
+      "bytes": 623,
+      "sha256": "b10fda406c8e6ee7b01b19395621f6f7bbb95f5cf4ddefca3d6a3bb1a34e7b21"
+    },
+    {
+      "path": "20-能力模块/design-ui/样板/索引.json",
+      "bytes": 805,
+      "sha256": "76cce10d50631151cbf4373c8629519a3b6afddc5ff0db129a2ef1d3f18ae9a3"
+    },
+    {
+      "path": "20-能力模块/develop-app/CONTRACT.md",
+      "bytes": 691,
+      "sha256": "ebefaa3688b2847e9c1e2280306cff1de2c2ed8d91c60587dd99fbb96e3bc5e9"
+    },
+    {
+      "path": "20-能力模块/develop-app/SKILL.md",
+      "bytes": 369,
+      "sha256": "2ad8d7612fd4b4c3019e3ddab3032d7c51c8131f2dd243b9891520ecf8bc866b"
+    },
+    {
+      "path": "20-能力模块/develop-app/VERIFICATION.md",
+      "bytes": 256,
+      "sha256": "a11f1abda229de9e2ed367416e8f27ab16bd9e4721edc2cdf8ab9f137790d07d"
+    },
+    {
+      "path": "20-能力模块/develop-app/样板/10-标准范式.md",
+      "bytes": 297,
+      "sha256": "b326fbdd41c75426824d4719c31112ba4d1d692d5c1c17275b29bdafc2a0995c"
+    },
+    {
+      "path": "20-能力模块/develop-app/样板/索引.json",
+      "bytes": 808,
+      "sha256": "e554dd76d6686af679dd9ab4181317cbc03da61a05edf035188f4a4b50365751"
+    },
+    {
+      "path": "20-能力模块/develop-server/CONTRACT.md",
+      "bytes": 1231,
+      "sha256": "0e2cbf1072ff39e808a7be25e09f88658a861d5a1bdafead6faa0ce1681665d9"
+    },
+    {
+      "path": "20-能力模块/develop-server/SKILL.md",
+      "bytes": 402,
+      "sha256": "8fa10f9523a8ee009559b73ece32ec37d5ee51a294e551890f8ee08f0eaba0ee"
+    },
+    {
+      "path": "20-能力模块/develop-server/VERIFICATION.md",
+      "bytes": 253,
+      "sha256": "b60a22de6d5b102c2100366daaf809d63ea9e3219306bc4947572b51a384f3b4"
+    },
+    {
+      "path": "20-能力模块/develop-server/样板/10-标准范式.md",
+      "bytes": 353,
+      "sha256": "e52fa0813409a7d53caf4aa7e2de5d549d2889ac09e43d3d09af0e01da4e457c"
+    },
+    {
+      "path": "20-能力模块/develop-server/样板/索引.json",
+      "bytes": 847,
+      "sha256": "be2fd6c9bdb5fabdaac52a81d51820ff2b04f4344cdfedc8f30627f4ee3916b0"
+    },
+    {
+      "path": "20-能力模块/develop-web/CONTRACT.md",
+      "bytes": 1595,
+      "sha256": "bf0a689c3e3b2eeda614403d5642b26de1831f33fdd282e86f6eb62b8ea5f05f"
+    },
+    {
+      "path": "20-能力模块/develop-web/SKILL.md",
+      "bytes": 394,
+      "sha256": "afd3e84cb45c3b69e6e041db33d929fcb39165f220b4c482b6258d026707a6e7"
+    },
+    {
+      "path": "20-能力模块/develop-web/VERIFICATION.md",
+      "bytes": 263,
+      "sha256": "54c38b317cca1fe68ed0bff9a156de9b63144f59e9a36d0cc2a0b4143375ee90"
+    },
+    {
+      "path": "20-能力模块/develop-web/样板/10-标准范式.md",
+      "bytes": 684,
+      "sha256": "4ee4cf6857ab4f9e05ea52da078a6f90fdf6dcd0d797e9b2a84958488164cd9e"
+    },
+    {
+      "path": "20-能力模块/develop-web/样板/索引.json",
+      "bytes": 823,
+      "sha256": "9dfb4c0c5ed5877a544546f1b0f3151193405d43dec61c7923f698864a0b9ddb"
+    },
+    {
+      "path": "20-能力模块/integrate-systems/CONTRACT.md",
+      "bytes": 618,
+      "sha256": "1931519dc69a8b616cc089998ccba4cb8a6f19948033ff4a7bf4e4e4ebc0e948"
+    },
+    {
+      "path": "20-能力模块/integrate-systems/SKILL.md",
+      "bytes": 384,
+      "sha256": "b27a10fad9b6405e4194f01bd6fb42e3c3879ec201e32a914b0fcc21160e362f"
+    },
+    {
+      "path": "20-能力模块/integrate-systems/VERIFICATION.md",
+      "bytes": 244,
+      "sha256": "fffa6d38d93f4d607c7215b8c1ecf57d135e41a1b018fb53baad6a87a3150c12"
+    },
+    {
+      "path": "20-能力模块/integrate-systems/样板/10-标准范式.md",
+      "bytes": 295,
+      "sha256": "1bb96c3d985954844902269f8365f7b88a5a7b1433ec2b6fe0f9a02982806577"
+    },
+    {
+      "path": "20-能力模块/integrate-systems/样板/索引.json",
+      "bytes": 862,
+      "sha256": "c44349fc3d601368e4fd73a0d76619824dfd9f5aeecac93d686456dae7b75a80"
+    },
+    {
+      "path": "20-能力模块/operate-environments/CONTRACT.md",
+      "bytes": 762,
+      "sha256": "6857d0c2b36eeaea817bae9d803959b2a64278387adde62e717397eda13665ab"
+    },
+    {
+      "path": "20-能力模块/operate-environments/SKILL.md",
+      "bytes": 396,
+      "sha256": "f6b0c624955d91fcb867931fcf128f4e5cbcc02fd067ed9423bad50aaa7917da"
+    },
+    {
+      "path": "20-能力模块/operate-environments/VERIFICATION.md",
+      "bytes": 255,
+      "sha256": "f2a430c381c9ddf857111d84814dfb5da8eca60200d21937b18678248ef61df9"
+    },
+    {
+      "path": "20-能力模块/operate-environments/样板/10-标准范式.md",
+      "bytes": 236,
+      "sha256": "e1f8c89cf124fe59c3499a4d71752cdb4aaf8444bd2a27c16edbbe078036fe56"
+    },
+    {
+      "path": "20-能力模块/operate-environments/样板/索引.json",
+      "bytes": 839,
+      "sha256": "a46b36aa55701ccd464e090e4354a33b85d587f317f8fd9e60364d1721e9a4b6"
+    },
+    {
+      "path": "20-能力模块/write-documentation/CONTRACT.md",
+      "bytes": 700,
+      "sha256": "1c2523fdcbf8d4b1b5f0c528b53783c4a9a007c6fe96255ba14dae673b961c4c"
+    },
+    {
+      "path": "20-能力模块/write-documentation/SKILL.md",
+      "bytes": 400,
+      "sha256": "75828a189b8e77bf24b837786e2769f089018e867c72f16562df26220a0e7200"
+    },
+    {
+      "path": "20-能力模块/write-documentation/VERIFICATION.md",
+      "bytes": 237,
+      "sha256": "860e923c0ca21cef42f8916082ab68c3f3a24d1ab91217d02835a3991777c0ec"
+    },
+    {
+      "path": "20-能力模块/write-documentation/样板/10-标准范式.md",
+      "bytes": 399,
+      "sha256": "71ffc818d364e878a6351661f2df2fef29774b32515fc5e434c74fabc1f7aa1a"
+    },
+    {
+      "path": "20-能力模块/write-documentation/样板/索引.json",
+      "bytes": 837,
+      "sha256": "ec4dd15acc25f927438a22cac4e4ed5ba86882018deb2a814b4f0ee84838ae05"
+    },
+    {
+      "path": "30-知识库/README.md",
+      "bytes": 318,
+      "sha256": "6ba9994ccf5b89ddd86604bad2f05e079a572f8ce29e6860ee692854860e7d9c"
+    },
+    {
+      "path": "30-知识库/索引.json",
+      "bytes": 1318,
+      "sha256": "47c3a94127dd71f6e628828d5e156564d656bb2d3c4467f864da3b11c4df11c1"
+    },
+    {
+      "path": "30-知识库/10-通用经验/10-任务理解与根因确认.md",
+      "bytes": 692,
+      "sha256": "4477238307fd6c24a80867b00cfa160733e74f697b3d010a36d7a99f9c6eed59"
+    },
+    {
+      "path": "30-知识库/10-通用经验/20-依赖精简与能力保护.md",
+      "bytes": 679,
+      "sha256": "81e43f7b5d54b08f96c310706f11b2feb731a5a638907830f2d22ca2a80a3daf"
+    },
+    {
+      "path": "30-知识库/10-通用经验/30-临时后端与长期契约.md",
+      "bytes": 651,
+      "sha256": "602b1e13ce15848c9df076a6522c7207188278884898be3933676ad0b82a0133"
+    },
+    {
+      "path": "30-知识库/10-通用经验/40-新增文件职责归属.md",
+      "bytes": 629,
+      "sha256": "83319cfd8291e1afa3fbf6ce6d6e569c8d120ed5930c0d7b0fd1f0a7ff20371d"
+    },
+    {
+      "path": "30-知识库/10-通用经验/50-组合状态序列.md",
+      "bytes": 610,
+      "sha256": "a174280c817a191a90af3809e5788affc6f8cd8e09d9dae56e739c69988dfa71"
+    },
+    {
+      "path": "30-知识库/10-通用经验/60-Windows命令分发.md",
+      "bytes": 703,
+      "sha256": "5d1dbdbab9a54694dc00766a9e7758cd868429dda071e732650aa94ab534d021"
+    },
+    {
+      "path": "40-脚本/build-context.mjs",
+      "bytes": 500,
+      "sha256": "76c74ed78731602caab9ad8b119ce86c06a6d0c5f5e81f96f2cafcc189c8e772"
+    },
+    {
+      "path": "40-脚本/check-system.mjs",
+      "bytes": 5452,
+      "sha256": "75b6c7997318be16c340f170a3053e98f1a0925e57393548721973bf87ec7c89"
+    },
+    {
+      "path": "40-脚本/configure-model-entry.mjs",
+      "bytes": 3646,
+      "sha256": "1a96702ba2410c51a7ea6c8f0526a86af15cd6f8f1e6b57df4e07667d179f8e1"
+    },
+    {
+      "path": "40-脚本/manage-registry.mjs",
+      "bytes": 3541,
+      "sha256": "68fe0cba413b4a1e24649529a90256d30b55b673d551bca41d4d16b66fdf8ef9"
+    },
+    {
+      "path": "40-脚本/run-checks.mjs",
+      "bytes": 1326,
+      "sha256": "a078ae1f71c774b3619017f396ecdc37c88e19318ba2647113cd21ae72ee1514"
+    },
+    {
+      "path": "40-脚本/spec-consistency.mjs",
+      "bytes": 1807,
+      "sha256": "619b58777dc2d03a31b8ca841a375aa5e9eb671bc3accb40e7bc48e249f27def"
+    },
+    {
+      "path": "40-脚本/spec-map.mjs",
+      "bytes": 957,
+      "sha256": "288f39e6574d0d3d4528feb5613c619832b67285b11a25823a8e055d4d70cd7a"
+    },
+    {
+      "path": "40-脚本/task.mjs",
+      "bytes": 5708,
+      "sha256": "29c261e811d407ab7f8cf5d2cc3294524dfe39ad7c085da0b24e7aa411cce9a8"
+    },
+    {
+      "path": "40-脚本/validate-evidence.mjs",
+      "bytes": 1000,
+      "sha256": "4899258c326b5877bdca66766c91b0d3685e471f610572eb8fec192bb634f0a8"
+    },
+    {
+      "path": "40-脚本/verify-implementation.mjs",
+      "bytes": 2910,
+      "sha256": "331344d16a1513447c041813045e53adb81a199d226e35661ff9bde9e6018e91"
+    },
+    {
+      "path": "40-脚本/lib/args.mjs",
+      "bytes": 1304,
+      "sha256": "e6c13539a27329207f54f199aad0476fd0773873a91fdac0138ca208cad8cff2"
+    },
+    {
+      "path": "40-脚本/lib/atomic-file.mjs",
+      "bytes": 3003,
+      "sha256": "76cfcbd2ad8b920e9f04f1f69341c0bfd205b38e4edd19a9fde375221ae4b602"
+    },
+    {
+      "path": "40-脚本/lib/check-cache.mjs",
+      "bytes": 1983,
+      "sha256": "8e50039457b0300c684e64969f61901bd34c386f32b505747803cc9c911d0c46"
+    },
+    {
+      "path": "40-脚本/lib/check-planner.mjs",
+      "bytes": 10452,
+      "sha256": "b863f36d1c49db7381fa1d32fb7c980ca44022cfe7d3732d58b025fdc6bc21f9"
+    },
+    {
+      "path": "40-脚本/lib/context-builder.mjs",
+      "bytes": 4292,
+      "sha256": "2ef223a27636976c3b341fe5cd2c1ef9f4dcc39ce8118c58aadeac40084d4e50"
+    },
+    {
+      "path": "40-脚本/lib/evidence.mjs",
+      "bytes": 7707,
+      "sha256": "fc9440d223d3cf0fbccd68d6fe989a56f9744bb00df0c97d27edc5d58fefdbf8"
+    },
+    {
+      "path": "40-脚本/lib/experience-candidate.mjs",
+      "bytes": 3396,
+      "sha256": "79d368e8aeb92dcdf73e0f46e3ffb153227a49937b9b37b801e63b5bcf69bccb"
+    },
+    {
+      "path": "40-脚本/lib/experience-dedupe.mjs",
+      "bytes": 6754,
+      "sha256": "c1b06ab950a01f733cab1fc7c396c975bb362ae1d997495ceb76ea3b95757d18"
+    },
+    {
+      "path": "40-脚本/lib/experience-quality.mjs",
+      "bytes": 2059,
+      "sha256": "c7da652a7d50be93a8ac75c85aa6b5fd95e02527a1777024ec068f1c0c50367e"
+    },
+    {
+      "path": "40-脚本/lib/git-state.mjs",
+      "bytes": 6561,
+      "sha256": "063e30157c5e20c2932c36686682a8c383c8879c9d9cb801a3c30dc898460bee"
+    },
+    {
+      "path": "40-脚本/lib/handoff.mjs",
+      "bytes": 1798,
+      "sha256": "bcacbdd427b8fedfe9771ab029e4e55e5e775cef73372ddb1ce28f8294c80bc7"
+    },
+    {
+      "path": "40-脚本/lib/manifest-reader.mjs",
+      "bytes": 2898,
+      "sha256": "5bb3d687b61701c91e236719ccac3adeaf01c19a7cd0da9aa33949875ed62414"
+    },
+    {
+      "path": "40-脚本/lib/path-boundary.mjs",
+      "bytes": 2237,
+      "sha256": "e97b2fd42ebc6dc4230331c94675951d41c78e6a4c6b52c77095fc3881e4ae13"
+    },
+    {
+      "path": "40-脚本/lib/quality-registry.mjs",
+      "bytes": 6714,
+      "sha256": "718093f4ac24d2efac87d5d0d0ea131c3a127798eb710c351aed3713123220d5"
+    },
+    {
+      "path": "40-脚本/lib/registry.mjs",
+      "bytes": 11565,
+      "sha256": "b883f96f674b5596e3ddd8b9efeaf8975efd21198b07328ed2cf4819c135eac1"
+    },
+    {
+      "path": "40-脚本/lib/review.mjs",
+      "bytes": 3751,
+      "sha256": "d85c935b098dcefe44b2621451a32f1215e83281add50af6b6050dcfbe5848ed"
+    },
+    {
+      "path": "40-脚本/lib/spec-consistency.mjs",
+      "bytes": 9519,
+      "sha256": "3537f425078c489c7ceafa58ee4b69e8d55eca0482042d6e5d132c6fa8b4e264"
+    },
+    {
+      "path": "40-脚本/lib/spec-impact.mjs",
+      "bytes": 1849,
+      "sha256": "68e96692ccd00bffacdd956c1e820a953263e515ed251bb13daee26d4903487f"
+    },
+    {
+      "path": "40-脚本/lib/spec-mapper.mjs",
+      "bytes": 15053,
+      "sha256": "272b2182ee0d31d6a882f515237397c82295f19e972a444c76de5f4648e8359b"
+    },
+    {
+      "path": "40-脚本/lib/spec-service.mjs",
+      "bytes": 3245,
+      "sha256": "fb8725dce66c6cbe5310a7b67c49678533c17778667c52c8d5d6534a2e921c14"
+    },
+    {
+      "path": "40-脚本/lib/state-manager.mjs",
+      "bytes": 9545,
+      "sha256": "0342352ea990f629a27f0f492d5afb6020aeddbce797615ef484c75b947dbfe6"
+    },
+    {
+      "path": "40-脚本/lib/task-policy.mjs",
+      "bytes": 6561,
+      "sha256": "a066eed91e111ebc7685564771610eb995e21c8deeedc7640d7342c5c932e35c"
+    },
+    {
+      "path": "40-脚本/lib/task-runner.mjs",
+      "bytes": 22324,
+      "sha256": "7a6cf5c55b754e8787c0e055bcb8154717fcda3156b5c6dc5202240dbacd4a87"
+    },
+    {
+      "path": "40-脚本/lib/verification-budget.mjs",
+      "bytes": 1000,
+      "sha256": "1f8d1113bc2a8c2f09ddbfd101e04464f1064c652406a6ce7aebcf0af43a29c6"
+    },
+    {
+      "path": "40-脚本/maintenance/rename-directory.mjs",
+      "bytes": 811,
+      "sha256": "1e8db434d5a570a3931a588e674175be30f3a3fa5ea2babbbc5e20e7b33da17a"
+    },
+    {
+      "path": "50-检查规则/10-通用检查.md",
+      "bytes": 592,
+      "sha256": "9efcff9e714f02c0851b4a145b12e0c3cd524920c73a60f33e451206e293eaab"
+    },
+    {
+      "path": "50-检查规则/20-高风险检查.md",
+      "bytes": 379,
+      "sha256": "ced16c02ba5c532652a921aa453cd02f56ce36a1ea6ef36d024ec2f37f3e6f13"
+    },
+    {
+      "path": "60-测试/helpers.mjs",
+      "bytes": 1443,
+      "sha256": "63cb6d39daf075038bb33adf24a9fc86421573b231bb7bdbcc3b4867912815e0"
+    },
+    {
+      "path": "60-测试/core/atomic-file.test.mjs",
+      "bytes": 715,
+      "sha256": "b7d47026e77cdd95cb7cf8e1e85c44f5a19b1eeeb6955d1839eafc2e14999822"
+    },
+    {
+      "path": "60-测试/core/budget-cache.test.mjs",
+      "bytes": 1357,
+      "sha256": "f949bb3671f4736c3df1703d2c868fc7aeb9029619255235c051555c22900ff2"
+    },
+    {
+      "path": "60-测试/core/evidence.test.mjs",
+      "bytes": 4667,
+      "sha256": "914a2bcafb6b3520af6d7e2763821c47d50b72a481a9146239c941e57b4168b5"
+    },
+    {
+      "path": "60-测试/core/experience-candidate.test.mjs",
+      "bytes": 4445,
+      "sha256": "da7ac8fee53a5db1fadfbdb36bb4a933a4cd2776ad7a251e88fb55686b15ad02"
+    },
+    {
+      "path": "60-测试/core/instruction-entry.test.mjs",
+      "bytes": 1652,
+      "sha256": "03b68180aa144ea10c4e7a114a42cf31a0e9fd1c85208114d31d7c5c32864314"
+    },
+    {
+      "path": "60-测试/core/manifest-reader.test.mjs",
+      "bytes": 826,
+      "sha256": "dc35258691d59eac3e94b99725ccc6fee90389a8e092debfd41a38660f476389"
+    },
+    {
+      "path": "60-测试/core/registry.test.mjs",
+      "bytes": 1036,
+      "sha256": "a85a72237a2a25a4c200df14330cec71ac4358f01fb451ef6006f8b845e95459"
+    },
+    {
+      "path": "60-测试/core/review.test.mjs",
+      "bytes": 1752,
+      "sha256": "5755e1aeb8e792f227608c7a9629dbdada711f6325112a3e40262882baaea942"
+    },
+    {
+      "path": "60-测试/core/spec-consistency.test.mjs",
+      "bytes": 4035,
+      "sha256": "f0e20caca0347885133374e2f0062aea3f514b08a0d1da65d40b0654d1865f14"
+    },
+    {
+      "path": "60-测试/core/spec-mapper.test.mjs",
+      "bytes": 4370,
+      "sha256": "27383b988e45b465ab99f7237dccbf7230714fc86c247ea2dec4c86be86c2a55"
+    },
+    {
+      "path": "60-测试/core/state-manager.test.mjs",
+      "bytes": 3017,
+      "sha256": "4bee91ddaa953a4b358b7dca93cd2f626c14512026844d6696e8c663a1b983ad"
+    },
+    {
+      "path": "60-测试/core/task-policy.test.mjs",
+      "bytes": 2068,
+      "sha256": "69ac30cac7bb3efafe98ec04a3b7157922cafd4ab0e6d8f3964c148f78b34499"
+    },
+    {
+      "path": "60-测试/integration/check-planner.test.mjs",
+      "bytes": 3750,
+      "sha256": "71fe5ca08000176c1ae4b8797b0626bc4666864ba360457fa3c52c90ebe3e863"
+    },
+    {
+      "path": "60-测试/integration/context-quality.test.mjs",
+      "bytes": 3033,
+      "sha256": "0a6226fb7e3787e8aa002d497cffe7ac220a3c1c43111f61192ae6e5928efbe7"
+    },
+    {
+      "path": "60-测试/integration/git-state.test.mjs",
+      "bytes": 1702,
+      "sha256": "046597118ac75624eff0beace99d6b003752bdbd82f2aa1d9ef49934017d30e0"
+    },
+    {
+      "path": "60-测试/integration/handoff.test.mjs",
+      "bytes": 806,
+      "sha256": "ad970af6c3955e47c4ae5a3873d28ca3566597bd7f0022742035517c93cda988"
+    },
+    {
+      "path": "60-测试/integration/legacy-compat.test.mjs",
+      "bytes": 1018,
+      "sha256": "e377b8a8e44616111716f59efe8ecb38e3deddb17684b9d6a6ae6c6e9f1177d7"
+    },
+    {
+      "path": "60-测试/integration/spec-task-flow.test.mjs",
+      "bytes": 5350,
+      "sha256": "c767f05f71d287fa7a98adb1aa585a40caa7e75d61c128614f5a1c720028dc7b"
+    },
+    {
+      "path": "60-测试/integration/task-runner.test.mjs",
+      "bytes": 4580,
+      "sha256": "ade03da588756ddfe8eb1482bf59e5ade3956c9d9394e6c12f168b457f9bf9d5"
+    },
+    {
+      "path": "60-测试/scenarios/cli.test.mjs",
+      "bytes": 1426,
+      "sha256": "45ef5df8a05afce163ee03bae563082e4e5535331ef59a7f11371c6cfd56f7dc"
+    },
+    {
+      "path": "60-测试/scenarios/trust-gates.test.mjs",
+      "bytes": 1906,
+      "sha256": "8b0094c030f2aaa9df531e2c19da41adce1415d4abe3eee533a2b3b8cfaf9b5b"
+    },
+    {
+      "path": "70-文档/10-架构与原则.md",
+      "bytes": 490,
+      "sha256": "7d2037b24e94feb64e28937a979143f277adecb77971a8822b412135fb8974eb"
+    },
+    {
+      "path": "70-文档/20-可信门禁.md",
+      "bytes": 560,
+      "sha256": "bf7c61d8f7997d49a55453e31d99f51694a2d6f322bd654f7a30e4942488da14"
+    },
+    {
+      "path": "70-文档/30-工程质量体系.md",
+      "bytes": 464,
+      "sha256": "cd8dd0da02024b2d1da1446a8afdcc03e70a0ef76085848fa6d454e4f4055e97"
+    },
+    {
+      "path": "70-文档/40-项目质量清单示例.md",
+      "bytes": 787,
+      "sha256": "4b9b03667d5ba404b5192cd9211532168bb3af306f78bf593a377d120b029db7"
+    },
+    {
+      "path": "70-文档/50-兼容与状态.md",
+      "bytes": 279,
+      "sha256": "b5a158ab58275c40c2f41afb78e6893c38c7527f62a48f0b6dcf445263e706b9"
+    },
+    {
+      "path": "70-文档/60-真实任务验证计划.md",
+      "bytes": 475,
+      "sha256": "1155d252c6fc935815e0c98aa0dc35556ebf8757d1f11395044f028af63119d8"
+    },
+    {
+      "path": "70-文档/70-V2.1.1实施结果.md",
+      "bytes": 1731,
+      "sha256": "aabdccbdf73ef6f035541d4368a85df61ce4ed9816faf1596f107d9128759e38"
+    },
+    {
+      "path": "70-文档/80-V2.2.0实施说明.md",
+      "bytes": 1233,
+      "sha256": "0fb0f4a27c97982202f6d62b82ddbf64261d708a6482a767087665ee2afe79b0"
+    },
+    {
+      "path": "70-文档/90-V2.1.2到V2.2.0升级说明.md",
+      "bytes": 1055,
+      "sha256": "4b2f4e3e7da529a99c9b4200477a2d506f7f6e64d5228845b5d7040421bcc918"
+    },
+    {
+      "path": "70-文档/95-V2.2.1修复说明.md",
+      "bytes": 1159,
+      "sha256": "4a17807b79cb34a405436d64856b83abaf58c6ca1e0260c376ed47355e95f470"
+    },
+    {
+      "path": "70-文档/implementation-contract.json",
+      "bytes": 9070,
+      "sha256": "3642e3e79cdcf4cae32e6a14c6354d65415a9386750370d4269bf0d45eab3b90"
+    },
+    {
+      "path": "70-文档/验证记录/complete-verification.txt",
+      "bytes": 14659,
+      "sha256": "620b1efaeaba99e1945c9e726c1a9c4371bdec6adb21cb1baabea7ae28158b00"
+    },
+    {
+      "path": "70-文档/验证记录/implementation-result.generated.json",
+      "bytes": 35579,
+      "sha256": "f38b60d2066702704f7ba477fcc73a6501ce4579de17b3cd289baa8d790a59a7"
+    },
+    {
+      "path": "80-运行记录/README.md",
+      "bytes": 355,
+      "sha256": "3b8326ccc50bd154f74e730fe3f20c6afe9ca3acdcf2a449778cab8678758c69"
+    },
+    {
+      "path": "80-运行记录/进行中/.gitkeep",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

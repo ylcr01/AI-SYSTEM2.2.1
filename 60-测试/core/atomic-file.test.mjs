@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import test from 'node:test';import { atomicWriteJson,withFileLock } from '../../40-脚本/lib/atomic-file.mjs';import { tempDir } from '../helpers.mjs';
+test('原子写完整替换 JSON',t=>{const dir=tempDir(t),file=path.join(dir,'state.json');atomicWriteJson(file,{a:1});atomicWriteJson(file,{a:2});assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),{a:2});});
+test('文件锁串行保护临界区',t=>{const dir=tempDir(t),lock=path.join(dir,'x.lock');let entered=0;withFileLock(lock,()=>{entered+=1;assert.equal(fs.existsSync(lock),true);});assert.equal(entered,1);assert.equal(fs.existsSync(lock),false);});

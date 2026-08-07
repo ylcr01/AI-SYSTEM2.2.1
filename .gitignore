@@ -1,0 +1,12 @@
+10-注册表/local.paths.json
+80-运行记录/进行中/*.json
+80-运行记录/.pending/
+80-运行记录/.locks/
+80-运行记录/历史.jsonl
+80-运行记录/check-cache.json
+70-文档/验证记录/*.generated.json
+node_modules/
+coverage/
+*.log
+*.local.*
+.playwright-mcp/

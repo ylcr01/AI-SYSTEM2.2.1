@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "mappings": [
+    {
+      "id": "order-module",
+      "keywords": ["订单", "order", "取消", "退款"],
+      "paths": [
+        "src/order/**",
+        "server/order/**"
+      ],
+      "specificationFiles": [
+        "docs/modules/order.md"
+      ],
+      "specificationIds": [
+        "BR-ORD-*",
+        "TR-ORD-*",
+        "SC-ORD-*",
+        "EX-ORD-*"
+      ],
+      "testFiles": [
+        "tests/order/**",
+        "src/order/**/*.test.ts"
+      ],
+      "decisionFiles": [
+        "docs/modules/order/decisions/**"
+      ]
+    }
+  ]
+}

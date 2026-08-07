@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 4,
+  "exemplars": [
+    {
+      "id": "operate-environments-standard",
+      "description": "环境运维标准范式",
+      "status": "active",
+      "artifactKinds": [
+        "operations"
+      ],
+      "structureImpacts": [
+        "structural"
+      ],
+      "keywords": [
+        "environments",
+        "环境运维"
+      ],
+      "appliesWhen": [
+        "新增或重构环境运维结构且项目没有更高优先级范式"
+      ],
+      "notFor": [
+        "局部修复",
+        "当前项目已有 Active Canonical"
+      ],
+      "contract": {
+        "id": "operations-change",
+        "version": 2
+      },
+      "read": [
+        "10-标准范式.md"
+      ],
+      "verification": [
+        "20-能力模块/operate-environments/VERIFICATION.md"
+      ],
+      "supersededBy": null
+    }
+  ]
+}

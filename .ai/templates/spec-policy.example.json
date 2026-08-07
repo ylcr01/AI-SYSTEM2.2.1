@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "mode": "balanced",
+  "blockingRules": [
+    "SPEC_IMPACT_NONE_WITH_SPEC_CHANGE",
+    "SPEC_UPDATE_MISSING",
+    "DECISION_MISSING",
+    "DECISION_METADATA_INVALID"
+  ],
+  "requireExplicitImpactForMappedCode": false,
+  "requireTestsForAffectedIds": false
+}

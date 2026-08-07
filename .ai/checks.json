@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 4,
+  "packageFallback": {
+    "mode": "none",
+    "scripts": []
+  },
+  "checks": [
+    {
+      "name": "system-integrity",
+      "command": "node",
+      "args": [
+        "40-脚本/check-system.mjs"
+      ],
+      "profiles": [
+        "quick",
+        "standard",
+        "controlled",
+        "release"
+      ],
+      "covers": [
+        "static",
+        "architecture",
+        "documentation"
+      ],
+      "sideEffect": "none",
+      "cacheable": true,
+      "estimatedCost": "very-low",
+      "timeoutMs": 30000,
+      "acceptanceMode": "none"
+    },
+    {
+      "name": "core-tests",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:core"
+      ],
+      "profiles": [
+        "standard",
+        "controlled",
+        "release"
+      ],
+      "covers": [
+        "unit",
+        "behavior"
+      ],
+      "sideEffect": "none",
+      "cacheable": true,
+      "estimatedCost": "low",
+      "timeoutMs": 120000,
+      "acceptanceMode": "none"
+    },
+    {
+      "name": "integration-tests",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:integration"
+      ],
+      "profiles": [
+        "controlled",
+        "release"
+      ],
+      "covers": [
+        "integration",
+        "behavior",
+        "negative-path"
+      ],
+      "sideEffect": "none",
+      "cacheable": true,
+      "estimatedCost": "medium",
+      "timeoutMs": 180000,
+      "acceptanceMode": "none"
+    }
+  ]
+}

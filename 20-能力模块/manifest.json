@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "abilities": [
+    {
+      "name": "clarify-requirements",
+      "status": "active",
+      "skill": "20-能力模块/clarify-requirements/SKILL.md",
+      "contract": "20-能力模块/clarify-requirements/CONTRACT.md",
+      "verification": "20-能力模块/clarify-requirements/VERIFICATION.md",
+      "artifactKinds": [
+        "requirements"
+      ]
+    },
+    {
+      "name": "curate-knowledge",
+      "status": "active",
+      "skill": "20-能力模块/curate-knowledge/SKILL.md",
+      "contract": "20-能力模块/curate-knowledge/CONTRACT.md",
+      "verification": "20-能力模块/curate-knowledge/VERIFICATION.md",
+      "artifactKinds": [
+        "knowledge"
+      ]
+    },
+    {
+      "name": "design-product",
+      "status": "active",
+      "skill": "20-能力模块/design-product/SKILL.md",
+      "contract": "20-能力模块/design-product/CONTRACT.md",
+      "verification": "20-能力模块/design-product/VERIFICATION.md",
+      "artifactKinds": [
+        "product",
+        "requirements"
+      ],
+      "exemplarIndex": "20-能力模块/design-product/样板/索引.json"
+    },
+    {
+      "name": "design-ui",
+      "status": "active",
+      "skill": "20-能力模块/design-ui/SKILL.md",
+      "contract": "20-能力模块/design-ui/CONTRACT.md",
+      "verification": "20-能力模块/design-ui/VERIFICATION.md",
+      "artifactKinds": [
+        "ui",
+        "product"
+      ],
+      "exemplarIndex": "20-能力模块/design-ui/样板/索引.json"
+    },
+    {
+      "name": "develop-web",
+      "status": "active",
+      "skill": "20-能力模块/develop-web/SKILL.md",
+      "contract": "20-能力模块/develop-web/CONTRACT.md",
+      "verification": "20-能力模块/develop-web/VERIFICATION.md",
+      "artifactKinds": [
+        "code",
+        "ui",
+        "api"
+      ],
+      "exemplarIndex": "20-能力模块/develop-web/样板/索引.json"
+    },
+    {
+      "name": "develop-app",
+      "status": "active",
+      "skill": "20-能力模块/develop-app/SKILL.md",
+      "contract": "20-能力模块/develop-app/CONTRACT.md",
+      "verification": "20-能力模块/develop-app/VERIFICATION.md",
+      "artifactKinds": [
+        "code",
+        "ui"
+      ],
+      "exemplarIndex": "20-能力模块/develop-app/样板/索引.json"
+    },
+    {
+      "name": "develop-server",
+      "status": "active",
+      "skill": "20-能力模块/develop-server/SKILL.md",
+      "contract": "20-能力模块/develop-server/CONTRACT.md",
+      "verification": "20-能力模块/develop-server/VERIFICATION.md",
+      "artifactKinds": [
+        "code",
+        "api",
+        "data"
+      ],
+      "exemplarIndex": "20-能力模块/develop-server/样板/索引.json"
+    },
+    {
+      "name": "integrate-systems",
+      "status": "active",
+      "skill": "20-能力模块/integrate-systems/SKILL.md",
+      "contract": "20-能力模块/integrate-systems/CONTRACT.md",
+      "verification": "20-能力模块/integrate-systems/VERIFICATION.md",
+      "artifactKinds": [
+        "integration",
+        "api",
+        "code"
+      ],
+      "exemplarIndex": "20-能力模块/integrate-systems/样板/索引.json"
+    },
+    {
+      "name": "operate-environments",
+      "status": "active",
+      "skill": "20-能力模块/operate-environments/SKILL.md",
+      "contract": "20-能力模块/operate-environments/CONTRACT.md",
+      "verification": "20-能力模块/operate-environments/VERIFICATION.md",
+      "artifactKinds": [
+        "operations"
+      ],
+      "exemplarIndex": "20-能力模块/operate-environments/样板/索引.json"
+    },
+    {
+      "name": "write-documentation",
+      "status": "active",
+      "skill": "20-能力模块/write-documentation/SKILL.md",
+      "contract": "20-能力模块/write-documentation/CONTRACT.md",
+      "verification": "20-能力模块/write-documentation/VERIFICATION.md",
+      "artifactKinds": [
+        "documentation"
+      ],
+      "exemplarIndex": "20-能力模块/write-documentation/样板/索引.json"
+    }
+  ]
+}

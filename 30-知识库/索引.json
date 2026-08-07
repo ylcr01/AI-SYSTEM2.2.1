@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 2,
+  "routes": [
+    {
+      "keywords": [
+        "根因",
+        "排障",
+        "最小复现"
+      ],
+      "read": [
+        "10-通用经验/10-任务理解与根因确认.md"
+      ],
+      "lifecycle": "active"
+    },
+    {
+      "keywords": [
+        "依赖",
+        "精简",
+        "误删"
+      ],
+      "read": [
+        "10-通用经验/20-依赖精简与能力保护.md"
+      ],
+      "lifecycle": "active"
+    },
+    {
+      "keywords": [
+        "临时后端",
+        "Mock",
+        "契约"
+      ],
+      "read": [
+        "10-通用经验/30-临时后端与长期契约.md"
+      ],
+      "lifecycle": "active"
+    },
+    {
+      "keywords": [
+        "新增文件",
+        "目录",
+        "职责"
+      ],
+      "read": [
+        "10-通用经验/40-新增文件职责归属.md"
+      ],
+      "lifecycle": "active"
+    },
+    {
+      "keywords": [
+        "组合",
+        "状态序列",
+        "交互"
+      ],
+      "read": [
+        "10-通用经验/50-组合状态序列.md"
+      ],
+      "lifecycle": "active"
+    },
+    {
+      "keywords": [
+        "Windows",
+        "cmd",
+        "批处理",
+        "路径空格"
+      ],
+      "read": [
+        "10-通用经验/60-Windows命令分发.md"
+      ],
+      "lifecycle": "active"
+    }
+  ]
+}
