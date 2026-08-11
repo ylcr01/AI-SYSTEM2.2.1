@@ -27,8 +27,7 @@ function help() {
   审查 --task-id <id> --review-file <json>
   验收 --task-id <id> --decision 通过|退回
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
-       [--keyword <text>] [--occurrence <n>] [--impact low|medium|high|critical]
-       [--allow-low-quality] [--allow-duplicate]
+       [--keyword <text>] [--verification <text>]
   保存|恢复|交接|查看|列表|取消
 
 普通问答不建 Task；只读分析走 build-context；仓库写任务必须先准备、后交付，最终验收只能由用户执行。`);
@@ -70,7 +69,6 @@ try {
       inputChangeReason: args['input-change-reason'],
       diagnosticRetry: args['diagnostic-retry'] === true,
       observableBrowserBehavior: args['observable-browser-behavior'] === true,
-      environmentIdentity: args.environment ?? null,
       residualRisks: listArg(args.risk),
       forceMode: args['force-mode'],
       forceReason: args['force-reason'],
@@ -104,11 +102,9 @@ try {
       action: args.action,
       boundary: args.boundary,
       verification: listArg(args.verification),
-      keywords: listArg(args.keyword),
-      recurrenceCount: args.occurrence ? Number(args.occurrence) : 1,
-      impact: args.impact
+      keywords: listArg(args.keyword)
     });
-    output(saveExperienceCandidate(projectRoot, candidate, { allowDuplicate: args['allow-duplicate'] === true, allowLowQuality: args['allow-low-quality'] === true }));
+    output(saveExperienceCandidate(projectRoot, candidate));
   } else if (action === '查看') {
     output(findTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
   } else if (action === '列表') {

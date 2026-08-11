@@ -22,3 +22,6 @@ artifactKinds: [ui, product]
 
 ## Browser 边界
 UI 文件本身不自动要求 Browser。只有用户可观察 Browser 行为变化且更低成本 Evidence 不足时才需要。
+
+## 验证
+按用户可观察行为选择状态、响应式、键盘/读屏、设计系统、恢复和必要 Browser 证据；截图不能单独证明交互正确。

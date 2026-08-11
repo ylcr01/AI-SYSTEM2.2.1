@@ -5,7 +5,15 @@ import { mapChangedFilesToSpecifications, mapIntentToSpecifications } from './sp
 import { evaluateSpecConsistency } from './spec-consistency.mjs';
 import { resolveRepositoryPath } from './path-boundary.mjs';
 
+function configured(gitRoot) {
+  return fs.existsSync(path.join(gitRoot, '.ai', 'spec-map.json'));
+}
+
 export function addIntentSpecificationHints(context, gitRoot, intent) {
+  if (!configured(gitRoot)) {
+    context.specificationHints = { configured: false, matchedRuleIds: [], specificationFiles: [], specificationIds: [], testFiles: [] };
+    return context;
+  }
   const hints = mapIntentToSpecifications({ gitRoot, intent });
   context.specificationHints = hints;
   for (const relative of hints.specificationFiles ?? []) {
@@ -26,6 +34,9 @@ export function effectiveSpecImpact(task, options = {}) {
 
 export function buildSpecState(task, changeSet, options = {}) {
   const specImpact = effectiveSpecImpact(task, options);
+  if (!configured(changeSet.gitRoot) && specImpact.level === 'none') {
+    return { specImpact, specTraceability: null, specConsistency: null };
+  }
   const specTraceability = mapChangedFilesToSpecifications({
     gitRoot: changeSet.gitRoot,
     changedFiles: changeSet.files
@@ -41,6 +52,10 @@ export function buildSpecState(task, changeSet, options = {}) {
 }
 
 export function revalidateSpecState(task, changeSet) {
+  const specImpact = createSpecImpact(task.specImpact ?? {});
+  if (!configured(changeSet.gitRoot) && specImpact.level === 'none') {
+    return { specImpact, specTraceability: null, specConsistency: null };
+  }
   const specTraceability = mapChangedFilesToSpecifications({
     gitRoot: changeSet.gitRoot,
     changedFiles: changeSet.files
@@ -49,13 +64,16 @@ export function revalidateSpecState(task, changeSet) {
     gitRoot: changeSet.gitRoot,
     taskId: task.taskId,
     changeSet,
-    specImpact: createSpecImpact(task.specImpact ?? {}),
+    specImpact,
     traceability: specTraceability
   });
-  return { specImpact: createSpecImpact(task.specImpact ?? {}), specTraceability, specConsistency };
+  return { specImpact, specTraceability, specConsistency };
 }
 
 export function stableSpecReviewState(specState) {
+  if (!specState.specTraceability || !specState.specConsistency) {
+    return { specImpact: specState.specImpact, specTraceability: null, specConsistency: null };
+  }
   return {
     specImpact: specState.specImpact,
     specTraceability: {

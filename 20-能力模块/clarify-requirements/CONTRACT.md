@@ -21,3 +21,6 @@ artifactKinds: [requirements, product]
 
 ## 偏离
 小型机械修改可以只形成一句目标和一个验收，不要求完整文档。
+
+## 验证
+核对 Goal、Non-goal、主流程、异常、权限、数据、依赖和 Acceptance 是否一致；普通内部实现细节不要求用户决定。

@@ -11,6 +11,18 @@ function git(root, args) {
   if (result.status !== 0) throw new Error(result.stderr);
 }
 
+test('无规格映射且 specImpact=none 时详细规格与 Review 退出主路径', (t) => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', acceptance: ['行为正确'], scope: '.', specImpact: 'none' });
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  assert.equal(delivered.task.status, 'waiting_acceptance');
+  assert.equal(delivered.task.specTraceability, null);
+  assert.equal(delivered.task.specConsistency, null);
+  assert.equal(delivered.task.reviewPackage, null);
+});
+
 test('交付自动保存 changed-file 到规格 ID 的追踪结果', (t) => {
   const repo = gitRepo(t);
   fs.mkdirSync(path.join(repo, 'src', 'order'), { recursive: true });

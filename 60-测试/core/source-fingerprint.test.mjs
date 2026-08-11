@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { sourceFingerprint } from '../../40-脚本/lib/source-fingerprint.mjs';
-import { tempDir } from '../helpers.mjs';
+import { gitRepo, tempDir } from '../helpers.mjs';
 
 test('源码指纹忽略 Git 与运行产物但绑定真实源码', (t) => {
   const root = tempDir(t, 'ai-rd-os-fingerprint-');
@@ -23,4 +23,10 @@ test('源码指纹忽略 Git 与运行产物但绑定真实源码', (t) => {
 
   fs.writeFileSync(path.join(root, 'source.mjs'), 'export const value = 2;\n');
   assert.notEqual(sourceFingerprint(root), first);
+});
+
+test('源码指纹忽略本次 ChangeSet 中已删除的跟踪文件', (t) => {
+  const root = gitRepo(t);
+  fs.rmSync(path.join(root, 'README.md'));
+  assert.doesNotThrow(() => sourceFingerprint(root));
 });

@@ -1,122 +1,155 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "abilities": [
     {
       "name": "clarify-requirements",
       "status": "active",
       "skill": "20-能力模块/clarify-requirements/SKILL.md",
       "contract": "20-能力模块/clarify-requirements/CONTRACT.md",
-      "verification": "20-能力模块/clarify-requirements/VERIFICATION.md",
-      "artifactKinds": [
-        "requirements"
-      ]
+      "artifactKinds": ["requirements"]
     },
     {
       "name": "curate-knowledge",
       "status": "active",
       "skill": "20-能力模块/curate-knowledge/SKILL.md",
       "contract": "20-能力模块/curate-knowledge/CONTRACT.md",
-      "verification": "20-能力模块/curate-knowledge/VERIFICATION.md",
-      "artifactKinds": [
-        "knowledge"
-      ]
+      "artifactKinds": ["knowledge"]
     },
     {
       "name": "design-product",
       "status": "active",
       "skill": "20-能力模块/design-product/SKILL.md",
       "contract": "20-能力模块/design-product/CONTRACT.md",
-      "verification": "20-能力模块/design-product/VERIFICATION.md",
-      "artifactKinds": [
-        "product",
-        "requirements"
-      ],
-      "exemplarIndex": "20-能力模块/design-product/样板/索引.json"
+      "artifactKinds": ["product", "requirements"],
+      "exemplars": [
+        {
+          "id": "design-product-standard",
+          "description": "产品定义标准范式",
+          "status": "active",
+          "keywords": ["product", "产品定义"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "product-definition", "version": 2 }
+        }
+      ]
     },
     {
       "name": "design-ui",
       "status": "active",
       "skill": "20-能力模块/design-ui/SKILL.md",
       "contract": "20-能力模块/design-ui/CONTRACT.md",
-      "verification": "20-能力模块/design-ui/VERIFICATION.md",
-      "artifactKinds": [
-        "ui",
-        "product"
-      ],
-      "exemplarIndex": "20-能力模块/design-ui/样板/索引.json"
+      "artifactKinds": ["ui", "product"],
+      "exemplars": [
+        {
+          "id": "design-ui-standard",
+          "description": "UI 设计标准范式",
+          "status": "active",
+          "keywords": ["ui", "UI 设计"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "ui-experience", "version": 2 }
+        }
+      ]
     },
     {
       "name": "develop-web",
       "status": "active",
       "skill": "20-能力模块/develop-web/SKILL.md",
       "contract": "20-能力模块/develop-web/CONTRACT.md",
-      "verification": "20-能力模块/develop-web/VERIFICATION.md",
-      "artifactKinds": [
-        "code",
-        "ui",
-        "api"
-      ],
-      "exemplarIndex": "20-能力模块/develop-web/样板/索引.json"
+      "artifactKinds": ["code", "ui", "api"],
+      "exemplars": [
+        {
+          "id": "develop-web-standard",
+          "description": "Web 开发标准范式",
+          "status": "active",
+          "keywords": ["web", "Web 开发"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "web-feature", "version": 2 }
+        }
+      ]
     },
     {
       "name": "develop-app",
       "status": "active",
       "skill": "20-能力模块/develop-app/SKILL.md",
       "contract": "20-能力模块/develop-app/CONTRACT.md",
-      "verification": "20-能力模块/develop-app/VERIFICATION.md",
-      "artifactKinds": [
-        "code",
-        "ui"
-      ],
-      "exemplarIndex": "20-能力模块/develop-app/样板/索引.json"
+      "artifactKinds": ["code", "ui"],
+      "exemplars": [
+        {
+          "id": "develop-app-standard",
+          "description": "App 开发标准范式",
+          "status": "active",
+          "keywords": ["app", "App 开发"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "app-feature", "version": 2 }
+        }
+      ]
     },
     {
       "name": "develop-server",
       "status": "active",
       "skill": "20-能力模块/develop-server/SKILL.md",
       "contract": "20-能力模块/develop-server/CONTRACT.md",
-      "verification": "20-能力模块/develop-server/VERIFICATION.md",
-      "artifactKinds": [
-        "code",
-        "api",
-        "data"
-      ],
-      "exemplarIndex": "20-能力模块/develop-server/样板/索引.json"
+      "artifactKinds": ["code", "api", "data"],
+      "exemplars": [
+        {
+          "id": "develop-server-standard",
+          "description": "Server 开发标准范式",
+          "status": "active",
+          "keywords": ["server", "Server 开发"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "server-use-case", "version": 2 }
+        }
+      ]
     },
     {
       "name": "integrate-systems",
       "status": "active",
       "skill": "20-能力模块/integrate-systems/SKILL.md",
       "contract": "20-能力模块/integrate-systems/CONTRACT.md",
-      "verification": "20-能力模块/integrate-systems/VERIFICATION.md",
-      "artifactKinds": [
-        "integration",
-        "api",
-        "code"
-      ],
-      "exemplarIndex": "20-能力模块/integrate-systems/样板/索引.json"
+      "artifactKinds": ["integration", "api", "code"],
+      "exemplars": [
+        {
+          "id": "integrate-systems-standard",
+          "description": "系统集成标准范式",
+          "status": "active",
+          "keywords": ["systems", "系统集成"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "integration-adapter", "version": 2 }
+        }
+      ]
     },
     {
       "name": "operate-environments",
       "status": "active",
       "skill": "20-能力模块/operate-environments/SKILL.md",
       "contract": "20-能力模块/operate-environments/CONTRACT.md",
-      "verification": "20-能力模块/operate-environments/VERIFICATION.md",
-      "artifactKinds": [
-        "operations"
-      ],
-      "exemplarIndex": "20-能力模块/operate-environments/样板/索引.json"
+      "artifactKinds": ["operations"],
+      "exemplars": [
+        {
+          "id": "operate-environments-standard",
+          "description": "环境运维标准范式",
+          "status": "active",
+          "keywords": ["environments", "环境运维"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "operations-change", "version": 2 }
+        }
+      ]
     },
     {
       "name": "write-documentation",
       "status": "active",
       "skill": "20-能力模块/write-documentation/SKILL.md",
       "contract": "20-能力模块/write-documentation/CONTRACT.md",
-      "verification": "20-能力模块/write-documentation/VERIFICATION.md",
-      "artifactKinds": [
-        "documentation"
-      ],
-      "exemplarIndex": "20-能力模块/write-documentation/样板/索引.json"
+      "artifactKinds": ["documentation"],
+      "exemplars": [
+        {
+          "id": "write-documentation-standard",
+          "description": "文档编写标准范式",
+          "status": "active",
+          "keywords": ["documentation", "文档编写"],
+          "read": ["样板/10-标准范式.md"],
+          "contract": { "id": "documentation", "version": 2 }
+        }
+      ]
     }
   ]
 }

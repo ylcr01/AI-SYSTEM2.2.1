@@ -15,8 +15,7 @@ function normalizedRelative(root, file) {
 }
 
 function ignored(relative) {
-  return relative === 'release-inventory.json'
-    || relative === '80-运行记录'
+  return relative === '80-运行记录'
     || relative.startsWith('80-运行记录/')
     || relative === '70-文档/验证记录'
     || relative.startsWith('70-文档/验证记录/')
@@ -35,7 +34,8 @@ function gitFiles(root) {
   if (result.status !== 0 || result.error) return null;
   return result.stdout.split('\0').filter(Boolean)
     .map((relative) => relative.replaceAll('\\', '/'))
-    .filter((relative) => !ignored(relative));
+    .filter((relative) => !ignored(relative))
+    .filter((relative) => fs.existsSync(path.join(root, relative)));
 }
 
 function walkedFiles(root) {

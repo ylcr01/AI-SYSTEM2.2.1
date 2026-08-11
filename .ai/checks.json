@@ -23,7 +23,6 @@
         "documentation"
       ],
       "sideEffect": "none",
-      "cacheable": true,
       "estimatedCost": "very-low",
       "timeoutMs": 30000,
       "acceptanceMode": "none"
@@ -48,7 +47,6 @@
         "behavior"
       ],
       "sideEffect": "none",
-      "cacheable": true,
       "estimatedCost": "low",
       "timeoutMs": 120000,
       "acceptanceMode": "none"
@@ -73,7 +71,6 @@
         "negative-path"
       ],
       "sideEffect": "none",
-      "cacheable": true,
       "estimatedCost": "medium",
       "timeoutMs": 180000,
       "acceptanceMode": "none"

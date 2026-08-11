@@ -41,7 +41,6 @@ for (const group of requestedGroup ? [requestedGroup] : availableGroups) {
 }
 if (profile === 'release' && !requestedGroup) {
   run('发布清单', ['./40-脚本/build-release-inventory.mjs']);
-  run('实现契约', ['./40-脚本/verify-implementation.mjs']);
 }
 
 console.log(JSON.stringify({ ok: true, profile, group: requestedGroup }, null, 2));

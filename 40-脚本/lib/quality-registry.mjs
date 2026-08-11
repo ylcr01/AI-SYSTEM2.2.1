@@ -42,9 +42,9 @@ function exemplarFromManifest(manifest,input){
 }
 function centralContract(skill){const file=existing(path.join(SYSTEM_ROOT,'20-能力模块',skill,'CONTRACT.md'));if(!file)return null;const text=fs.readFileSync(file,'utf8');const id=text.match(/^id:\s*([^\r\n]+)/mu)?.[1]?.trim()??skill;const version=Number(text.match(/^version:\s*(\d+)/mu)?.[1]??2);return{id,version,path:file,source:'central'};}
 function centralExemplar(skill,intent){
- const root=path.join(SYSTEM_ROOT,'20-能力模块',skill);const index=readJson(path.join(root,'样板','索引.json'));const normalized=intent.toLowerCase();
- const item=(index?.exemplars??[]).filter(x=>x.status==='active'&&!x.supersededBy).map(x=>({x,score:(x.keywords??[]).filter(k=>normalized.includes(String(k).toLowerCase())).length})).sort((a,b)=>b.score-a.score)[0]?.x;
- if(!item)return null;const files=(item.read??[]).map(f=>existing(path.join(root,'样板',f))).filter(Boolean);return files.length?{...item,files,source:'central'}:null;
+ const root=path.join(SYSTEM_ROOT,'20-能力模块',skill);const manifest=readJson(path.join(SYSTEM_ROOT,'20-能力模块','manifest.json'));const ability=(manifest?.abilities??[]).find(item=>item.name===skill);const normalized=intent.toLowerCase();
+ const item=(ability?.exemplars??[]).filter(x=>x.status==='active'&&!x.supersededBy&&(x.structureImpacts??['structural']).includes('structural')).map(x=>({x,score:(x.keywords??[]).filter(k=>normalized.includes(String(k).toLowerCase())).length})).sort((a,b)=>b.score-a.score)[0]?.x;
+ if(!item)return null;const files=(item.read??[]).map(f=>existing(path.join(root,f))).filter(Boolean);return files.length?{...item,files,source:'central'}:null;
 }
 function selectExperience(intent,projectRoot){
  const normalized=intent.toLowerCase();const sources=[];

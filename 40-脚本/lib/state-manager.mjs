@@ -6,11 +6,9 @@ import { SYSTEM_ROOT } from './registry.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 
 const CURRENT_SCHEMA = 6;
-const ACTIVE = new Set(['prepared','waiting_decision','implementing','verifying','reviewing','blocked','saved','needs_rework','waiting_acceptance']);
 const TERMINAL = new Set(['accepted','cancelled']);
 const TRANSITIONS = {
-  prepared: new Set(['implementing','verifying','reviewing','waiting_acceptance','needs_rework','waiting_decision','blocked','saved','cancelled']),
-  waiting_decision: new Set(['implementing','blocked','saved','cancelled']),
+  prepared: new Set(['implementing','verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   implementing: new Set(['verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   verifying: new Set(['verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   reviewing: new Set(['reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
@@ -28,8 +26,7 @@ function paths(stateRoot) {
     pending: path.join(root, '.pending'),
     locks: path.join(root, '.locks'),
     history: path.join(root, '历史.jsonl'),
-    historyLock: path.join(root, '.locks', 'history.lock'),
-    cache: path.join(root, 'check-cache.json')
+    historyLock: path.join(root, '.locks', 'history.lock')
   };
 }
 
@@ -50,51 +47,11 @@ function readRaw(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function legacyStatus(value) {
-  if (value === '等待验收') return 'waiting_acceptance';
-  if (value === '需要修改') return 'needs_rework';
-  if (value === '进行中') return 'implementing';
-  return ACTIVE.has(value) || TERMINAL.has(value) ? value : 'implementing';
-}
-
-function migrateTask(raw) {
-  if (raw.schemaVersion === CURRENT_SCHEMA) return raw;
-  if (![3, 4, 5].includes(raw.schemaVersion)) throw new Error('不支持的 Task Schema');
-  const acceptance = Array.isArray(raw.acceptance)
-    ? raw.acceptance
-    : Array.isArray(raw.acceptanceCriteria)
-      ? raw.acceptanceCriteria.map((item, index) => ({ id: `A${index + 1}`, description: String(item), requiredCovers: ['behavior'], status: 'open' }))
-      : [];
-  return {
-    schemaVersion: CURRENT_SCHEMA,
-    taskId: raw.taskId,
-    stateRevision: Number(raw.stateRevision ?? 1),
-    status: legacyStatus(raw.status),
-    goal: raw.goal ?? { summary: raw.summary ?? 'Legacy task', nonGoals: [] },
-    acceptance,
-    authorization: raw.authorization ?? { scope: raw.authorizedScope ? [raw.authorizedScope] : [], externalActions: [] },
-    classification: raw.classification ?? { controlMode: 'standard', structureImpact: 'local', continuity: 'tracked', artifactKinds: ['code'] },
-    context: raw.context ?? {},
-    baseline: raw.baseline ?? null,
-    changeSet: raw.changeSet ?? null,
-    evidence: raw.evidence ?? [],
-    reviews: raw.reviews ?? [],
-    reviewPackage: raw.reviewPackage ?? null,
-    verification: raw.verification ?? {},
-    blockers: raw.blockers ?? [],
-    residualRisks: raw.residualRisks ?? [],
-    specImpact: createSpecImpact(raw.specImpact ?? {}),
-    specTraceability: raw.specTraceability ?? null,
-    specConsistency: raw.specConsistency ?? null,
-    experienceCandidates: raw.experienceCandidates ?? [],
-    handoff: raw.handoff ?? null,
-    compatibility: { ...(raw.compatibility ?? {}), sourceSchemaVersion: raw.schemaVersion },
-    deliveryDecision: raw.deliveryDecision ?? null,
-    userAcceptance: raw.userAcceptance ?? null,
-    createdAt: raw.createdAt ?? raw.startedAt ?? new Date().toISOString(),
-    updatedAt: raw.updatedAt ?? new Date().toISOString(),
-    acceptedAt: raw.acceptedAt ?? null
-  };
+function currentTask(raw) {
+  if (raw.schemaVersion !== CURRENT_SCHEMA) {
+    throw new Error(`不支持的 Task Schema: ${raw.schemaVersion ?? 'unknown'}；历史版本请使用对应系统读取`);
+  }
+  return raw;
 }
 
 function validateTransition(from, to, event) {
@@ -137,7 +94,7 @@ export function createTask(input = {}) {
     acceptedAt: null
   };
   atomicWriteJson(taskFile(value, task.taskId), task, value.pending);
-  return { task, filePath: taskFile(value, task.taskId), stateRoot: value.root, cacheFile: value.cache };
+  return { task, filePath: taskFile(value, task.taskId), stateRoot: value.root };
 }
 
 export function readTask(input = {}) {
@@ -146,23 +103,23 @@ export function readTask(input = {}) {
   if (!fs.existsSync(file)) throw new Error(`未找到进行中的任务: ${input.taskId}`);
   const raw = readRaw(file);
   if (TERMINAL.has(raw.status)) throw new Error('任务已经结束');
-  return { task: migrateTask(raw), filePath: file, stateRoot: value.root, cacheFile: value.cache, source: 'active' };
+  return { task: currentTask(raw), filePath: file, stateRoot: value.root, source: 'active' };
 }
 
 export function readHistory(input = {}) {
   const value = paths(input.stateRoot);
   if (!fs.existsSync(value.history)) return [];
-  return fs.readFileSync(value.history, 'utf8').split(/\r?\n/u).filter(Boolean).map((line) => migrateTask(JSON.parse(line)));
+  return fs.readFileSync(value.history, 'utf8').split(/\r?\n/u).filter(Boolean).map((line) => currentTask(JSON.parse(line)));
 }
 
 export function findTask(input = {}) {
   const value = paths(input.stateRoot);
   const file = taskFile(value, input.taskId);
-  if (fs.existsSync(file)) return { task: migrateTask(readRaw(file)), filePath: file, stateRoot: value.root, cacheFile: value.cache, source: 'active' };
+  if (fs.existsSync(file)) return { task: currentTask(readRaw(file)), filePath: file, stateRoot: value.root, source: 'active' };
   const history = readHistory({ stateRoot: value.root });
   const task = [...history].reverse().find((item) => item.taskId === input.taskId);
   if (!task) throw new Error(`未找到任务: ${input.taskId}`);
-  return { task, filePath: value.history, stateRoot: value.root, cacheFile: value.cache, source: 'history' };
+  return { task: currentTask(task), filePath: value.history, stateRoot: value.root, source: 'history' };
 }
 
 export function updateTask(input = {}) {
@@ -170,7 +127,7 @@ export function updateTask(input = {}) {
   return withFileLock(lockFile(value, input.taskId), () => {
     const file = taskFile(value, input.taskId);
     if (!fs.existsSync(file)) throw new Error(`未找到进行中的任务: ${input.taskId}`);
-    const current = migrateTask(readRaw(file));
+    const current = currentTask(readRaw(file));
     if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== current.stateRevision) {
       throw new Error(`任务状态版本冲突: 期望 ${input.expectedRevision}，当前 ${current.stateRevision}`);
     }
@@ -188,10 +145,10 @@ export function updateTask(input = {}) {
       if (target === 'accepted') next.acceptedAt = next.acceptedAt ?? next.updatedAt;
       appendJsonLineLocked(value.history, next, value.historyLock);
       fs.rmSync(file, { force: true });
-      return { task: next, filePath: null, stateRoot: value.root, cacheFile: value.cache };
+      return { task: next, filePath: null, stateRoot: value.root };
     }
     atomicWriteJson(file, next, value.pending);
-    return { task: next, filePath: file, stateRoot: value.root, cacheFile: value.cache };
+    return { task: next, filePath: file, stateRoot: value.root };
   }, { timeoutMs: 10000, staleMs: 60000 });
 }
 
@@ -200,7 +157,7 @@ export function listTasks(input = {}) {
   if (!fs.existsSync(value.active)) return { tasks: [], stateRoot: value.root };
   const tasks = fs.readdirSync(value.active)
     .filter((name) => name.endsWith('.json'))
-    .map((name) => migrateTask(readRaw(path.join(value.active, name))))
+    .map((name) => currentTask(readRaw(path.join(value.active, name))))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   return { tasks, stateRoot: value.root };
 }

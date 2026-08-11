@@ -26,12 +26,14 @@ function checkRoot(root) {
     return { relative, file, ok: fs.existsSync(file) && fs.statSync(file).isFile() };
   });
   let version = null;
+  let releaseVersion = null;
   try { version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version; } catch {}
-  return { ok: checks.every((item) => item.ok) && version === '2.2.1', root, version, checks };
+  try { releaseVersion = JSON.parse(fs.readFileSync(path.join(root, 'release-manifest.json'), 'utf8')).version; } catch {}
+  return { ok: checks.every((item) => item.ok) && Boolean(version) && version === releaseVersion, root, version, releaseVersion, checks };
 }
 
 function projectAgentText() {
-  return `# Project AI Entry\n\n## 系统入口\n\n- 先解析环境变量 \`AI_RD_OS_ROOT\`，读取其中的 \`AGENTS.md\`。\n- 本文件只补充当前项目事实，不替代 AI 研发操作系统的可信执行规则。\n\n## 项目知识\n\n- 模块规格：\`docs/modules/\`（存在时按目标模块读取）\n- 规格映射：\`.ai/spec-map.json\`（存在时使用）\n- 规格策略：\`.ai/spec-policy.json\`（存在时使用）\n- 项目经验：\`.ai/30-经验/\`（只按任务相关性读取）\n\n## 规则\n\n- 普通问答不建立 Task。\n- 只读分析先构建 Context，不修改仓库。\n- 写任务必须先准备 Task，再修改，最后交付并等待用户验收。\n- 规格、代码和测试冲突时不得静默选择。\n`;
+  return fs.readFileSync(path.join(SYSTEM_ROOT, '.ai', 'templates', 'project-AGENTS-template.md'), 'utf8');
 }
 
 try {

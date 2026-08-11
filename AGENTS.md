@@ -48,6 +48,8 @@ node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 交付 --task-id "<taskId>"
 
 处理：必须单独获得用户明确授权；准备 Task 不等于获得外部动作授权。没有授权时只制定方案或停在执行前。
 
+安全、认证、授权、隐私、数据迁移、不可逆操作、生产和发布还必须覆盖拒绝路径、数据前后、失败停止条件与可执行回滚。自动检查不得伪装成部署、重启、迁移或其他外部副作用。
+
 ## 二、权威顺序
 
 1. 用户本次明确目标、验收和授权；
@@ -91,7 +93,7 @@ node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 整理经验 --task-id "<accepted-t
   --keyword "<关键词1>,<关键词2>"
 ```
 
-系统会评分并检查重复；不会自动升级 Contract、Canonical、Skill、Prompt、模板或中央经验。
+系统生成 Markdown 候选并执行精确指纹查重；不会自动评分，也不会自动升级 Contract、Canonical、Skill、Prompt、模板或中央经验。
 
 ## 五、不可绕过规则
 

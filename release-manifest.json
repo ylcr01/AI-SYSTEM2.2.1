@@ -21,21 +21,9 @@
   "stabilityNote": "自动测试和技术验收通过；长期 stable 仍需 20～30 个真实项目任务验证。",
   "verification": {
     "baselineCommand": "node ./40-脚本/verify-system.mjs --profile baseline",
-    "implementationCommand": "node ./40-脚本/verify-implementation.mjs",
     "fullCommand": "node ./40-脚本/verify-system.mjs --profile release",
-    "coreTests": 48,
-    "integrationTests": 25,
-    "scenarioTests": 5,
-    "totalTests": 78,
-    "implementationAcceptance": 17,
-    "criticalAcceptance": 15,
     "technicalGate": "passed",
-    "fidelity": 100,
     "userAcceptance": "pending"
   },
-  "source": {
-    "inventoryScope": "deterministic-source",
-    "sourceFileCount": 154,
-    "sourceBytes": 348879
-  }
+  "sourceInventory": "运行 release 验证时生成到 80-运行记录/release/release-inventory.json，不作为源码维护"
 }

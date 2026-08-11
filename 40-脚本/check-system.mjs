@@ -27,16 +27,16 @@ for (const check of checkRegistry?.checks ?? []) {
 for (const relative of [
   'README.md', 'AGENTS.md', '.ai/checks.json',
   '.ai/templates/module-spec-template.md', '.ai/templates/decision-template.md', '.ai/templates/spec-map.example.json', '.ai/templates/spec-policy.example.json',
-  '00-大模型接入/通用自定义指令.md', '00-大模型接入/Codex-接入说明.md', '00-大模型接入/使用边界.md',
+  '00-大模型接入/接入说明.md',
   '10-注册表/projects.json', '10-注册表/templates.json',
-  '20-能力模块/00-质量宪法.md', '20-能力模块/10-通用工程契约.md', '20-能力模块/manifest.json',
+  '20-能力模块/10-通用工程契约.md', '20-能力模块/manifest.json',
   '30-知识库/索引.json',
   '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs',
   '40-脚本/build-release-inventory.mjs', '40-脚本/verify-system.mjs',
   '40-脚本/lib/state-manager.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
-  '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-quality.mjs', '40-脚本/lib/experience-dedupe.mjs',
-  '40-脚本/lib/manifest-reader.mjs', '50-检查规则/10-通用检查.md', '80-运行记录/README.md'
+  '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs',
+  '40-脚本/lib/manifest-reader.mjs', '80-运行记录/README.md'
 ]) requireFile(relative);
 
 try {
@@ -49,20 +49,17 @@ try {
 
 const abilityManifest = readJson('20-能力模块/manifest.json');
 const artifactKinds = new Set(['code','product','requirements','ui','api','data','integration','operations','documentation','knowledge']);
+if (abilityManifest?.schemaVersion !== 2) errors.push('20-能力模块/manifest.json: Schema 必须是 2');
 for (const ability of abilityManifest?.abilities ?? []) {
-  for (const key of ['skill','contract','verification']) requireFile(ability[key]);
+  for (const key of ['skill','contract']) requireFile(ability[key]);
   for (const kind of ability.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${ability.name}: artifactKind 无效 ${kind}`);
-  if (ability.exemplarIndex) {
-    const index = readJson(ability.exemplarIndex);
-    if (index?.schemaVersion !== 4 || !Array.isArray(index.exemplars)) errors.push(`${ability.exemplarIndex}: Schema 无效`);
-    for (const item of index?.exemplars ?? []) {
-      if (!['active','observe','retired','deprecated','disabled'].includes(item.status)) errors.push(`${item.id}: lifecycle 无效`);
-      if (item.status === 'active' && item.supersededBy) errors.push(`${item.id}: active 不能同时 superseded`);
-      for (const kind of item.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${item.id}: artifactKind 无效 ${kind}`);
-      for (const relative of item.read ?? []) {
-        const file = path.join(path.dirname(path.join(SYSTEM_ROOT, ability.exemplarIndex)), relative);
-        if (!fs.existsSync(file)) errors.push(`${item.id}: Canonical 文件不存在 ${relative}`);
-      }
+  for (const item of ability.exemplars ?? []) {
+    if (!['active','observe','retired','deprecated','disabled'].includes(item.status)) errors.push(`${item.id}: lifecycle 无效`);
+    if (item.status === 'active' && item.supersededBy) errors.push(`${item.id}: active 不能同时 superseded`);
+    for (const kind of item.artifactKinds ?? ability.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${item.id}: artifactKind 无效 ${kind}`);
+    for (const relative of item.read ?? []) {
+      const file = path.join(SYSTEM_ROOT, '20-能力模块', ability.name, relative);
+      if (!fs.existsSync(file)) errors.push(`${item.id}: Canonical 文件不存在 ${relative}`);
     }
   }
 }

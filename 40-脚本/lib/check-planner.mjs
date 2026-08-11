@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createBudget, budgetDecision, consumeBudget, remainingBudget } from './verification-budget.mjs';
-import { cacheEligible, checkCacheKey, lookupCheckCache, saveCheckCache } from './check-cache.mjs';
 
 const COST = { 'very-low': 0, low: 1, medium: 2, high: 3 };
 
@@ -18,13 +17,11 @@ function validateCheck(check, source) {
   }
   const sideEffect = check.sideEffect ?? 'workspace';
   if (!['none', 'workspace', 'external'].includes(sideEffect)) throw new Error(`${check.name} 副作用声明无效`);
-  if (check.cacheable === true && sideEffect !== 'none') throw new Error(`${check.name} 只有无副作用检查可以缓存`);
   return {
     profiles: ['standard'],
     covers: ['behavior'],
     estimatedCost: 'medium',
     timeoutMs: 600000,
-    cacheable: false,
     acceptanceMode: 'matching-covers',
     ...check,
     acceptanceIds: [...new Set(check.acceptanceIds ?? [])],
@@ -45,7 +42,6 @@ function packageChecks(root, fallback) {
     profiles: name === 'build' ? ['controlled', 'release'] : ['standard', 'controlled', 'release'],
     covers: name === 'typecheck' ? ['typecheck'] : name === 'lint' ? ['static'] : name === 'build' ? ['package'] : ['unit', 'behavior'],
     sideEffect: 'workspace',
-    cacheable: false,
     estimatedCost: name === 'build' ? 'high' : 'medium'
   }, 'package.json'));
 }
@@ -189,7 +185,6 @@ function executeOne(check, cwd, timeoutMs) {
     covers: check.covers ?? [],
     source: check.source,
     sideEffect: check.sideEffect,
-    cacheable: check.cacheable === true,
     acceptanceMode: check.acceptanceMode,
     acceptanceIds: check.acceptanceIds ?? [],
     artifacts: check.artifacts ?? []
@@ -207,37 +202,13 @@ export function executeCheckPlan(plan, options = {}) {
   if ((plan.checks ?? []).some((check) => check.sideEffect === 'external')) throw new Error('自动检查禁止执行外部写入');
   let budget = createBudget(options.budget ?? { mode: plan.profile });
   const results = [];
-  const cacheFile = options.cacheFile ?? path.join(options.stateRoot ?? process.cwd(), 'check-cache.json');
   for (const check of plan.checks ?? []) {
     const decision = budgetDecision(budget);
     if (!decision.allowed) return { ok: false, status: 'unavailable', stopReason: 'budget', results, budget };
-    const key = checkCacheKey({
-      taskId: options.taskId,
-      acceptanceFingerprint: options.acceptanceFingerprint,
-      planFingerprint: plan.fingerprint,
-      changeFingerprint: options.changeFingerprint,
-      inputCycle: options.inputCycle ?? 0,
-      command: check.command,
-      args: check.args,
-      cwd: options.cwd,
-      dependencyFingerprint: options.dependencyFingerprint,
-      configFingerprint: options.configFingerprint,
-      environmentIdentity: options.environmentIdentity
-    });
-    if (cacheEligible(check)) {
-      const cached = lookupCheckCache(cacheFile, key, { cwd: options.cwd });
-      if (cached?.status === 0 && !cached.error) {
-        results.push({ ...cached, reused: true, cacheKey: key, durationMs: 0 });
-        continue;
-      }
-    }
     const timeout = Math.max(1, Math.min(Number(check.timeoutMs ?? 600000), remainingBudget(budget)));
     const result = executeOne(check, options.cwd, timeout);
     budget = consumeBudget(budget, result.durationMs);
-    result.cacheKey = key;
-    result.reused = false;
     results.push(result);
-    if (cacheEligible(check) && result.status === 0 && !result.error) saveCheckCache(cacheFile, key, result);
     if (result.status !== 0 || result.error) {
       const timedOut = result.error?.includes('timed out');
       return { ok: false, status: timedOut ? 'unavailable' : 'failed', results, budget, stopReason: timedOut ? 'timeout' : 'failed' };

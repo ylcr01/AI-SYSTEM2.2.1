@@ -39,10 +39,6 @@ function hash(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function acceptanceFingerprint(items) {
-  return hash(items.map((item) => ({ id: item.id, description: item.description, requiredCovers: item.requiredCovers ?? [] })));
-}
-
 function stableFailureFingerprint(changeFingerprint, planFingerprint, inputCycle) {
   return hash({ changeFingerprint, planFingerprint, inputCycle });
 }
@@ -80,7 +76,6 @@ function evidenceFromCheck(task, changeSet, inputCycle, check) {
       summary: check.error ?? check.stderr?.text ?? `${check.name} 通过`,
       resultFingerprint: check.resultFingerprint
     },
-    cache: { cacheable: check.cacheable === true, cacheKey: check.cacheKey ?? null, reused: check.reused === true },
     createdAt: check.finishedAt ?? new Date().toISOString()
   });
 }
@@ -215,14 +210,8 @@ export function deliverTask(options = {}) {
     }
     checkExecution = executeCheckPlan(plan, {
       cwd: changeSet.gitRoot,
-      stateRoot: current.stateRoot,
-      cacheFile: current.cacheFile,
       budget: task.verification.budget,
-      taskId: task.taskId,
-      acceptanceFingerprint: acceptanceFingerprint(task.acceptance),
-      changeFingerprint: changeSet.fingerprint,
-      inputCycle,
-      environmentIdentity: options.environmentIdentity ?? null
+      inputCycle
     });
     const after = computeChangeSet(task.baseline);
     if (after.fingerprint !== before.fingerprint) {
@@ -252,35 +241,47 @@ export function deliverTask(options = {}) {
 
   const specState = buildSpecState(task, changeSet, options);
   const stableSpecState = stableSpecReviewState(specState);
-  const refs = qualityReviewRefs(task);
-  const reviewInput = {
-    taskId: task.taskId,
-    changeFingerprint: changeSet.fingerprint,
-    goal: task.goal,
-    acceptance: task.acceptance,
-    ...refs,
-    evidenceSummary: {
-      coveredAcceptance: summary.coveredAcceptance,
-      covers: summary.covers,
-      missingAcceptance: summary.missingAcceptance,
-      missingCovers: summary.missingCovers
-    },
-    specImpact: stableSpecState.specImpact,
-    specTraceability: stableSpecState.specTraceability,
-    specConsistency: stableSpecState.specConsistency,
-    residualRisks: options.residualRisks ?? []
-  };
-  const candidatePackage = buildReviewPackage({ ...reviewInput, createdAt: task.reviewPackage?.createdAt });
-  const reviewPackage = task.reviewPackage?.basisFingerprint === candidatePackage.basisFingerprint ? task.reviewPackage : buildReviewPackage(reviewInput);
-  const validReviews = reviews.filter((record) => validateReviewRecord(record, reviewContext(task, changeSet, reviewPackage)).valid);
-  const reviewSatisfied = reviewRequirementSatisfied(task.authorization.explicitReviewRequirement, validReviews, reviewContext(task, changeSet, reviewPackage));
+  const reviewRequested = Boolean(task.authorization.explicitReviewRequirement || reviews.length || task.reviewPackage);
+  let reviewPackage = null;
+  if (reviewRequested) {
+    const refs = qualityReviewRefs(task);
+    const reviewInput = {
+      taskId: task.taskId,
+      changeFingerprint: changeSet.fingerprint,
+      goal: task.goal,
+      acceptance: task.acceptance,
+      ...refs,
+      evidenceSummary: {
+        coveredAcceptance: summary.coveredAcceptance,
+        covers: summary.covers,
+        missingAcceptance: summary.missingAcceptance,
+        missingCovers: summary.missingCovers
+      },
+      specImpact: stableSpecState.specImpact,
+      specTraceability: stableSpecState.specTraceability,
+      specConsistency: stableSpecState.specConsistency,
+      residualRisks: options.residualRisks ?? []
+    };
+    const candidatePackage = buildReviewPackage({ ...reviewInput, createdAt: task.reviewPackage?.createdAt });
+    reviewPackage = task.reviewPackage?.basisFingerprint === candidatePackage.basisFingerprint
+      ? task.reviewPackage
+      : buildReviewPackage(reviewInput);
+  }
+  const validReviews = reviewPackage
+    ? reviews.filter((record) => validateReviewRecord(record, reviewContext(task, changeSet, reviewPackage)).valid)
+    : [];
+  const reviewSatisfied = reviewRequirementSatisfied(
+    task.authorization.explicitReviewRequirement,
+    validReviews,
+    reviewPackage ? reviewContext(task, changeSet, reviewPackage) : {}
+  );
   const blockingReview = reviewHasBlockingFindings(validReviews);
 
   let decision;
   if (checkExecution?.stopReason === 'budget') decision = { decision: 'saved', reasons: ['budget'] };
   else if (checkExecution?.stopReason === 'check-mutated-input') decision = { decision: 'verifying', reasons: ['check-mutated-input'] };
   else if (checkExecution && !checkExecution.ok) decision = { decision: 'needs_rework', reasons: [checkExecution.stopReason ?? checkExecution.status] };
-  else if (!specState.specConsistency.ok) decision = { decision: 'needs_rework', reasons: ['spec-consistency', ...specState.specConsistency.blockingIssues.map((item) => item.id)] };
+  else if (specState.specConsistency && !specState.specConsistency.ok) decision = { decision: 'needs_rework', reasons: ['spec-consistency', ...specState.specConsistency.blockingIssues.map((item) => item.id)] };
   else {
     decision = evaluateDeliveryEligibility({
       identityValid: Boolean(task.context?.context?.gitRoot),
@@ -357,7 +358,7 @@ function revalidateForAcceptance(task) {
   const specState = revalidateSpecState(task, changeSet);
   const traceability = specState.specTraceability;
   const specConsistency = specState.specConsistency;
-  if (!specConsistency.ok) throw new Error(`验收前规格一致性门禁已失效: ${specConsistency.blockingIssues.map((item) => item.id).join(', ')}`);
+  if (specConsistency && !specConsistency.ok) throw new Error(`验收前规格一致性门禁已失效: ${specConsistency.blockingIssues.map((item) => item.id).join(', ')}`);
   const pack = task.reviewPackage;
   const validReviews = (task.reviews ?? []).filter((record) => pack && validateReviewRecord(record, reviewContext(task, changeSet, pack)).valid);
   const reviewSatisfied = reviewRequirementSatisfied(task.authorization.explicitReviewRequirement, validReviews, pack ? reviewContext(task, changeSet, pack) : {});

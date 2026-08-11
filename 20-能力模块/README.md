@@ -1,9 +1,11 @@
-# Skill、Contract、Verification 与 Canonical
+# Skill、Contract 与 Canonical
 
 - `SKILL.md`：短方法入口，只说明何时使用和读取什么。
-- `CONTRACT.md`：领域工程不变量、默认职责和偏离边界。
-- `VERIFICATION.md`：可能需要证明的行为和质量维度。
-- `样板/索引.json`：可验证的 Canonical 索引。
+- `CONTRACT.md`：领域工程不变量、默认职责、偏离边界和验证维度。
+- `样板/*.md`：可读取的 Canonical 内容。
+- `manifest.json`：能力与样板的唯一中央索引；人工登记，程序自动路由。
+
+同一能力只有一个稳定范式时直接维护当前样板。只有出现两个以上经真实项目验证、适用条件不同且需要自动选择的范式时，才向该能力的 `exemplars` 数组追加登记；无需改变加载器或目录结构。
 
 默认路由：
 

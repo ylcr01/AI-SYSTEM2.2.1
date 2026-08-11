@@ -23,16 +23,14 @@ test('Experience Candidate 只能从已验收 Task 生成', () => {
   assert.throws(() => createExperienceCandidate({ ...acceptedTask(), status: 'waiting_acceptance' }), /已验收/u);
 });
 
-test('高质量候选获得透明评分并保留来源规格', () => {
+test('候选保留已验收来源、规格和精确指纹', () => {
   const candidate = createExperienceCandidate(acceptedTask(), {
     rootCause: '第三方支付平台会重复发送相同事件，旧实现没有持久化幂等键',
     action: '在业务事务中按事件 ID 建立唯一幂等记录，重复事件直接返回已有结果',
     boundary: '仅适用于至少一次投递的支付回调和消息消费入口',
-    keywords: ['支付回调', '幂等'],
-    recurrenceCount: 2,
-    impact: 'high'
+    keywords: ['支付回调', '幂等']
   });
-  assert.equal(candidate.quality.recommended, true);
+  assert.match(candidate.contentFingerprint, /^[0-9a-f]{64}$/u);
   assert.deepEqual(candidate.source.specificationIds, ['BR-PAY-001','EX-PAY-002']);
 });
 
@@ -42,12 +40,11 @@ test('保存候选时检测内容重复并阻止再次写入', (t) => {
     rootCause: '第三方支付平台会重复发送相同事件，旧实现没有持久化幂等键',
     action: '在业务事务中按事件 ID 建立唯一幂等记录，重复事件直接返回已有结果',
     boundary: '仅适用于至少一次投递的支付回调和消息消费入口',
-    keywords: ['支付回调', '幂等'],
-    recurrenceCount: 2,
-    impact: 'high'
+    keywords: ['支付回调', '幂等']
   };
   const first = saveExperienceCandidate(root, createExperienceCandidate(acceptedTask(), input));
   assert.equal(first.saved, true);
+  assert.equal(path.extname(first.file), '.md');
   const second = saveExperienceCandidate(root, createExperienceCandidate({ ...acceptedTask(), taskId: 'task-accepted-2' }, input));
   assert.equal(second.saved, false);
   assert.equal(second.reason, 'duplicate');
@@ -79,21 +76,15 @@ keywords: [支付回调, 幂等]
     rootCause: '第三方支付平台会重复发送相同事件，旧实现没有持久化幂等键',
     action: '在业务事务中按事件 ID 建立唯一幂等记录，重复事件直接返回已有结果',
     boundary: '仅适用于至少一次投递的支付回调和消息消费入口',
-    keywords: ['支付回调', '幂等'], recurrenceCount: 2, impact: 'high'
+    keywords: ['支付回调', '幂等']
   });
   const saved = saveExperienceCandidate(root, candidate);
   assert.equal(saved.saved, false);
   assert.equal(saved.reason, 'duplicate');
 });
 
-test('低质量候选默认不落盘，显式授权后才保存', (t) => {
-  const root = tempDir(t);
-  const candidate = createExperienceCandidate(acceptedTask(), {
-    trigger: '问题', rootCause: '未知', action: '重试', boundary: '无', keywords: []
-  });
-  const blocked = saveExperienceCandidate(root, candidate);
-  assert.equal(blocked.saved, false);
-  assert.equal(blocked.reason, 'quality-insufficient');
-  const allowed = saveExperienceCandidate(root, candidate, { allowLowQuality: true });
-  assert.equal(allowed.saved, true);
+test('候选缺少根因、动作或边界时直接拒绝', () => {
+  assert.throws(() => createExperienceCandidate(acceptedTask(), {
+    rootCause: '', action: '重试', boundary: '支付回调'
+  }), /缺少根因/u);
 });
