@@ -1,2 +1,81 @@
-import crypto from 'node:crypto';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import { fileURLToPath } from 'node:url';const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');const contract=JSON.parse(fs.readFileSync(path.join(ROOT,'70-文档/implementation-contract.json'),'utf8'));const total=contract.acceptance.reduce((s,x)=>s+x.weight,0);if(total!==100)throw new Error('验收权重必须为 100');const cache=new Map();function run(spec){const key=JSON.stringify(spec);if(cache.has(key))return cache.get(key);const startedAt=new Date().toISOString();const result=spawnSync(spec.command,spec.args,{cwd:ROOT,encoding:'utf8',windowsHide:true,shell:process.platform==='win32',timeout:600000,maxBuffer:16*1024*1024});const value={command:spec.command,args:spec.args,startedAt,finishedAt:new Date().toISOString(),exitCode:result.status,status:result.status===0&&!result.error?'passed':'failed',stdout:String(result.stdout??'').slice(-4000),stderr:String(result.stderr??'').slice(-4000),error:result.error?.message??null};cache.set(key,value);return value;}const items=contract.acceptance.map(item=>{const commands=item.verification.map(run);return{...item,status:commands.every(x=>x.status==='passed')?'passed':'failed',commands,residualIssues:commands.filter(x=>x.status!=='passed').map(x=>x.error??x.stderr)}});const passedWeight=items.filter(x=>x.status==='passed').reduce((s,x)=>s+x.weight,0);const critical=items.filter(x=>x.critical);function sourceFingerprint(){const entries=[];function walk(dir){for(const name of fs.readdirSync(dir).sort()){const file=path.join(dir,name);const rel=path.relative(ROOT,file).replaceAll('\\','/');if(rel.startsWith('80-运行记录/')||rel.startsWith('70-文档/验证记录/')||name==='node_modules')continue;const stat=fs.statSync(file);if(stat.isDirectory())walk(file);else entries.push([rel,crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')]);}}walk(ROOT);return crypto.createHash('sha256').update(JSON.stringify(entries)).digest('hex');}
-const report={schemaVersion:1,designId:contract.designId,generatedAt:new Date().toISOString(),sourceFingerprint:sourceFingerprint(),critical:{total:critical.length,passed:critical.filter(x=>x.status==='passed').length},weight:{total,passed:passedWeight},fidelity:passedWeight/total*100,technicalGateEligible:critical.every(x=>x.status==='passed')&&passedWeight/total*100>=contract.releaseGate.minimumFidelity,userAcceptance:'pending',releaseEligible:false,acceptance:items};const out=path.join(ROOT,contract.resultPath);fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({output:out,critical:report.critical,fidelity:report.fidelity,technicalGateEligible:report.technicalGateEligible},null,2));if(!report.technicalGateEligible)process.exitCode=1;
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { sourceFingerprint } from './lib/source-fingerprint.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const contract = JSON.parse(fs.readFileSync(path.join(ROOT, '70-文档/implementation-contract.json'), 'utf8'));
+const total = contract.acceptance.reduce((sum, item) => sum + item.weight, 0);
+if (total !== 100) throw new Error('验收权重必须为 100');
+
+const cache = new Map();
+function run(spec) {
+  const key = JSON.stringify(spec);
+  if (cache.has(key)) return cache.get(key);
+  const startedAt = new Date().toISOString();
+  const executable = spec.command === 'node' ? process.execPath : spec.command;
+  const result = spawnSync(executable, spec.args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    windowsHide: true,
+    shell: false,
+    timeout: 600000,
+    maxBuffer: 16 * 1024 * 1024
+  });
+  const value = {
+    command: spec.command,
+    args: spec.args,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    exitCode: result.status,
+    status: result.status === 0 && !result.error ? 'passed' : 'failed',
+    stdout: String(result.stdout ?? '').slice(-4000),
+    stderr: String(result.stderr ?? '').slice(-4000),
+    error: result.error?.message ?? null
+  };
+  cache.set(key, value);
+  return value;
+}
+
+const items = contract.acceptance.map((item) => {
+  const commands = item.verification.map(run);
+  return {
+    ...item,
+    status: commands.every((result) => result.status === 'passed') ? 'passed' : 'failed',
+    commands,
+    residualIssues: commands.filter((result) => result.status !== 'passed')
+      .map((result) => result.error ?? result.stderr)
+  };
+});
+const passedWeight = items.filter((item) => item.status === 'passed')
+  .reduce((sum, item) => sum + item.weight, 0);
+const critical = items.filter((item) => item.critical);
+const report = {
+  schemaVersion: 1,
+  designId: contract.designId,
+  generatedAt: new Date().toISOString(),
+  sourceFingerprint: sourceFingerprint(ROOT),
+  critical: {
+    total: critical.length,
+    passed: critical.filter((item) => item.status === 'passed').length
+  },
+  weight: { total, passed: passedWeight },
+  fidelity: passedWeight / total * 100,
+  technicalGateEligible: critical.every((item) => item.status === 'passed')
+    && passedWeight / total * 100 >= contract.releaseGate.minimumFidelity,
+  userAcceptance: 'pending',
+  releaseEligible: false,
+  acceptance: items
+};
+const output = path.join(ROOT, contract.resultPath);
+fs.mkdirSync(path.dirname(output), { recursive: true });
+fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+console.log(JSON.stringify({
+  output,
+  critical: report.critical,
+  fidelity: report.fidelity,
+  technicalGateEligible: report.technicalGateEligible,
+  sourceFingerprint: report.sourceFingerprint
+}, null, 2));
+if (!report.technicalGateEligible) process.exitCode = 1;

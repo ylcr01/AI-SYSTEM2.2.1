@@ -3,7 +3,7 @@
 1. 设置环境变量：
 
 ```powershell
-$env:AI_RD_OS_ROOT = "D:\你的路径\AI-SYSTEM-V2.2.1"
+$env:AI_RD_OS_ROOT = "D:\00-AI研发工作区\01-AI研发操作系统"
 ```
 
 需要长期保存时，在 Windows 用户环境变量中创建同名变量。

@@ -1,5 +1,5 @@
 {
-  "name": "personal-ai-system-v2",
+  "name": "personal-ai-rd-operating-system",
   "version": "2.2.1",
   "private": true,
   "type": "module",
@@ -9,18 +9,19 @@
     "entry": "node ./40-脚本/configure-model-entry.mjs",
     "spec:map": "node ./40-脚本/spec-map.mjs",
     "spec:check": "node ./40-脚本/spec-consistency.mjs",
-    "test:core": "node --test ./60-测试/core/atomic-file.test.mjs ./60-测试/core/budget-cache.test.mjs ./60-测试/core/evidence.test.mjs ./60-测试/core/experience-candidate.test.mjs ./60-测试/core/instruction-entry.test.mjs ./60-测试/core/manifest-reader.test.mjs ./60-测试/core/registry.test.mjs ./60-测试/core/review.test.mjs ./60-测试/core/spec-consistency.test.mjs ./60-测试/core/spec-mapper.test.mjs ./60-测试/core/state-manager.test.mjs ./60-测试/core/task-policy.test.mjs",
+    "test:core": "node --test ./60-测试/core/atomic-file.test.mjs ./60-测试/core/budget-cache.test.mjs ./60-测试/core/evidence.test.mjs ./60-测试/core/experience-candidate.test.mjs ./60-测试/core/instruction-entry.test.mjs ./60-测试/core/manifest-reader.test.mjs ./60-测试/core/registry.test.mjs ./60-测试/core/review.test.mjs ./60-测试/core/source-fingerprint.test.mjs ./60-测试/core/spec-consistency.test.mjs ./60-测试/core/spec-mapper.test.mjs ./60-测试/core/state-manager.test.mjs ./60-测试/core/task-policy.test.mjs",
     "test:integration": "node --test ./60-测试/integration/check-planner.test.mjs ./60-测试/integration/context-quality.test.mjs ./60-测试/integration/git-state.test.mjs ./60-测试/integration/handoff.test.mjs ./60-测试/integration/legacy-compat.test.mjs ./60-测试/integration/spec-task-flow.test.mjs ./60-测试/integration/task-runner.test.mjs",
     "test:scenarios": "node --test ./60-测试/scenarios/cli.test.mjs ./60-测试/scenarios/trust-gates.test.mjs",
-    "test": "npm run test:core && npm run test:integration && npm run test:scenarios",
-    "test:baseline": "npm run check && npm test",
+    "test": "node ./40-脚本/verify-system.mjs --profile tests",
+    "test:baseline": "node ./40-脚本/verify-system.mjs --profile baseline",
     "verify:implementation": "node ./40-脚本/verify-implementation.mjs",
+    "release:inventory": "node ./40-脚本/build-release-inventory.mjs",
     "context": "node ./40-脚本/build-context.mjs",
     "task": "node ./40-脚本/task.mjs",
     "checks": "node ./40-脚本/run-checks.mjs",
     "registry": "node ./40-脚本/manage-registry.mjs",
     "validate:evidence": "node ./40-脚本/validate-evidence.mjs",
-    "verify:v2.2.1": "npm run test:baseline && npm run verify:implementation"
+    "verify:v2.2.1": "node ./40-脚本/verify-system.mjs --profile release"
   },
   "engines": {
     "node": ">=20"

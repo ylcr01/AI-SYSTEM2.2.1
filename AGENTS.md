@@ -1,6 +1,6 @@
-# AI-SYSTEM V2.2.1 大模型入口与可信执行规则
+# AI 研发操作系统 V2.2.1 大模型入口与可信执行规则
 
-本文件是支持本地文件和终端执行的大模型宿主（ChatGPT Code、Codex、Claude Code 等）进入 AI-SYSTEM 的全局入口。
+本文件是支持本地文件和终端执行的大模型宿主（ChatGPT Code、Codex、Claude Code 等）进入 AI 研发操作系统的全局入口。
 
 ## 一、先判断对话类型
 

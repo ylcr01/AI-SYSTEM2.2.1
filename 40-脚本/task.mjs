@@ -19,7 +19,7 @@ function output(result) {
 }
 
 function help() {
-  console.log(`AI-SYSTEM V2.2.1：
+  console.log(`AI 研发操作系统 V2.2.1：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]

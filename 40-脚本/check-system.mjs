@@ -18,6 +18,11 @@ function readJson(relative) {
 
 const pkg = readJson('package.json');
 if (pkg?.version !== '2.2.1') errors.push('package.json: 版本必须为 2.2.1');
+if (pkg?.name !== 'personal-ai-rd-operating-system') errors.push('package.json: 产品名称无效');
+const checkRegistry = readJson('.ai/checks.json');
+for (const check of checkRegistry?.checks ?? []) {
+  if (['npm', 'npx'].includes(check.command)) errors.push(`.ai/checks.json: ${check.name} 必须使用纯 Node 入口`);
+}
 
 for (const relative of [
   'README.md', 'AGENTS.md', '.ai/checks.json',
@@ -27,6 +32,7 @@ for (const relative of [
   '20-能力模块/00-质量宪法.md', '20-能力模块/10-通用工程契约.md', '20-能力模块/manifest.json',
   '30-知识库/索引.json',
   '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs',
+  '40-脚本/build-release-inventory.mjs', '40-脚本/verify-system.mjs',
   '40-脚本/lib/state-manager.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
   '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-quality.mjs', '40-脚本/lib/experience-dedupe.mjs',

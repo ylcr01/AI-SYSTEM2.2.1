@@ -30,10 +30,13 @@
     },
     {
       "name": "core-tests",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "test:core"
+        "40-脚本/verify-system.mjs",
+        "--profile",
+        "tests",
+        "--group",
+        "core"
       ],
       "profiles": [
         "standard",
@@ -52,10 +55,13 @@
     },
     {
       "name": "integration-tests",
-      "command": "npm",
+      "command": "node",
       "args": [
-        "run",
-        "test:integration"
+        "40-脚本/verify-system.mjs",
+        "--profile",
+        "tests",
+        "--group",
+        "integration"
       ],
       "profiles": [
         "controlled",

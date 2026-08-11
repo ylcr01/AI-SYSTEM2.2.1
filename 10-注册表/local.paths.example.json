@@ -1,5 +1,9 @@
 {
-  "template.web-example": "D:/templates/web-example",
-  "project.example": "D:/projects/example",
-  "project.example.web": "D:/projects/example/web"
+  "template.web-vben": "D:/templates/web-vben",
+  "template.web-vben-lite": "D:/templates/web-vben-lite",
+  "template.app-uniapp": "D:/templates/app-uniapp",
+  "template.app-uniapp-base": "D:/templates/app-uniapp-base",
+  "template.server-ruoyi": "D:/templates/server-ruoyi",
+  "project.vehicle-reservation": "D:/projects/vehicle-reservation",
+  "project.vehicle-reservation.web": "D:/projects/vehicle-reservation/web"
 }

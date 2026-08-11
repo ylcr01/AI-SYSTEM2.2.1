@@ -112,8 +112,17 @@ export function validateRegistry(registry) {
     templateById.set(template.id, template);
     if (!VALID_ROLES.has(template.role)) errors.push({ location: template.id, message: '模板角色无效' });
     addPathKey(template.localPathKey, template.id);
+    if (template.repository?.allowedRemotes !== undefined && !Array.isArray(template.repository.allowedRemotes)) errors.push({ location: template.id, message: '模板 Allowed Remotes 必须是数组' });
     if (!validRelative(template.entrypoints?.agents) || !validRelative(template.entrypoints?.manifest)) errors.push({ location: template.id, message: '模板入口必须是仓库内相对路径' });
     if (template.quality?.manifest && !validRelative(template.quality.manifest)) errors.push({ location: template.id, message: '质量清单路径无效' });
+    if (template.knowledge?.mode && !['in-repo', 'none'].includes(template.knowledge.mode)) errors.push({ location: template.id, message: '模板知识模式无效' });
+    if (template.knowledge?.root && !validRelative(template.knowledge.root)) errors.push({ location: template.id, message: '模板知识根目录无效' });
+    if (template.knowledge?.manifest && !validRelative(template.knowledge.manifest)) errors.push({ location: template.id, message: '模板知识清单路径无效' });
+    if (template.knowledge?.root && template.knowledge?.manifest
+      && template.knowledge.manifest !== template.knowledge.root
+      && !template.knowledge.manifest.startsWith(`${template.knowledge.root}/`)) {
+      errors.push({ location: template.id, message: '模板知识清单必须位于知识根目录内' });
+    }
     if (template.enabled !== false) addIdentity('template', template.id, template.repository?.canonicalRemote);
   }
 
@@ -121,6 +130,7 @@ export function validateRegistry(registry) {
     if (!project || !addId(project.id, 'projects')) continue;
     addPathKey(project.localPathKey, project.id);
     if (!validRelative(project.entrypoints?.agents)) errors.push({ location: project.id, message: '项目入口路径无效' });
+    if (project.entrypoints?.docs && !validRelative(project.entrypoints.docs)) errors.push({ location: project.id, message: '项目说明路径无效' });
     if (!Array.isArray(project.modules)) { errors.push({ location: project.id, message: 'modules 必须是数组' }); continue; }
     for (const module of project.modules) {
       addId(module.id, project.id); addPathKey(module.localPathKey, module.id);
@@ -163,6 +173,74 @@ function matchingProjects(registry, cwd, gitRoot, remote) {
   return matches;
 }
 
+function acceptedTemplateRemotes(template) {
+  return [template.repository?.canonicalRemote, ...(template.repository?.allowedRemotes ?? [])]
+    .map(normalizeRemote).filter(Boolean);
+}
+
+function boundTemplate(registry, module) {
+  if (!module.templateId) return { template: null, templatePath: null };
+  const template = (registry.templates.templates ?? [])
+    .find((item) => item.id === module.templateId && item.enabled !== false);
+  if (!template) throw new Error(`项目模块绑定的模板不可用: ${module.templateId}`);
+  const templatePath = registry.localPaths[template.localPathKey];
+  if (!templatePath || !fs.existsSync(templatePath)) throw new Error(`模板本机路径不可访问: ${template.id}`);
+  const templateGitRoot = findGitRoot(templatePath);
+  if (!templateGitRoot || normalizePath(templateGitRoot) !== normalizePath(templatePath)) {
+    throw new Error(`模板路径不是独立 Git Root: ${template.id}`);
+  }
+  const remote = normalizeRemote(getGitRemote(templateGitRoot));
+  if (!acceptedTemplateRemotes(template).includes(remote)) throw new Error(`模板身份冲突: ${template.id}`);
+  return { template, templatePath: realDirectory(templatePath) };
+}
+
+function withProjectModule(context, module) {
+  const modulePath = context.registry.localPaths[module.localPathKey];
+  if (!modulePath || !fs.existsSync(modulePath)) throw new Error(`项目模块路径不可访问: ${module.id}`);
+  const moduleGitRoot = findGitRoot(modulePath);
+  const remote = moduleGitRoot ? normalizeRemote(getGitRemote(moduleGitRoot)) : '';
+  if (!moduleGitRoot || remote !== normalizeRemote(module.canonicalRemote)) {
+    throw new Error(`项目模块身份冲突: ${module.id}`);
+  }
+  if (module.subpath && normalizePath(path.join(moduleGitRoot, module.subpath)) !== normalizePath(modulePath)) {
+    throw new Error(`模块 Subpath 与登记路径不一致: ${module.id}`);
+  }
+  const template = boundTemplate(context.registry, module);
+  return {
+    ...context,
+    kind: 'project-module',
+    gitRoot: moduleGitRoot,
+    remote,
+    module,
+    modulePath: realDirectory(modulePath),
+    ...template,
+    moduleCandidates: null
+  };
+}
+
+export function selectProjectModule(context, role = null) {
+  if (!context.project || context.module) return context;
+  const enabledCandidates = (context.project.modules ?? []).filter((module) => {
+    const modulePath = context.registry.localPaths[module.localPathKey];
+    return modulePath && fs.existsSync(modulePath);
+  });
+  const roleCandidates = role
+    ? enabledCandidates.filter((module) => module.role === role)
+    : enabledCandidates;
+  const candidates = role ? roleCandidates : enabledCandidates;
+  if (candidates.length === 1) return withProjectModule(context, candidates[0]);
+  const visibleCandidates = candidates.length ? candidates : enabledCandidates;
+  return {
+    ...context,
+    moduleCandidates: visibleCandidates.map((module) => ({
+      id: module.id,
+      role: module.role,
+      path: context.registry.localPaths[module.localPathKey],
+      templateId: module.templateId ?? null
+    }))
+  };
+}
+
 export function resolveContext(options = {}) {
   const registry = options.registry ?? loadRegistry(options.root);
   const validation = validateRegistry(registry);
@@ -182,19 +260,18 @@ export function resolveContext(options = {}) {
   if (matches.length > 1) throw new Error(`项目或模块身份多重匹配: ${matches.map((x) => x.module?.id ?? x.project.id).join(', ')}`);
   if (matches.length === 1) {
     const match = matches[0];
-    const template = match.module?.templateId
-      ? (registry.templates.templates ?? []).find((item) => item.id === match.module.templateId && item.enabled !== false)
-      : null;
-    const templatePath = template ? registry.localPaths[template.localPathKey] ?? null : null;
-    return { kind: match.module ? 'project-module' : 'project', cwd, gitRoot, remote, registry,
-      project: match.project, projectPath: match.projectPath, module: match.module, modulePath: match.modulePath,
-      template, templatePath };
+    const projectContext = {
+      kind: 'project', cwd, gitRoot, remote, registry,
+      project: match.project, projectPath: match.projectPath,
+      module: null, modulePath: null, template: null, templatePath: null
+    };
+    return match.module ? withProjectModule(projectContext, match.module) : projectContext;
   }
 
   for (const template of (registry.templates.templates ?? []).filter((item) => item.enabled !== false)) {
     const templatePath = registry.localPaths[template.localPathKey];
     if (templatePath && normalizePath(templatePath) === normalizePath(gitRoot ?? cwd)) {
-      if (normalizeRemote(template.repository?.canonicalRemote) !== remote) throw new Error(`模板身份冲突: ${template.id}`);
+      if (!acceptedTemplateRemotes(template).includes(remote)) throw new Error(`模板身份冲突: ${template.id}`);
       return { kind: 'template', cwd, gitRoot, remote, registry, template, templatePath };
     }
   }
@@ -208,6 +285,7 @@ export function publicContext(context) {
     head: context.gitRoot ? runGit(context.gitRoot, ['rev-parse', 'HEAD']) : null,
     project: context.project ? { id: context.project.id, path: context.projectPath } : null,
     module: context.module ? { id: context.module.id, role: context.module.role, path: context.modulePath, subpath: context.module.subpath ?? null } : null,
-    template: context.template ? { id: context.template.id, role: context.template.role, path: context.templatePath } : null
+    template: context.template ? { id: context.template.id, role: context.template.role, path: context.templatePath } : null,
+    moduleCandidates: context.moduleCandidates ?? []
   };
 }

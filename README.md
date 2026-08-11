@@ -1,6 +1,6 @@
-# AI-SYSTEM V2.2.1
+# AI 研发操作系统 V2.2.1
 
-AI-SYSTEM V2.2.1 是面向强推理模型的轻量可信软件生产内核。它通过宿主自定义指令和根 `AGENTS.md` 接入 Codex、ChatGPT Code、Claude Code 等具备本地文件与终端能力的模型，不引入常驻 Host Adapter。
+AI 研发操作系统 V2.2.1 是面向强推理模型的轻量可信软件生产内核。它通过宿主自定义指令和根 `AGENTS.md` 接入 Codex、ChatGPT Code、Claude Code 等具备本地文件与终端能力的模型，不引入常驻 Host Adapter。
 
 ## 核心闭环
 
@@ -82,12 +82,24 @@ node ./40-脚本/task.mjs 整理经验 --task-id <已验收编号> `
   --keyword "关键词1,关键词2" --occurrence 2 --impact high
 ```
 
+## 项目与整项目底座
+
+注册表只保存身份和本机路径，不复制外部源码。项目模块通过 `templateId` 显式绑定整项目底座；上下文按“项目 → 底座 → 中央”取事实，并且每次最多读取两份命中任务关键词的底座资料。
+
+```powershell
+node ./40-脚本/manage-registry.mjs list
+node ./40-脚本/manage-registry.mjs validate
+node ./40-脚本/manage-registry.mjs help
+```
+
 ## 验证
 
 ```powershell
-npm run check
-npm test
-npm run verify:v2.2.1
+node ./40-脚本/check-system.mjs
+node ./40-脚本/verify-system.mjs --profile tests
+node ./40-脚本/verify-system.mjs --profile release
 ```
+
+以上入口只依赖 Node.js；安装了 npm 时，仍可使用对应的 `npm run` 别名。
 
 当前状态为 `runnable-baseline`。长期 `stable` 仍需 20～30 个真实项目任务验证。

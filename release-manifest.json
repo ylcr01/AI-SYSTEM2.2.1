@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "name": "AI-SYSTEM",
+  "name": "AI研发操作系统",
   "version": "2.2.1",
   "packageType": "complete-source-code",
   "entrypoints": {
@@ -10,7 +10,8 @@
     "specMap": "40-脚本/spec-map.mjs",
     "specConsistency": "40-脚本/spec-consistency.mjs",
     "checks": "40-脚本/run-checks.mjs",
-    "systemCheck": "40-脚本/check-system.mjs"
+    "systemCheck": "40-脚本/check-system.mjs",
+    "releaseInventory": "40-脚本/build-release-inventory.mjs"
   },
   "requirements": {
     "node": ">=20",
@@ -19,13 +20,13 @@
   "status": "runnable-baseline",
   "stabilityNote": "自动测试和技术验收通过；长期 stable 仍需 20～30 个真实项目任务验证。",
   "verification": {
-    "baselineCommand": "npm run test:baseline",
-    "implementationCommand": "npm run verify:implementation",
-    "fullCommand": "npm run verify:v2.2.1",
-    "coreTests": 46,
-    "integrationTests": 22,
+    "baselineCommand": "node ./40-脚本/verify-system.mjs --profile baseline",
+    "implementationCommand": "node ./40-脚本/verify-implementation.mjs",
+    "fullCommand": "node ./40-脚本/verify-system.mjs --profile release",
+    "coreTests": 48,
+    "integrationTests": 25,
     "scenarioTests": 5,
-    "totalTests": 73,
+    "totalTests": 78,
     "implementationAcceptance": 17,
     "criticalAcceptance": 15,
     "technicalGate": "passed",
@@ -33,7 +34,8 @@
     "userAcceptance": "pending"
   },
   "source": {
-    "sourceFileCount": 153,
-    "sourceBytes": 356911
+    "inventoryScope": "deterministic-source",
+    "sourceFileCount": 154,
+    "sourceBytes": 348879
   }
 }

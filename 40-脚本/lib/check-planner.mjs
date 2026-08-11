@@ -154,6 +154,7 @@ function tail(value, max = 5000) {
 }
 
 function resolveCommand(command) {
+  if (command === 'node') return { command: process.execPath, prefix: [] };
   if (process.platform !== 'win32') return { command, prefix: [] };
   if (/\.(cmd|bat)$/iu.test(command)) return { command: process.env.ComSpec ?? 'cmd.exe', prefix: ['/d', '/s', '/c', command] };
   if (['npm', 'npx'].includes(command)) return { command: process.env.ComSpec ?? 'cmd.exe', prefix: ['/d', '/s', '/c', `${command}.cmd`] };

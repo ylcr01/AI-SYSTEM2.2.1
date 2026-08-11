@@ -1,6 +1,6 @@
 # Claude Code 接入说明
 
-Claude Code 可通过全局或项目级 `CLAUDE.md` 引用 AI-SYSTEM：
+Claude Code 可通过全局或项目级 `CLAUDE.md` 引用 AI 研发操作系统：
 
 ```markdown
 Before any repository-dependent action, resolve `AI_RD_OS_ROOT` and read its `AGENTS.md`.

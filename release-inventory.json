@@ -1,48 +1,14 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "version": "2.2.1",
-  "sourceFileCount": 153,
-  "sourceBytes": 356911,
+  "scope": "deterministic-source",
+  "sourceFileCount": 154,
+  "sourceBytes": 348879,
   "files": [
     {
-      "path": ".gitignore",
-      "bytes": 272,
-      "sha256": "b6c750518d3891cf3a9a304ab38829b3118a2dda6063f22acb5185142db892a7"
-    },
-    {
-      "path": "AGENTS.md",
-      "bytes": 3933,
-      "sha256": "fcf575e3979c322f07a817afebcd4a102aea82585acb5c09fea1b113331a921a"
-    },
-    {
-      "path": "CHANGELOG.md",
-      "bytes": 1869,
-      "sha256": "5b7d79c25ac1bc5a5ec10589cc152f625a15ada5afb9e9a18728fb8293a68e1d"
-    },
-    {
-      "path": "README.md",
-      "bytes": 3394,
-      "sha256": "704a66d05c27155e398f9501e3bb24693090d8a5dd5fbb40d7e8b9f50eaa037f"
-    },
-    {
-      "path": "package.json",
-      "bytes": 2056,
-      "sha256": "256e1d44e7eb706108810d75ad0f142cb1cb5c6e5394d8a2c84dff2715c9f72e"
-    },
-    {
-      "path": "release-manifest.json",
-      "bytes": 1184,
-      "sha256": "5fd95bbcb45b6e96e45d2c12a157b5514b625a615c566403dd6eb08d437e704a"
-    },
-    {
-      "path": "source-baseline.json",
-      "bytes": 699,
-      "sha256": "f7f150f6825d50fbb654cb9c426a0d970855a73c775cb94c7b5ec94f4c48f86d"
-    },
-    {
       "path": ".ai/checks.json",
-      "bytes": 1450,
-      "sha256": "45496f8205ecc64890fd5f6601d9f52db5fde0642cb75dbcf89351fa7aad8651"
+      "bytes": 1604,
+      "sha256": "86e8efe87c57ed5668b354341d1ba0739204142fa7c5d0e0c992ba8cdbe855fd"
     },
     {
       "path": ".ai/templates/decision-template.md",
@@ -70,14 +36,19 @@
       "sha256": "5857ad0fcc2a259e04d577513758b9dbb3347693cc4267e883b5e4b054202e4a"
     },
     {
+      "path": ".gitignore",
+      "bytes": 272,
+      "sha256": "b6c750518d3891cf3a9a304ab38829b3118a2dda6063f22acb5185142db892a7"
+    },
+    {
       "path": "00-大模型接入/Claude-Code-接入说明.md",
-      "bytes": 468,
-      "sha256": "c218b66d8e687d11218690fcb4c06b2064ac1c46e90e62006b9a53922cefa88a"
+      "bytes": 480,
+      "sha256": "456ed145316856e1a32a0d6afb16fed4f481bb84aea263e91099af2df09a387b"
     },
     {
       "path": "00-大模型接入/Codex-接入说明.md",
-      "bytes": 949,
-      "sha256": "9cb79a051a5aeb5739a6f62dd7a5cd8f09508430f4571fa943269e6b77544be6"
+      "bytes": 964,
+      "sha256": "6b6f4d5974646417f44eadfa4ed2c86a62eb3d5800d125198145267e9feb63c3"
     },
     {
       "path": "00-大模型接入/使用边界.md",
@@ -86,8 +57,8 @@
     },
     {
       "path": "00-大模型接入/通用自定义指令.md",
-      "bytes": 1199,
-      "sha256": "4d3095e5110310b75d0a9952936890361279aff7f350b6516fafd199896c800e"
+      "bytes": 1210,
+      "sha256": "dbba2da988c0eab156bd9987f5d716e61b795a027db210e2e39cc419871f02cb"
     },
     {
       "path": "10-注册表/README.md",
@@ -96,18 +67,18 @@
     },
     {
       "path": "10-注册表/local.paths.example.json",
-      "bytes": 153,
-      "sha256": "6d3fce30eec19e0b602bde86040afa467b07a25c031db2c34f1b156cd43d5558"
+      "bytes": 423,
+      "sha256": "eca96aa337e0d7a279591b87df509da345834c6f94dfb20a13a570849a8baa69"
     },
     {
       "path": "10-注册表/projects.json",
-      "bytes": 43,
-      "sha256": "211a77112c07ac15538b81d8de7148b52d12d9160aac0240334cdc1a00c4306f"
+      "bytes": 595,
+      "sha256": "0848dd2d7a2521bbb27cf5e280b1f678bf56c1187a8bbcbf365159be02da2584"
     },
     {
       "path": "10-注册表/templates.json",
-      "bytes": 44,
-      "sha256": "01d41e6024c2e3cf2da7bb77912edf67741823fb91d6df7b5afd2b06ef5daf28"
+      "bytes": 2700,
+      "sha256": "889b9c136ec5403ee5ffdc180e4be962856a8997280d80b4557cdd0f492ef85f"
     },
     {
       "path": "20-能力模块/00-质量宪法.md",
@@ -123,11 +94,6 @@
       "path": "20-能力模块/README.md",
       "bytes": 624,
       "sha256": "d20e8e87226e150af70966289fa8e43d27603b1ea574ac4b90f65da9c5b96be9"
-    },
-    {
-      "path": "20-能力模块/manifest.json",
-      "bytes": 4015,
-      "sha256": "413aa072179caad85dcf9a6701bdb29ea31be41ccc8e5e93c0ae740bfc80d06c"
     },
     {
       "path": "20-能力模块/clarify-requirements/CONTRACT.md",
@@ -310,6 +276,11 @@
       "sha256": "c44349fc3d601368e4fd73a0d76619824dfd9f5aeecac93d686456dae7b75a80"
     },
     {
+      "path": "20-能力模块/manifest.json",
+      "bytes": 4015,
+      "sha256": "413aa072179caad85dcf9a6701bdb29ea31be41ccc8e5e93c0ae740bfc80d06c"
+    },
+    {
       "path": "20-能力模块/operate-environments/CONTRACT.md",
       "bytes": 762,
       "sha256": "6857d0c2b36eeaea817bae9d803959b2a64278387adde62e717397eda13665ab"
@@ -360,16 +331,6 @@
       "sha256": "ec4dd15acc25f927438a22cac4e4ed5ba86882018deb2a814b4f0ee84838ae05"
     },
     {
-      "path": "30-知识库/README.md",
-      "bytes": 318,
-      "sha256": "6ba9994ccf5b89ddd86604bad2f05e079a572f8ce29e6860ee692854860e7d9c"
-    },
-    {
-      "path": "30-知识库/索引.json",
-      "bytes": 1318,
-      "sha256": "47c3a94127dd71f6e628828d5e156564d656bb2d3c4467f864da3b11c4df11c1"
-    },
-    {
       "path": "30-知识库/10-通用经验/10-任务理解与根因确认.md",
       "bytes": 692,
       "sha256": "4477238307fd6c24a80867b00cfa160733e74f697b3d010a36d7a99f9c6eed59"
@@ -400,54 +361,34 @@
       "sha256": "5d1dbdbab9a54694dc00766a9e7758cd868429dda071e732650aa94ab534d021"
     },
     {
+      "path": "30-知识库/README.md",
+      "bytes": 318,
+      "sha256": "6ba9994ccf5b89ddd86604bad2f05e079a572f8ce29e6860ee692854860e7d9c"
+    },
+    {
+      "path": "30-知识库/索引.json",
+      "bytes": 1318,
+      "sha256": "47c3a94127dd71f6e628828d5e156564d656bb2d3c4467f864da3b11c4df11c1"
+    },
+    {
       "path": "40-脚本/build-context.mjs",
       "bytes": 500,
       "sha256": "76c74ed78731602caab9ad8b119ce86c06a6d0c5f5e81f96f2cafcc189c8e772"
     },
     {
+      "path": "40-脚本/build-release-inventory.mjs",
+      "bytes": 1899,
+      "sha256": "6befd83a8f9068e4f01448dbdab1e1cf09ccecc77acd35396ae5f2f93f455e08"
+    },
+    {
       "path": "40-脚本/check-system.mjs",
-      "bytes": 5452,
-      "sha256": "75b6c7997318be16c340f170a3053e98f1a0925e57393548721973bf87ec7c89"
+      "bytes": 5853,
+      "sha256": "46e46d987b9ed192945343d8833a83a85d3bd09abd508af3663d14ed042610e3"
     },
     {
       "path": "40-脚本/configure-model-entry.mjs",
-      "bytes": 3646,
-      "sha256": "1a96702ba2410c51a7ea6c8f0526a86af15cd6f8f1e6b57df4e07667d179f8e1"
-    },
-    {
-      "path": "40-脚本/manage-registry.mjs",
-      "bytes": 3541,
-      "sha256": "68fe0cba413b4a1e24649529a90256d30b55b673d551bca41d4d16b66fdf8ef9"
-    },
-    {
-      "path": "40-脚本/run-checks.mjs",
-      "bytes": 1326,
-      "sha256": "a078ae1f71c774b3619017f396ecdc37c88e19318ba2647113cd21ae72ee1514"
-    },
-    {
-      "path": "40-脚本/spec-consistency.mjs",
-      "bytes": 1807,
-      "sha256": "619b58777dc2d03a31b8ca841a375aa5e9eb671bc3accb40e7bc48e249f27def"
-    },
-    {
-      "path": "40-脚本/spec-map.mjs",
-      "bytes": 957,
-      "sha256": "288f39e6574d0d3d4528feb5613c619832b67285b11a25823a8e055d4d70cd7a"
-    },
-    {
-      "path": "40-脚本/task.mjs",
-      "bytes": 5708,
-      "sha256": "29c261e811d407ab7f8cf5d2cc3294524dfe39ad7c085da0b24e7aa411cce9a8"
-    },
-    {
-      "path": "40-脚本/validate-evidence.mjs",
-      "bytes": 1000,
-      "sha256": "4899258c326b5877bdca66766c91b0d3685e471f610572eb8fec192bb634f0a8"
-    },
-    {
-      "path": "40-脚本/verify-implementation.mjs",
-      "bytes": 2910,
-      "sha256": "331344d16a1513447c041813045e53adb81a199d226e35661ff9bde9e6018e91"
+      "bytes": 3657,
+      "sha256": "26582280804e8a9e1359d956433a83e84987e858e22f695bf1936007899925a3"
     },
     {
       "path": "40-脚本/lib/args.mjs",
@@ -466,13 +407,13 @@
     },
     {
       "path": "40-脚本/lib/check-planner.mjs",
-      "bytes": 10452,
-      "sha256": "b863f36d1c49db7381fa1d32fb7c980ca44022cfe7d3732d58b025fdc6bc21f9"
+      "bytes": 10528,
+      "sha256": "710c012b39f94965c42e08f2b832905fe1fa77f35c588e201948999ed19726c8"
     },
     {
       "path": "40-脚本/lib/context-builder.mjs",
-      "bytes": 4292,
-      "sha256": "2ef223a27636976c3b341fe5cd2c1ef9f4dcc39ce8118c58aadeac40084d4e50"
+      "bytes": 6263,
+      "sha256": "10db2ecccbdd3d35d7409ae3c0266af5a5570a463e0608a18bb01769bf94ce97"
     },
     {
       "path": "40-脚本/lib/evidence.mjs",
@@ -496,8 +437,8 @@
     },
     {
       "path": "40-脚本/lib/git-state.mjs",
-      "bytes": 6561,
-      "sha256": "063e30157c5e20c2932c36686682a8c383c8879c9d9cb801a3c30dc898460bee"
+      "bytes": 6558,
+      "sha256": "602ae0797a453a78ea647913238812524531a7603828bdb2293988b9ff4fe531"
     },
     {
       "path": "40-脚本/lib/handoff.mjs",
@@ -521,13 +462,18 @@
     },
     {
       "path": "40-脚本/lib/registry.mjs",
-      "bytes": 11565,
-      "sha256": "b883f96f674b5596e3ddd8b9efeaf8975efd21198b07328ed2cf4819c135eac1"
+      "bytes": 15669,
+      "sha256": "78b452e6bc6505775096d3ed017b9c38bdce3d7d2be712978e3d14f2f4f54ef2"
     },
     {
       "path": "40-脚本/lib/review.mjs",
       "bytes": 3751,
       "sha256": "d85c935b098dcefe44b2621451a32f1215e83281add50af6b6050dcfbe5848ed"
+    },
+    {
+      "path": "40-脚本/lib/source-fingerprint.mjs",
+      "bytes": 2265,
+      "sha256": "df61e552ab434e10f136bf2c84686638ed0d65178cb30391835c83a7341706af"
     },
     {
       "path": "40-脚本/lib/spec-consistency.mjs",
@@ -575,6 +521,46 @@
       "sha256": "1e8db434d5a570a3931a588e674175be30f3a3fa5ea2babbbc5e20e7b33da17a"
     },
     {
+      "path": "40-脚本/manage-registry.mjs",
+      "bytes": 5545,
+      "sha256": "4a5c9fa43c664eb6948020ab553131fa0caae359f2f61f45f19c18a907a42ef2"
+    },
+    {
+      "path": "40-脚本/run-checks.mjs",
+      "bytes": 1326,
+      "sha256": "a078ae1f71c774b3619017f396ecdc37c88e19318ba2647113cd21ae72ee1514"
+    },
+    {
+      "path": "40-脚本/spec-consistency.mjs",
+      "bytes": 1807,
+      "sha256": "619b58777dc2d03a31b8ca841a375aa5e9eb671bc3accb40e7bc48e249f27def"
+    },
+    {
+      "path": "40-脚本/spec-map.mjs",
+      "bytes": 957,
+      "sha256": "288f39e6574d0d3d4528feb5613c619832b67285b11a25823a8e055d4d70cd7a"
+    },
+    {
+      "path": "40-脚本/task.mjs",
+      "bytes": 5720,
+      "sha256": "548298f7c3fc56899d6f09909c22e5adf751d19ba478dbb6553cae468d2a14b4"
+    },
+    {
+      "path": "40-脚本/validate-evidence.mjs",
+      "bytes": 1000,
+      "sha256": "4899258c326b5877bdca66766c91b0d3685e471f610572eb8fec192bb634f0a8"
+    },
+    {
+      "path": "40-脚本/verify-implementation.mjs",
+      "bytes": 2982,
+      "sha256": "a1fbfaab1682abebf05ee304cab23b0971411c7ee904f7fcb10a47469e9a6604"
+    },
+    {
+      "path": "40-脚本/verify-system.mjs",
+      "bytes": 1943,
+      "sha256": "c6ecb6733f14dc3fde502a974560fa7fe0b3104046b69f08dc32faaa42ba2720"
+    },
+    {
       "path": "50-检查规则/10-通用检查.md",
       "bytes": 592,
       "sha256": "9efcff9e714f02c0851b4a145b12e0c3cd524920c73a60f33e451206e293eaab"
@@ -583,11 +569,6 @@
       "path": "50-检查规则/20-高风险检查.md",
       "bytes": 379,
       "sha256": "ced16c02ba5c532652a921aa453cd02f56ce36a1ea6ef36d024ec2f37f3e6f13"
-    },
-    {
-      "path": "60-测试/helpers.mjs",
-      "bytes": 1443,
-      "sha256": "63cb6d39daf075038bb33adf24a9fc86421573b231bb7bdbcc3b4867912815e0"
     },
     {
       "path": "60-测试/core/atomic-file.test.mjs",
@@ -621,13 +602,18 @@
     },
     {
       "path": "60-测试/core/registry.test.mjs",
-      "bytes": 1036,
-      "sha256": "a85a72237a2a25a4c200df14330cec71ac4358f01fb451ef6006f8b845e95459"
+      "bytes": 1553,
+      "sha256": "c9868aa9e098bd73ea8bbe9ee5722aad0b12d232f745cfd7e0a196524bd3548b"
     },
     {
       "path": "60-测试/core/review.test.mjs",
       "bytes": 1752,
       "sha256": "5755e1aeb8e792f227608c7a9629dbdada711f6325112a3e40262882baaea942"
+    },
+    {
+      "path": "60-测试/core/source-fingerprint.test.mjs",
+      "bytes": 1368,
+      "sha256": "d351bd41bac331e130f8bae291a78465ae89b9d89a633431225549c561597b92"
     },
     {
       "path": "60-测试/core/spec-consistency.test.mjs",
@@ -650,14 +636,19 @@
       "sha256": "69ac30cac7bb3efafe98ec04a3b7157922cafd4ab0e6d8f3964c148f78b34499"
     },
     {
+      "path": "60-测试/helpers.mjs",
+      "bytes": 1431,
+      "sha256": "3dae886887f8d326373dca514c27ba33f83726f6ba81ff896b5da82466fb3acb"
+    },
+    {
       "path": "60-测试/integration/check-planner.test.mjs",
       "bytes": 3750,
       "sha256": "71fe5ca08000176c1ae4b8797b0626bc4666864ba360457fa3c52c90ebe3e863"
     },
     {
       "path": "60-测试/integration/context-quality.test.mjs",
-      "bytes": 3033,
-      "sha256": "0a6226fb7e3787e8aa002d497cffe7ac220a3c1c43111f61192ae6e5928efbe7"
+      "bytes": 7482,
+      "sha256": "7da4f2fc48c6a6f471daf1add972f842a1469eb0fc5f6f4dc82f31f8ac0b411d"
     },
     {
       "path": "60-测试/integration/git-state.test.mjs",
@@ -696,8 +687,8 @@
     },
     {
       "path": "70-文档/10-架构与原则.md",
-      "bytes": 490,
-      "sha256": "7d2037b24e94feb64e28937a979143f277adecb77971a8822b412135fb8974eb"
+      "bytes": 663,
+      "sha256": "e5be629ab77173548fb05649d3f6436c0a6bcb56c87fb4471894048ad6a58894"
     },
     {
       "path": "70-文档/20-可信门禁.md",
@@ -716,13 +707,13 @@
     },
     {
       "path": "70-文档/50-兼容与状态.md",
-      "bytes": 279,
-      "sha256": "b5a158ab58275c40c2f41afb78e6893c38c7527f62a48f0b6dcf445263e706b9"
+      "bytes": 276,
+      "sha256": "7f452bb118c3e44ddfcf46efef43dce8781955e6d9ee35ec1ef7f3861c79190d"
     },
     {
       "path": "70-文档/60-真实任务验证计划.md",
-      "bytes": 475,
-      "sha256": "1155d252c6fc935815e0c98aa0dc35556ebf8757d1f11395044f028af63119d8"
+      "bytes": 611,
+      "sha256": "843feeb8048f6382a53064c3e46b87fc098f8dd9058123ce4600a51f6b7b7e40"
     },
     {
       "path": "70-文档/70-V2.1.1实施结果.md",
@@ -746,28 +737,43 @@
     },
     {
       "path": "70-文档/implementation-contract.json",
-      "bytes": 9070,
-      "sha256": "3642e3e79cdcf4cae32e6a14c6354d65415a9386750370d4269bf0d45eab3b90"
+      "bytes": 9497,
+      "sha256": "78552ac76cdb4848b3f5ff79dca66c5c2cfbed5695b3d34d5597c0b617f2ff03"
     },
     {
-      "path": "70-文档/验证记录/complete-verification.txt",
-      "bytes": 14659,
-      "sha256": "620b1efaeaba99e1945c9e726c1a9c4371bdec6adb21cb1baabea7ae28158b00"
+      "path": "AGENTS.md",
+      "bytes": 3956,
+      "sha256": "0e2dc1148b661d9defb45995a317c86e13eff116d240055420280beeec2fa648"
     },
     {
-      "path": "70-文档/验证记录/implementation-result.generated.json",
-      "bytes": 35579,
-      "sha256": "f38b60d2066702704f7ba477fcc73a6501ce4579de17b3cd289baa8d790a59a7"
+      "path": "CHANGELOG.md",
+      "bytes": 1869,
+      "sha256": "5b7d79c25ac1bc5a5ec10589cc152f625a15ada5afb9e9a18728fb8293a68e1d"
     },
     {
-      "path": "80-运行记录/README.md",
-      "bytes": 355,
-      "sha256": "3b8326ccc50bd154f74e730fe3f20c6afe9ca3acdcf2a449778cab8678758c69"
+      "path": "README.md",
+      "bytes": 4041,
+      "sha256": "2de11b9e478d250a38c624344f8b6d4c4505285957dad67766ec85caa9269c80"
     },
     {
-      "path": "80-运行记录/进行中/.gitkeep",
-      "bytes": 0,
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      "path": "SHA256SUMS.txt",
+      "bytes": 16080,
+      "sha256": "b3043e596d3c954a9dbc557d2c826981a1aa1fcdebc31725c58099aca6711432"
+    },
+    {
+      "path": "package.json",
+      "bytes": 2189,
+      "sha256": "44d36663e308436d55ddc89dd39e4d02d718e08a1cd9dcbf6acbeae5baa5028f"
+    },
+    {
+      "path": "release-manifest.json",
+      "bytes": 1382,
+      "sha256": "7aa3332a1652c28e5137236b73a789871f43fbd4724c7eae0250f211537fefff"
+    },
+    {
+      "path": "source-baseline.json",
+      "bytes": 699,
+      "sha256": "f7f150f6825d50fbb654cb9c426a0d970855a73c775cb94c7b5ec94f4c48f86d"
     }
   ]
 }

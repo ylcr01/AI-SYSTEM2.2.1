@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "designId": "ai-system-v2.2.1",
-  "repository": "local/AI-SYSTEM-V2.2.1",
+  "designId": "ai-rd-operating-system-v2.2.1",
+  "repository": "local/01-AI研发操作系统",
   "releaseGate": {
     "allCriticalMustPass": true,
     "minimumFidelity": 95,
@@ -136,6 +136,13 @@
             "手工篡改 Evidence",
             "./60-测试/scenarios/trust-gates.test.mjs"
           ]
+        },
+        {
+          "command": "node",
+          "args": [
+            "--test",
+            "./60-测试/core/source-fingerprint.test.mjs"
+          ]
         }
       ]
     },
@@ -192,6 +199,15 @@
             "项目质量清单优先",
             "./60-测试/integration/context-quality.test.mjs"
           ]
+        },
+        {
+          "command": "node",
+          "args": [
+            "--test",
+            "--test-name-pattern",
+            "项目根唯一模块",
+            "./60-测试/integration/context-quality.test.mjs"
+          ]
         }
       ]
     },
@@ -228,10 +244,9 @@
       "weight": 6,
       "verification": [
         {
-          "command": "npm",
+          "command": "node",
           "args": [
-            "run",
-            "check"
+            "./40-脚本/check-system.mjs"
           ]
         }
       ]

@@ -42,7 +42,7 @@ export function normalizeScope(executionTarget, scopeValue, gitRoot) {
   const candidate = path.isAbsolute(String(scopeValue ?? '.'))
     ? path.resolve(String(scopeValue ?? '.'))
     : path.resolve(target, String(scopeValue ?? '.'));
-  const lexicalRelative = path.relative(path.resolve(gitRoot), path.resolve(candidate));
+  const lexicalRelative = path.relative(path.resolve(root), path.resolve(candidate));
   if (path.isAbsolute(lexicalRelative) || lexicalRelative === '..' || lexicalRelative.startsWith(`..${path.sep}`)) throw new Error('授权 Scope 必须位于当前 Git Root 内');
   const realParent = normalizePath(nearestExisting(candidate));
   if (!pathContains(root, realParent)) throw new Error('授权 Scope 通过符号链接越出 Git Root');
