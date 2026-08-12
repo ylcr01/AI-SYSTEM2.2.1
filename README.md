@@ -15,6 +15,7 @@
 
 ## 轻量边界
 
+- `build-context` 与 Task CLI 默认只返回当前执行所需的轻量视图；完整 Context、Task 账本和 Evidence 不删减，诊断或审计时使用 `--full`。
 - 普通任务不生成 Review Package，只有显式要求或提供 Review 时才启用。
 - 没有 `.ai/spec-map.json` 且 `specImpact=none` 时，详细规格追踪不进入 Task 主路径。
 - 有规格映射或声明 `updated/decision-required` 时，规格与 Decision 门禁自动启用。
@@ -38,6 +39,8 @@ node ./40-脚本/task.mjs 准备 --cwd <项目> --intent "<目标>" --acceptance
 node ./40-脚本/task.mjs 交付 --task-id <编号> --spec-impact none|updated|decision-required
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过
 ```
+
+以上命令默认输出轻量回执；需要检查完整 Task 时追加 `--full`。只读分析同样可用 `node ./40-脚本/build-context.mjs ... --full` 查看完整上下文。
 
 项目可按需配置：
 

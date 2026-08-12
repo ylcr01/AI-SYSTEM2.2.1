@@ -1,3 +1,61 @@
-import { parseArgs,listArg } from './lib/args.mjs';
+import { parseArgs, listArg } from './lib/args.mjs';
 import { buildContext } from './lib/context-builder.mjs';
-const args=parseArgs(process.argv.slice(2));try{console.log(JSON.stringify(buildContext({cwd:args.cwd??process.cwd(),projectId:args.project,intent:args.intent??'',acceptance:args.acceptance??'',skills:listArg(args.skill),tracked:args.ephemeral!==true,handoffRequired:args.handoff===true}),null,2));}catch(error){console.error(`上下文构建失败: ${error.message}`);process.exitCode=1;}
+
+function compactContext(result) {
+  const context = result.context ?? {};
+  const compactIdentity = {
+    kind: context.kind,
+    gitRoot: context.gitRoot,
+    remote: context.remote,
+    branch: context.branch,
+    head: context.head,
+    projectId: context.project?.id,
+    moduleId: context.module?.id,
+    templateId: context.template?.id,
+  };
+
+  const compact = {
+    schemaVersion: 1,
+    view: 'summary',
+    contextSchemaVersion: result.schemaVersion,
+    context: Object.fromEntries(
+      Object.entries(compactIdentity).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+    ),
+    executionTarget: result.executionTarget,
+    classification: {
+      controlMode: result.classification?.controlMode,
+      structureImpact: result.classification?.structureImpact,
+      continuity: result.classification?.continuity,
+      artifactKinds: result.classification?.artifactKinds ?? [],
+      reasons: result.classification?.reasons ?? [],
+    },
+    filesToRead: result.filesToRead ?? [],
+    warnings: [],
+  };
+
+  if (result.role) compact.role = result.role;
+  if ((context.moduleCandidates?.length ?? 0) > 1) {
+    compact.warnings.push(`检测到 ${context.moduleCandidates.length} 个模块候选，必要时使用 --full 诊断路由。`);
+  }
+
+  return compact;
+}
+
+const args = parseArgs(process.argv.slice(2));
+
+try {
+  const result = buildContext({
+    cwd: args.cwd ?? process.cwd(),
+    projectId: args.project,
+    intent: args.intent ?? '',
+    acceptance: args.acceptance ?? '',
+    skills: listArg(args.skill),
+    tracked: args.ephemeral !== true,
+    handoffRequired: args.handoff === true,
+  });
+
+  console.log(JSON.stringify(args.full === true ? result : compactContext(result), null, 2));
+} catch (error) {
+  console.error(`上下文构建失败: ${error.message}`);
+  process.exitCode = 1;
+}

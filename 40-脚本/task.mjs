@@ -1,21 +1,119 @@
 #!/usr/bin/env node
 import { parseArgs, listArg, requiredArg } from './lib/args.mjs';
 import {
-  prepareTask, deliverTask, acceptTask, saveTask, resumeTask,
-  recordHandoff, cancelTask, readTask, findTask, listTasks
+  prepareTask,
+  deliverTask,
+  acceptTask,
+  saveTask,
+  resumeTask,
+  recordHandoff,
+  cancelTask,
+  findTask,
+  listTasks,
 } from './lib/task-runner.mjs';
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
-  ['prepare','准备'], ['deliver','交付'], ['accept','验收'], ['review','审查'],
-  ['handoff','交接'], ['resume','恢复'], ['show','查看'], ['list','列表'],
-  ['save','保存'], ['cancel','取消'], ['experience','整理经验']
+  ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
+  ['handoff', '交接'], ['resume', '恢复'], ['show', '查看'], ['list', '列表'],
+  ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'],
 ]);
 const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
 
+function nextAction(status) {
+  return {
+    prepared: '读取 filesToRead，并在授权 Scope 内实施。',
+    needs_rework: '修复验证或规格问题后重新交付。',
+    waiting_acceptance: '等待用户验收。',
+    saved: '需要继续时恢复 Task。',
+  }[status];
+}
+
+function compactTask(task, result) {
+  const receipt = {
+    schemaVersion: 1,
+    view: 'summary',
+    taskSchemaVersion: task.schemaVersion,
+    taskId: task.taskId,
+    status: task.status,
+    stateRevision: task.stateRevision,
+  };
+
+  if (task.goal?.summary) receipt.goal = task.goal.summary;
+
+  if (action === '准备' || action === '查看') {
+    receipt.acceptance = (task.acceptance ?? []).map(({ id, description, requiredCovers }) => ({
+      id,
+      description,
+      requiredCovers,
+    }));
+    receipt.scope = task.authorization?.scope ?? [];
+    receipt.filesToRead = task.context?.filesToRead ?? [];
+  }
+
+  if (task.changeSet) {
+    receipt.changeSet = {
+      fingerprint: task.changeSet.fingerprint,
+      files: (task.changeSet.files ?? []).map(({ path, status }) => ({ path, status })),
+    };
+  }
+
+  if (task.verification) {
+    receipt.verification = {
+      missingAcceptance: task.verification.missingAcceptance ?? [],
+      missingCovers: task.verification.missingCovers ?? [],
+      stopReason: task.verification.stopReason ?? null,
+    };
+  }
+
+  if (task.specImpact) {
+    receipt.specImpact = {
+      level: task.specImpact.level,
+      declared: task.specImpact.declared,
+      reason: task.specImpact.reason,
+      affectedSpecificationIds: task.specImpact.affectedSpecificationIds ?? [],
+    };
+  }
+
+  if ((task.blockers?.length ?? 0) > 0) receipt.blockers = task.blockers;
+  if ((task.residualRisks?.length ?? 0) > 0) receipt.residualRisks = task.residualRisks;
+  if (task.deliveryDecision) receipt.deliveryDecision = task.deliveryDecision;
+  if (result?.filePath) receipt.recordPath = result.filePath;
+  if (result?.source) receipt.recordSource = result.source;
+
+  const next = nextAction(task.status);
+  if (next) receipt.next = next;
+
+  return receipt;
+}
+
+function compactTaskList(result) {
+  const counts = {};
+  for (const task of result.tasks ?? []) counts[task.status] = (counts[task.status] ?? 0) + 1;
+
+  return {
+    schemaVersion: 1,
+    view: 'summary',
+    counts,
+    tasks: (result.tasks ?? []).map(task => ({
+      taskId: task.taskId,
+      status: task.status,
+      goal: task.goal?.summary,
+      updatedAt: task.updatedAt,
+      blockerCount: task.blockers?.length ?? 0,
+    })),
+    stateRoot: result.stateRoot,
+  };
+}
+
 function output(result) {
-  console.log(JSON.stringify(result?.task ?? result, null, 2));
+  let value;
+  if (args.full === true) value = result?.task ?? result;
+  else if (result?.task) value = compactTask(result.task, result);
+  else if (Array.isArray(result?.tasks)) value = compactTaskList(result);
+  else value = result;
+  console.log(JSON.stringify(value, null, 2));
 }
 
 function help() {
@@ -29,6 +127,8 @@ function help() {
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
   保存|恢复|交接|查看|列表|取消
+
+输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
 普通问答不建 Task；只读分析走 build-context；仓库写任务必须先准备、后交付，最终验收只能由用户执行。`);
 }
@@ -55,8 +155,8 @@ try {
         kind: String(args['require-review']),
         minimumDecision: args['review-minimum'] ?? 'passed',
         reviewer: args.reviewer ?? null,
-        description: args['review-description'] ?? '用户或项目明确要求 Review'
-      } : null
+        description: args['review-description'] ?? '用户或项目明确要求 Review',
+      } : null,
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({
@@ -75,14 +175,14 @@ try {
       specImpact: args['spec-impact'],
       specImpactReason: args['spec-impact-reason'],
       affectedSpecificationIds: listArg(args['spec-id']),
-      affectedSpecificationIdsProvided: args['spec-id'] !== undefined
+      affectedSpecificationIdsProvided: args['spec-id'] !== undefined,
     }));
   } else if (action === '验收') {
     output(acceptTask({
       stateRoot: args['state-root'],
       taskId: requiredArg(args, 'task-id'),
       decision: requiredArg(args, 'decision'),
-      note: args.note
+      note: args.note,
     }));
   } else if (action === '保存') {
     output(saveTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
@@ -102,7 +202,7 @@ try {
       action: args.action,
       boundary: args.boundary,
       verification: listArg(args.verification),
-      keywords: listArg(args.keyword)
+      keywords: listArg(args.keyword),
     });
     output(saveExperienceCandidate(projectRoot, candidate));
   } else if (action === '查看') {

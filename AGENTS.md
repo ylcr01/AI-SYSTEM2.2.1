@@ -20,7 +20,7 @@
 node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --intent "<用户目标>"
 ```
 
-读取输出中的 `filesToRead`、项目事实、Manifest 和质量上下文后再分析。不得修改仓库。
+读取轻量输出中的 `executionTarget`、`classification` 与 `filesToRead` 后再分析。只有身份或路由需要诊断时才追加 `--full`；不得修改仓库。
 
 ### 3. 仓库写任务
 
@@ -32,7 +32,7 @@ node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --i
 node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 准备 --cwd "<项目路径>" --intent "<目标>" --acceptance "<验收>" --scope "<授权路径>"
 ```
 
-保存返回的 `taskId`，读取 Task 的 Context 与 `filesToRead`，再自主分析和实现。
+保存轻量回执中的 `taskId`，读取 `filesToRead` 和授权 Scope，再自主分析和实现。完整 Task 已写入 `recordPath`；只有诊断或审计时才追加 `--full`。
 
 修改后必须运行：
 
