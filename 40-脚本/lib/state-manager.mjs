@@ -154,37 +154,15 @@ export function updateTask(input = {}) {
 
 export function listTasks(input = {}) {
   const value = paths(input.stateRoot);
-  const allTasks = fs.existsSync(value.active) ? fs.readdirSync(value.active)
+  let tasks = fs.existsSync(value.active) ? fs.readdirSync(value.active)
     .filter((name) => name.endsWith('.json'))
     .map((name) => currentTask(readRaw(path.join(value.active, name))))
     .sort((left, right) => (right.updatedAt ?? right.createdAt).localeCompare(left.updatedAt ?? left.createdAt)) : [];
-  const countStatuses = (tasks) => tasks.reduce((counts, task) => {
-    counts[task.status] = (counts[task.status] ?? 0) + 1;
-    return counts;
-  }, {});
-  const projectTasks = input.gitRoot
-    ? allTasks.filter((task) => normalizePath(task.baseline?.gitRoot) === normalizePath(input.gitRoot))
-    : allTasks;
-  const matchedTasks = input.status
-    ? projectTasks.filter((task) => task.status === input.status)
-    : projectTasks;
-  const limit = input.limit === undefined ? 0 : Number(input.limit);
-  if (!Number.isInteger(limit) || limit < 0) throw new Error('Task 列表数量必须是大于等于 0 的整数');
-  const tasks = limit === 0 ? matchedTasks : matchedTasks.slice(0, limit);
-  return {
-    tasks,
-    total: allTasks.length,
-    filteredTotal: matchedTasks.length,
-    counts: countStatuses(projectTasks),
-    globalCounts: countStatuses(allTasks),
-    hasMore: tasks.length < matchedTasks.length,
-    filter: {
-      gitRoot: input.gitRoot ? path.resolve(input.gitRoot) : null,
-      status: input.status ?? null,
-      limit,
-    },
-    stateRoot: value.root,
-  };
+  if (input.gitRoot) {
+    tasks = tasks.filter((task) => normalizePath(task.baseline?.gitRoot) === normalizePath(input.gitRoot));
+  }
+  if (input.limit > 0) tasks = tasks.slice(0, input.limit);
+  return { tasks, stateRoot: value.root };
 }
 
 export const allowedTransitions = TRANSITIONS;

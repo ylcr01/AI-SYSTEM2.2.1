@@ -90,16 +90,12 @@ function compactTask(task, result) {
 }
 
 function compactTaskList(result) {
+  const counts = {};
+  for (const task of result.tasks ?? []) counts[task.status] = (counts[task.status] ?? 0) + 1;
   return {
     schemaVersion: 1,
     view: 'summary',
-    counts: result.counts ?? {},
-    globalCounts: result.globalCounts ?? {},
-    total: result.total ?? (result.tasks ?? []).length,
-    matched: result.filteredTotal ?? (result.tasks ?? []).length,
-    shown: (result.tasks ?? []).length,
-    hasMore: result.hasMore ?? false,
-    filter: result.filter ?? null,
+    counts,
     tasks: (result.tasks ?? []).map(task => ({
       taskId: task.taskId,
       status: task.status,
@@ -131,7 +127,7 @@ function help() {
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
   保存|恢复|交接|查看|取消
-  列表 [--cwd <path>] [--limit <数量，0=全部>] [--status <状态>] [--all-projects]
+  列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
@@ -223,7 +219,6 @@ try {
     output(listTasks({
       stateRoot: args['state-root'],
       gitRoot,
-      status: args.status,
       limit,
     }));
   } else help();

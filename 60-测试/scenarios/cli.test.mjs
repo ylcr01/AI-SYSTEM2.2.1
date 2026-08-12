@@ -186,25 +186,21 @@ test('Task CLI 默认轻量，--full 保留完整 Task', t => {
   const taskList = JSON.parse(compactList.stdout);
   assert.equal(taskList.view, 'summary');
   assert.equal(taskList.counts.prepared, 1);
-  assert.equal(taskList.globalCounts.prepared, 2);
-  assert.equal(taskList.filter.limit, 10);
-  assert.equal(taskList.total, 2);
-  assert.equal(taskList.matched, 1);
-  assert.equal(taskList.shown, 1);
+  for (const key of ['globalCounts', 'total', 'matched', 'shown', 'hasMore', 'filter']) {
+    assert.equal(key in taskList, false);
+  }
   assert.equal(taskList.tasks[0].taskId, receipt.taskId);
   assert.equal('baseline' in taskList.tasks[0], false);
 
   const globalList = runNode(TASK, [
     '列表',
     '--all-projects',
-    '--limit', '1',
+    '--limit', '0',
     '--state-root', stateRoot,
   ], { cwd: ROOT });
   assert.equal(globalList.status, 0, globalList.stderr);
   const globalTaskList = JSON.parse(globalList.stdout);
-  assert.equal(globalTaskList.matched, 2);
-  assert.equal(globalTaskList.shown, 1);
-  assert.equal(globalTaskList.hasMore, true);
+  assert.equal(globalTaskList.tasks.length, 2);
 
   const fullList = runNode(TASK, [
     '列表',
