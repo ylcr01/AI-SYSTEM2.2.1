@@ -56,13 +56,14 @@ function selectExperience(intent,projectRoot){
 
 export function loadQualityContext(input={}){
  const skills=selectSkills(input.role,input.intent??'',input.explicitSkills??[]);const methods=skills.map(skill=>({name:skill,path:existing(path.join(SYSTEM_ROOT,'20-能力模块',skill,'SKILL.md')),source:'central'})).filter(x=>x.path);
- if(input.structureImpact!=='structural')return{skills,methods,contracts:[],exemplars:[],experiences:selectExperience(input.intent??'',input.projectRoot),files:methods.map(x=>x.path)};
+ const methodFiles=(input.explicitSkills??[]).length?methods.map(x=>x.path):[];
+ if(input.structureImpact!=='structural')return{skills,methods,contracts:[],exemplars:[],experiences:selectExperience(input.intent??'',input.projectRoot),files:methodFiles};
  const matchInput={skills,role:input.role,artifactKinds:input.artifactKinds??['code'],intent:input.intent??''};
  const project=qualityManifest(input.projectRoot,'project');const template=qualityManifest(input.templateRoot,'template');
  let contract=contractFromManifest(project,matchInput)??contractFromManifest(template,matchInput);
  if(!contract){for(const skill of skills){if(project?.disabledDefaults.has(skill)||template?.disabledDefaults.has(skill))continue;contract=centralContract(skill);if(contract)break;}}
  let exemplar=exemplarFromManifest(project,matchInput)??exemplarFromManifest(template,matchInput);
  if(!exemplar){for(const skill of skills){if(project?.disabledDefaults.has(skill)||template?.disabledDefaults.has(skill))continue;exemplar=centralExemplar(skill,input.intent??'');if(exemplar)break;}}
- const experiences=selectExperience(input.intent??'',input.projectRoot);const files=[...methods.map(x=>x.path),contract?.path,...(exemplar?.files??[]),...experiences.map(x=>x.path)].filter(Boolean);
+ const experiences=selectExperience(input.intent??'',input.projectRoot);const files=[...methodFiles,contract?.path,...(exemplar?.files??[]),...experiences.map(x=>x.path)].filter(Boolean);
  return{skills,methods,contracts:contract?[contract]:[],exemplars:exemplar?[exemplar]:[],experiences,files:[...new Set(files)],authority:{project:project?.file??null,template:template?.file??null}};
 }

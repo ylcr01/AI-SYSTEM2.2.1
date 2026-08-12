@@ -16,13 +16,17 @@ test('大模型入口检查确认 V2.2.1 关键文件', () => {
   assert.equal(output.version, '2.2.1');
 });
 
-test('生成的自定义指令包含环境变量、路由和用户验收边界', () => {
+test('生成的自定义指令仅保留入口导航和不可绕过边界', () => {
   const result = runNode(SCRIPT, ['生成', '--fallback', ROOT], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /AI_RD_OS_ROOT/u);
-  assert.match(result.stdout, /build-context\.mjs/u);
-  assert.match(result.stdout, /task\.mjs 准备/u);
-  assert.match(result.stdout, /never run user acceptance/u);
+  assert.match(result.stdout, /AGENTS\.md/u);
+  assert.match(result.stdout, /Scope or Evidence gates/u);
+  assert.match(result.stdout, /waiting_acceptance/u);
+  assert.match(result.stdout, /external writes without explicit user authorization/u);
+  assert.doesNotMatch(result.stdout, /build-context\.mjs/u);
+  assert.doesNotMatch(result.stdout, /task\.mjs/u);
+  assert.ok(Buffer.byteLength(result.stdout) < 500);
 });
 
 test('项目入口初始化保持轻量且默认不覆盖', (t) => {

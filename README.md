@@ -16,6 +16,8 @@
 ## 轻量边界
 
 - `build-context` 与 Task CLI 默认只返回当前执行所需的轻量视图；完整 Context、Task 账本和 Evidence 不删减，诊断或审计时使用 `--full`。
+- `task.mjs 列表` 默认只看当前 Git 项目并返回最近更新的 10 条；使用 `--limit <数量>` 调整数量，`--limit 0` 查看全部，`--all-projects` 显式查看所有项目。
+- 中央能力 `SKILL.md` 默认只参与能力识别，不进入 `filesToRead`；只有显式传入 `--skill <名称>` 时才加载正文。
 - `build-context` 默认返回已解析的 Manifest/机器配置摘要；原始机器配置仅在目标明确相关或使用 `--full` 诊断时展开，宿主已加载的系统入口不再重复读取。
 - 系统验证默认聚合成功结果，失败诊断保持完整；需要逐条成功明细时使用 `verify-system.mjs ... --full`。
 - 普通任务不生成 Review Package，只有显式要求或提供 Review 时才启用。

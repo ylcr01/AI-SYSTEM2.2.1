@@ -12,6 +12,7 @@ import {
   listTasks,
 } from './lib/task-runner.mjs';
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
+import { findGitRoot } from './lib/registry.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
@@ -89,13 +90,16 @@ function compactTask(task, result) {
 }
 
 function compactTaskList(result) {
-  const counts = {};
-  for (const task of result.tasks ?? []) counts[task.status] = (counts[task.status] ?? 0) + 1;
-
   return {
     schemaVersion: 1,
     view: 'summary',
-    counts,
+    counts: result.counts ?? {},
+    globalCounts: result.globalCounts ?? {},
+    total: result.total ?? (result.tasks ?? []).length,
+    matched: result.filteredTotal ?? (result.tasks ?? []).length,
+    shown: (result.tasks ?? []).length,
+    hasMore: result.hasMore ?? false,
+    filter: result.filter ?? null,
     tasks: (result.tasks ?? []).map(task => ({
       taskId: task.taskId,
       status: task.status,
@@ -126,7 +130,8 @@ function help() {
   验收 --task-id <id> --decision 通过|退回
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
-  保存|恢复|交接|查看|列表|取消
+  保存|恢复|交接|查看|取消
+  列表 [--cwd <path>] [--limit <数量，0=全部>] [--status <状态>] [--all-projects]
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
@@ -208,7 +213,19 @@ try {
   } else if (action === '查看') {
     output(findTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
   } else if (action === '列表') {
-    output(listTasks({ stateRoot: args['state-root'] }));
+    const allProjects = args['all-projects'] === true;
+    const gitRoot = allProjects ? null : findGitRoot(args.cwd ?? process.cwd());
+    if (!allProjects && !gitRoot) {
+      throw new Error('Task 列表默认按当前 Git 项目过滤；请在 Git 工作树中运行，或显式使用 --all-projects');
+    }
+    const limit = args.limit === undefined ? 10 : Number(args.limit);
+    if (!Number.isInteger(limit) || limit < 0) throw new Error('--limit 必须是大于等于 0 的整数');
+    output(listTasks({
+      stateRoot: args['state-root'],
+      gitRoot,
+      status: args.status,
+      limit,
+    }));
   } else help();
 } catch (error) {
   console.error(`任务失败: ${error.message}`);

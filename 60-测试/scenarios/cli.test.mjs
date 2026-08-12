@@ -21,7 +21,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
 
   const compactResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
-    '--intent', '分析当前实现',
+    '--intent', '分析 Web 页面当前实现',
   ], { cwd: ROOT });
   assert.equal(compactResult.status, 0, compactResult.stderr);
   const compact = JSON.parse(compactResult.stdout);
@@ -37,7 +37,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
 
   const fullResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
-    '--intent', '分析当前实现',
+    '--intent', '分析 Web 页面当前实现',
     '--full',
   ], { cwd: ROOT });
   assert.equal(fullResult.status, 0, fullResult.stderr);
@@ -47,7 +47,18 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.ok(Array.isArray(full.manifests));
   assert.equal(full.facts.find(fact => fact.path.endsWith('package.json')).readMode, 'machine');
   assert.ok(full.quality);
+  assert.ok(full.quality.methods.some(method => method.name === 'develop-web'));
+  assert.ok(!compact.filesToRead.some(file => file.endsWith(path.join('develop-web', 'SKILL.md'))));
   assert.ok(Buffer.byteLength(compactResult.stdout) < Buffer.byteLength(fullResult.stdout));
+
+  const explicitSkillResult = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '分析当前实现',
+    '--skill', 'develop-web',
+  ], { cwd: ROOT });
+  assert.equal(explicitSkillResult.status, 0, explicitSkillResult.stderr);
+  assert.ok(JSON.parse(explicitSkillResult.stdout).filesToRead
+    .some(file => file.endsWith(path.join('develop-web', 'SKILL.md'))));
 
   const dependencyResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
@@ -118,6 +129,7 @@ test('系统验证聚合成功结果并保留完整成功/失败诊断', { timeo
 
 test('Task CLI 默认轻量，--full 保留完整 Task', t => {
   const repo = gitRepo(t);
+  const otherRepo = gitRepo(t);
   const stateRoot = tempDir(t);
   const prepared = runNode(TASK, [
     '准备',
@@ -155,19 +167,48 @@ test('Task CLI 默认轻量，--full 保留完整 Task', t => {
   assert.ok(fullTask.context);
   assert.ok(Buffer.byteLength(prepared.stdout) < Buffer.byteLength(fullShown.stdout));
 
+  const otherPrepared = runNode(TASK, [
+    '准备',
+    '--cwd', otherRepo,
+    '--intent', '修复另一个项目',
+    '--acceptance', '功能正确',
+    '--scope', '.',
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(otherPrepared.status, 0, otherPrepared.stderr);
+
   const compactList = runNode(TASK, [
     '列表',
+    '--cwd', repo,
     '--state-root', stateRoot,
   ], { cwd: ROOT });
   assert.equal(compactList.status, 0, compactList.stderr);
   const taskList = JSON.parse(compactList.stdout);
   assert.equal(taskList.view, 'summary');
   assert.equal(taskList.counts.prepared, 1);
+  assert.equal(taskList.globalCounts.prepared, 2);
+  assert.equal(taskList.filter.limit, 10);
+  assert.equal(taskList.total, 2);
+  assert.equal(taskList.matched, 1);
+  assert.equal(taskList.shown, 1);
   assert.equal(taskList.tasks[0].taskId, receipt.taskId);
   assert.equal('baseline' in taskList.tasks[0], false);
 
+  const globalList = runNode(TASK, [
+    '列表',
+    '--all-projects',
+    '--limit', '1',
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(globalList.status, 0, globalList.stderr);
+  const globalTaskList = JSON.parse(globalList.stdout);
+  assert.equal(globalTaskList.matched, 2);
+  assert.equal(globalTaskList.shown, 1);
+  assert.equal(globalTaskList.hasMore, true);
+
   const fullList = runNode(TASK, [
     '列表',
+    '--cwd', repo,
     '--state-root', stateRoot,
     '--full',
   ], { cwd: ROOT });

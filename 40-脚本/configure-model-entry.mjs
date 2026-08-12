@@ -11,7 +11,7 @@ const action = args._[0] ?? '检查';
 
 function instructionText(fallback) {
   const fallbackPath = path.resolve(fallback ?? SYSTEM_ROOT);
-  return `# Personal AI R&D Operating System\n\nFor every request that depends on local repository facts or may change repository files:\n\n1. Resolve \`AI_RD_OS_ROOT\`. Read \`$AI_RD_OS_ROOT/AGENTS.md\` before acting.\n2. If the variable is unavailable or unreadable, use \`${fallbackPath}\` as the current-machine fallback and read its \`AGENTS.md\`.\n3. Follow that file's routing rules:\n   - ordinary conversation: answer directly;\n   - read-only repository analysis: run \`40-脚本/build-context.mjs\`;\n   - repository write task: run \`40-脚本/task.mjs 准备\` before editing, then \`交付\` after validation;\n   - never run user acceptance on the user's behalf.\n4. Do not claim completion unless the Task reaches \`waiting_acceptance\`.\n5. Push, deploy, publish, delete remote data, or other external writes require separate explicit user authorization.\n`;
+  return `# Personal AI R&D Operating System\n\nFor repository-dependent work, resolve \`AI_RD_OS_ROOT\` (fallback: \`${fallbackPath}\`) and read its \`AGENTS.md\` before acting; that file is the routing authority. Never bypass Scope or Evidence gates, run user acceptance, claim completion before \`waiting_acceptance\`, or perform external writes without explicit user authorization.\n`;
 }
 
 function checkRoot(root) {
