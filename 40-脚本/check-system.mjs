@@ -36,7 +36,7 @@ for (const relative of [
   '40-脚本/lib/state-manager.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
   '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs',
-  '40-脚本/lib/manifest-reader.mjs', '80-运行记录/README.md'
+  '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '80-运行记录/README.md'
 ]) requireFile(relative);
 
 try {

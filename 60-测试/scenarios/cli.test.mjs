@@ -8,10 +8,16 @@ import { gitRepo, tempDir, runNode } from '../helpers.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
 const TASK = path.join(ROOT, '40-脚本/task.mjs');
+const VERIFY = path.join(ROOT, '40-脚本/verify-system.mjs');
 
 test('build-context 默认轻量，--full 保留完整上下文', t => {
   const repo = gitRepo(t);
   fs.writeFileSync(path.join(repo, 'AGENTS.md'), '# test\n');
+  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({
+    name: 'sample-app',
+    scripts: { test: 'node --test', build: 'vite build' },
+    dependencies: { vue: '3' },
+  }));
 
   const compactResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
@@ -23,8 +29,10 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(path.basename(compact.context.gitRoot), path.basename(repo));
   assert.equal(fs.existsSync(compact.context.gitRoot), true);
   assert.ok(compact.filesToRead.some(file => file.endsWith('AGENTS.md')));
+  assert.ok(!compact.filesToRead.some(file => file.endsWith('package.json')));
+  assert.equal(compact.manifests[0].name, 'sample-app');
+  assert.deepEqual(compact.manifests[0].frameworks, ['vue']);
   assert.equal('facts' in compact, false);
-  assert.equal('manifests' in compact, false);
   assert.equal('quality' in compact, false);
 
   const fullResult = runNode(BUILD_CONTEXT, [
@@ -37,8 +45,75 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(full.view, undefined);
   assert.ok(Array.isArray(full.facts));
   assert.ok(Array.isArray(full.manifests));
+  assert.equal(full.facts.find(fact => fact.path.endsWith('package.json')).readMode, 'machine');
   assert.ok(full.quality);
   assert.ok(Buffer.byteLength(compactResult.stdout) < Buffer.byteLength(fullResult.stdout));
+
+  const dependencyResult = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '分析 package 依赖',
+  ], { cwd: ROOT });
+  assert.equal(dependencyResult.status, 0, dependencyResult.stderr);
+  assert.ok(JSON.parse(dependencyResult.stdout).filesToRead.some(file => file.endsWith('package.json')));
+});
+
+test('系统入口已由宿主加载时不进入 filesToRead', () => {
+  const compactResult = runNode(BUILD_CONTEXT, [
+    '--cwd', ROOT,
+    '--intent', '分析当前实现',
+  ], { cwd: ROOT });
+  assert.equal(compactResult.status, 0, compactResult.stderr);
+  const compact = JSON.parse(compactResult.stdout);
+  assert.ok(!compact.filesToRead.some(file => file === path.join(ROOT, 'AGENTS.md')));
+  assert.ok(!compact.filesToRead.some(file => file === path.join(ROOT, 'package.json')));
+  assert.equal(compact.manifests[0].name, 'personal-ai-rd-operating-system');
+
+  const fullResult = runNode(BUILD_CONTEXT, [
+    '--cwd', ROOT,
+    '--intent', '分析当前实现',
+    '--full',
+  ], { cwd: ROOT });
+  assert.equal(fullResult.status, 0, fullResult.stderr);
+  const full = JSON.parse(fullResult.stdout);
+  assert.equal(full.facts.find(fact => fact.path === path.join(ROOT, 'AGENTS.md')).readMode, 'preloaded');
+  assert.equal(full.facts.find(fact => fact.path === path.join(ROOT, 'package.json')).readMode, 'machine');
+});
+
+test('系统验证聚合成功结果并保留完整成功/失败诊断', { timeout: 60000 }, t => {
+  const compact = runNode(VERIFY, [
+    '--profile', 'tests',
+    '--group', 'core',
+  ], { cwd: ROOT, timeout: 60000 });
+  assert.equal(compact.status, 0, compact.stderr);
+  assert.match(compact.stdout, /core 测试: passed, \d+ tests/u);
+  assert.doesNotMatch(compact.stdout, /原子写完整替换 JSON/u);
+
+  const full = runNode(VERIFY, [
+    '--profile', 'tests',
+    '--group', 'core',
+    '--full',
+  ], { cwd: ROOT, timeout: 60000 });
+  assert.equal(full.status, 0, full.stderr);
+  assert.match(full.stdout, /原子写完整替换 JSON/u);
+  assert.ok(Buffer.byteLength(compact.stdout) < Buffer.byteLength(full.stdout));
+
+  const fixture = path.join(ROOT, '60-测试', 'core', 'verification-failure-fixture.test.mjs');
+  assert.equal(fs.existsSync(fixture), false);
+  t.after(() => fs.rmSync(fixture, { force: true }));
+  fs.writeFileSync(fixture, [
+    "import test from 'node:test';",
+    "test('verification failure fixture', () => { throw new Error('DIAGNOSTIC_MARKER'); });",
+    '',
+  ].join('\n'));
+
+  const failed = runNode(VERIFY, [
+    '--profile', 'tests',
+    '--group', 'core',
+  ], { cwd: ROOT, timeout: 60000 });
+  assert.notEqual(failed.status, 0);
+  const diagnostics = `${failed.stdout}\n${failed.stderr}`;
+  assert.match(diagnostics, /verification failure fixture/u);
+  assert.match(diagnostics, /DIAGNOSTIC_MARKER/u);
 });
 
 test('Task CLI 默认轻量，--full 保留完整 Task', t => {

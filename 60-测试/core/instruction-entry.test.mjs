@@ -35,3 +35,10 @@ test('项目入口初始化保持轻量且默认不覆盖', (t) => {
   const second = runNode(SCRIPT, ['初始化项目', '--cwd', project], { cwd: ROOT });
   assert.notEqual(second.status, 0);
 });
+
+test('系统入口保持轻量并将低频规则按需路由', () => {
+  const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
+  assert.ok(Buffer.byteLength(agents) < 3000);
+  assert.match(agents, /70-文档\/25-按需任务规则\.md/u);
+  assert.equal(fs.existsSync(path.join(ROOT, '70-文档', '25-按需任务规则.md')), true);
+});

@@ -16,6 +16,8 @@
 ## 轻量边界
 
 - `build-context` 与 Task CLI 默认只返回当前执行所需的轻量视图；完整 Context、Task 账本和 Evidence 不删减，诊断或审计时使用 `--full`。
+- `build-context` 默认返回已解析的 Manifest/机器配置摘要；原始机器配置仅在目标明确相关或使用 `--full` 诊断时展开，宿主已加载的系统入口不再重复读取。
+- 系统验证默认聚合成功结果，失败诊断保持完整；需要逐条成功明细时使用 `verify-system.mjs ... --full`。
 - 普通任务不生成 Review Package，只有显式要求或提供 Review 时才启用。
 - 没有 `.ai/spec-map.json` 且 `specImpact=none` 时，详细规格追踪不进入 Task 主路径。
 - 有规格映射或声明 `updated/decision-required` 时，规格与 Decision 门禁自动启用。

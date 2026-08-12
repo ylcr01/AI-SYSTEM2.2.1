@@ -29,6 +29,16 @@ function compactContext(result) {
       artifactKinds: result.classification?.artifactKinds ?? [],
       reasons: result.classification?.reasons ?? [],
     },
+    manifests: (result.manifests ?? []).map(manifest => ({
+      kind: manifest.kind,
+      name: manifest.name,
+      packageManager: manifest.packageManager,
+      hasWorkspaces: Boolean(manifest.workspaces),
+      scriptCount: manifest.scripts?.length ?? 0,
+      frameworks: manifest.frameworks ?? [],
+      checksHints: manifest.checksHints ?? [],
+    })),
+    configuration: result.configuration ?? [],
     filesToRead: result.filesToRead ?? [],
     warnings: [],
   };
