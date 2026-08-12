@@ -83,6 +83,8 @@ export function evaluateDeliveryEligibility(input = {}) {
   if(input.reviewHasBlockingFindings)return{decision:'needs_rework',reasons:['blocking-review-finding']};
   if(input.explicitReviewRequirement&&!input.reviewSatisfied)return{decision:'reviewing',reasons:['explicit-review-requirement']};
   if(input.handoffRequired&&!input.handoffReady)return{decision:'verifying',reasons:['handoff-required']};
+  if(input.integrationRequired&&!input.integrationReady)return{decision:'verifying',reasons:['integration-commit-required',...(input.integrationReasons??[])]};
+  if(input.integrationRequired)return{decision:'ready_to_integrate',reasons:['integration-required']};
   return{decision:'waiting_acceptance',reasons:[]};
 }
 

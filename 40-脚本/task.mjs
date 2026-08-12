@@ -7,6 +7,7 @@ import {
   saveTask,
   resumeTask,
   recordHandoff,
+  confirmIntegration,
   cancelTask,
   findTask,
   listTasks,
@@ -18,7 +19,7 @@ const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
   ['handoff', '交接'], ['resume', '恢复'], ['show', '查看'], ['list', '列表'],
-  ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'],
+  ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'], ['integrate', '集成'],
 ]);
 const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
 
@@ -26,6 +27,7 @@ function nextAction(status) {
   return {
     prepared: '读取 filesToRead，并在授权 Scope 内实施。',
     needs_rework: '修复验证或规格问题后重新交付。',
+    ready_to_integrate: '由中央工作区将 resultCommit 集成到目标分支，然后运行“集成”。',
     waiting_acceptance: '等待用户验收。',
     saved: '需要继续时恢复 Task。',
   }[status];
@@ -57,6 +59,17 @@ function compactTask(task, result) {
     receipt.changeSet = {
       fingerprint: task.changeSet.fingerprint,
       files: (task.changeSet.files ?? []).map(({ path, status }) => ({ path, status })),
+    };
+  }
+
+  if (task.integration) {
+    receipt.integration = {
+      status: task.integration.status,
+      target: task.integration.target,
+      baseCommit: task.integration.baseCommit,
+      resultCommit: task.integration.resultCommit,
+      pendingRef: task.integration.pendingRef,
+      targetCommit: task.integration.targetCommit,
     };
   }
 
@@ -119,10 +132,12 @@ function output(result) {
 function help() {
   console.log(`AI 研发操作系统 V2.2.1：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+       [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   审查 --task-id <id> --review-file <json>
+  集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
   验收 --task-id <id> --decision 通过|退回
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
@@ -158,6 +173,7 @@ try {
         reviewer: args.reviewer ?? null,
         description: args['review-description'] ?? '用户或项目明确要求 Review',
       } : null,
+      integrationTarget: args['integration-target'],
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({
@@ -184,6 +200,13 @@ try {
       taskId: requiredArg(args, 'task-id'),
       decision: requiredArg(args, 'decision'),
       note: args.note,
+    }));
+  } else if (action === '集成') {
+    output(confirmIntegration({
+      stateRoot: args['state-root'],
+      taskId: requiredArg(args, 'task-id'),
+      cwd: args.cwd ?? process.cwd(),
+      target: args.target,
     }));
   } else if (action === '保存') {
     output(saveTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));

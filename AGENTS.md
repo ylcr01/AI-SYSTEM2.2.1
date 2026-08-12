@@ -6,7 +6,7 @@
 
 - **普通对话**：不依赖仓库事实时直接回答，不建 Task、不运行工程脚本。
 - **只读工程分析**：先运行 `node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --intent "<目标>"`，读取轻量结果的 `executionTarget`、`classification`、配置摘要和 `filesToRead`；仅在身份、路由或依赖诊断时追加 `--full`，不得修改仓库。
-- **仓库写任务**：编辑前运行 `node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 准备 --cwd "<项目路径>" --intent "<目标>" --acceptance "<验收>" --scope "<授权路径>"`；保存 `taskId`，读取回执中的 Scope 与 `filesToRead`，实施最小 ChangeSet；修改后运行 `交付 --task-id "<taskId>"`。只有状态为 `waiting_acceptance` 才能说明已完成工程交付，模型不得替用户验收。
+- **仓库写任务**：编辑前运行 `node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 准备 --cwd "<项目路径>" --intent "<目标>" --acceptance "<验收>" --scope "<授权路径>"`；linked/detached worktree 还必须传入 `--integration-target "<目标分支>"`。保存 `taskId`，读取回执中的 Scope 与 `filesToRead`，实施最小 ChangeSet；worktree 任务先提交再运行 `交付`，其状态进入 `ready_to_integrate` 后，由单一集成者将 `resultCommit` 集成到目标分支并运行 `集成 --task-id "<taskId>" --cwd "<目标工作区>"`。只有状态为 `waiting_acceptance` 才能说明已完成工程交付，模型不得替用户验收。
 - **外部写入或高风险动作**：Push、发布、部署、迁移、远程删除、生产数据修改等必须另获用户明确授权；安全、认证、隐私、迁移和不可逆动作还要覆盖拒绝路径、失败停止条件和可执行回滚。
 
 ## 可信边界

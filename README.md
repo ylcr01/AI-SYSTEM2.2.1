@@ -7,7 +7,8 @@
 ```text
 普通对话 → 直接回答
 只读工程分析 → build-context
-仓库写任务 → 准备 → 模型实现 → 验证与交付 → waiting_acceptance → 用户验收
+主工作区写任务 → 准备 → 模型实现 → 验证与交付 → waiting_acceptance → 用户验收
+并行 worktree → 准备（声明目标分支）→ 提交 → ready_to_integrate → 单一集成者 → waiting_acceptance → 用户验收
 外部写入 → 完整闭环 + 单独授权
 ```
 
@@ -41,8 +42,18 @@ node ./40-脚本/configure-model-entry.mjs 检查
 ```powershell
 node ./40-脚本/task.mjs 准备 --cwd <项目> --intent "<目标>" --acceptance "<验收>" --scope "."
 node ./40-脚本/task.mjs 交付 --task-id <编号> --spec-impact none|updated|decision-required
+node ./40-脚本/task.mjs 集成 --task-id <编号> --cwd <目标工作区>
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过
 ```
+
+并行 Agent 使用 detached worktree，不提前创建功能分支：
+
+```powershell
+git worktree add --detach <新路径> <起点>
+node ./40-脚本/task.mjs 准备 --cwd <新路径> --intent "<目标>" --acceptance "<验收>" --scope "." --integration-target main
+```
+
+worktree 内的任务必须先提交。可信交付会记录 `baseCommit`、`resultCommit` 和集成目标，并用 `refs/ai/pending/<taskId>` 保活待集成提交。中央工作区完成 merge 或 cherry-pick 后运行 `集成`：merge 必须使原提交可达；cherry-pick 必须能证明从 `baseCommit` 到 `resultCommit` 的每个补丁都有等价提交。确认后系统记录目标提交，后续继续用 Git 可达性检查防止目标分支回退越过已集成成果。
 
 以上命令默认输出轻量回执；需要检查完整 Task 时追加 `--full`。只读分析同样可用 `node ./40-脚本/build-context.mjs ... --full` 查看完整上下文。
 

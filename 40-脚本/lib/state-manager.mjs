@@ -5,17 +5,18 @@ import { atomicWriteJson, appendJsonLineLocked, withFileLock } from './atomic-fi
 import { SYSTEM_ROOT, normalizePath } from './registry.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 
-const CURRENT_SCHEMA = 6;
+const CURRENT_SCHEMA = 7;
 const TERMINAL = new Set(['accepted','cancelled']);
 const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
 const TRANSITIONS = {
-  prepared: new Set(['implementing','verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
-  implementing: new Set(['verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
-  verifying: new Set(['verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
-  reviewing: new Set(['reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  prepared: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  implementing: new Set(['verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  verifying: new Set(['verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  reviewing: new Set(['reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   blocked: new Set(['implementing','verifying','saved','cancelled']),
   saved: new Set(['implementing','verifying','cancelled']),
-  needs_rework: new Set(['implementing','verifying','reviewing','waiting_acceptance','blocked','saved','cancelled']),
+  needs_rework: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','blocked','saved','cancelled']),
+  ready_to_integrate: new Set(['waiting_acceptance','needs_rework','cancelled']),
   waiting_acceptance: new Set(['accepted','needs_rework','cancelled'])
 };
 
@@ -58,7 +59,7 @@ function assertWorkspaceAvailable(value, gitRoot, taskId = null) {
     && WRITING.has(item.status)
     && normalizePath(item.baseline?.gitRoot) === normalizePath(gitRoot));
   if (conflict) {
-    throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写；请使用 \`git worktree add <新路径> -b codex/<分支名>\` 创建独立 worktree，并从新路径重新准备。系统不会自动创建或删除 worktree。`);
+    throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写；请使用 \`git worktree add --detach <新路径> <起点>\` 创建独立 worktree，并在准备时声明 \`--integration-target <目标分支>\`。系统不会自动创建或删除 worktree。`);
   }
 }
 
@@ -71,6 +72,7 @@ function readRaw(file) {
 }
 
 function currentTask(raw) {
+  if (raw.schemaVersion === 6) return { ...raw, schemaVersion:CURRENT_SCHEMA, integration:raw.integration ?? null };
   if (raw.schemaVersion !== CURRENT_SCHEMA) {
     throw new Error(`不支持的 Task Schema: ${raw.schemaVersion ?? 'unknown'}；历史版本请使用对应系统读取`);
   }
@@ -89,9 +91,10 @@ export function createTask(input = {}) {
   fs.mkdirSync(value.active, { recursive: true });
   fs.mkdirSync(value.locks, { recursive: true });
   const now = new Date().toISOString();
+  const taskId = input.taskId ?? createId();
   const task = {
     schemaVersion: CURRENT_SCHEMA,
-    taskId: input.taskId ?? createId(),
+    taskId,
     stateRevision: 1,
     status: 'prepared',
     goal: input.goal,
@@ -112,6 +115,20 @@ export function createTask(input = {}) {
     specConsistency: input.specConsistency ?? null,
     experienceCandidates: [],
     handoff: null,
+    integration: input.integration?.required ? {
+      schemaVersion:1,
+      required:true,
+      status:'pending_commit',
+      target:input.integration.target,
+      baseCommit:input.baseline?.head ?? null,
+      resultCommit:null,
+      pendingRef:`refs/ai/pending/${taskId}`,
+      sourceGitRoot:input.baseline?.gitRoot ?? null,
+      gitCommonDir:input.baseline?.gitCommonDir ?? null,
+      targetGitRoot:null,
+      targetCommit:null,
+      integratedAt:null
+    } : null,
     createdAt: now,
     updatedAt: now,
     acceptedAt: null

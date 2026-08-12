@@ -76,7 +76,7 @@ const specPolicyExample = readJson('.ai/templates/spec-policy.example.json');
 if (specPolicyExample?.schemaVersion !== 1 || !['advisory','balanced','strict'].includes(specPolicyExample.mode)) errors.push('spec-policy.example.json: Schema 无效');
 
 const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
-if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 6/u.test(state)) errors.push('State Manager 缺少 V6 转换或并发锁');
+if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 7/u.test(state) || !/ready_to_integrate/u.test(state)) errors.push('State Manager 缺少 V7 集成转换或并发锁');
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');

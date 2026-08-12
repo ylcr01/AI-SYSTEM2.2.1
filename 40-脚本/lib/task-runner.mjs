@@ -2,7 +2,20 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildContext } from './context-builder.mjs';
-import { captureBaseline, computeChangeSet, normalizeScope, assertChangeSetWithinScope, userChangesRemainIsolated } from './git-state.mjs';
+import {
+  captureBaseline,
+  computeChangeSet,
+  normalizeScope,
+  assertChangeSetWithinScope,
+  userChangesRemainIsolated,
+  normalizeIntegrationTarget,
+  integrationRequiredForBaseline,
+  assertIntegrationTargetExists,
+  verifyIntegrationCandidate,
+  createPendingIntegrationRef,
+  verifyCommitIntegrated,
+  deletePendingIntegrationRef
+} from './git-state.mjs';
 import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, evaluateDeliveryEligibility, canRerunVerification } from './task-policy.mjs';
 import { createEvidence, evidenceSummary } from './evidence.mjs';
 import { planChecks, executeCheckPlan, loadChecks, acceptanceIdsForCheck } from './check-planner.mjs';
@@ -120,6 +133,13 @@ export function prepareTask(options = {}) {
   addIntentSpecificationHints(built, gitRoot, intent);
   const scope = normalizeScope(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
+  const integrationRequired = integrationRequiredForBaseline(baseline, options.integrationTarget);
+  if (integrationRequired && !options.integrationTarget) {
+    throw new Error('linked 或 detached worktree 的写任务必须通过 --integration-target 声明目标分支');
+  }
+  const integration = integrationRequired
+    ? { required:true, target:assertIntegrationTargetExists(gitRoot, normalizeIntegrationTarget(options.integrationTarget)) }
+    : null;
   const budget = createBudget({ mode: initial.controlMode, limitMs: options.budgetMs });
   return createTask({
     stateRoot: options.stateRoot,
@@ -134,6 +154,7 @@ export function prepareTask(options = {}) {
     classification: initial,
     context: built,
     baseline,
+    integration,
     verification: {
       budget,
       inputCycle: 0,
@@ -292,6 +313,7 @@ export function deliverTask(options = {}) {
     reviewPackage ? reviewContext(task, changeSet, reviewPackage) : {}
   );
   const blockingReview = reviewHasBlockingFindings(validReviews);
+  const integrationCandidate = verifyIntegrationCandidate(task, changeSet);
 
   let decision;
   if (checkExecution?.stopReason === 'budget') decision = { decision: 'saved', reasons: ['budget'] };
@@ -311,10 +333,16 @@ export function deliverTask(options = {}) {
       reviewSatisfied,
       reviewHasBlockingFindings: blockingReview,
       handoffRequired: false,
-      handoffReady: true
+      handoffReady: true,
+      integrationRequired: task.integration?.required === true,
+      integrationReady: integrationCandidate.ok,
+      integrationReasons: integrationCandidate.reasons
     });
   }
   const status = decision.decision;
+  const pendingRef = status === 'ready_to_integrate'
+    ? createPendingIntegrationRef(changeSet.gitRoot, task.taskId, integrationCandidate.resultCommit)
+    : task.integration?.pendingRef ?? null;
 
   return updateTask({
     stateRoot: options.stateRoot,
@@ -345,6 +373,14 @@ export function deliverTask(options = {}) {
         lastInputChange: inputChanged ? { type: options.inputChange, reason: options.inputChangeReason } : null
       };
       next.deliveryDecision = decision;
+      if (next.integration?.required) {
+        next.integration = {
+          ...next.integration,
+          status: status === 'ready_to_integrate' ? 'ready' : next.integration.status,
+          resultCommit: integrationCandidate.ok ? integrationCandidate.resultCommit : null,
+          pendingRef
+        };
+      }
       next.blockers = isolation.ok ? next.blockers : [...new Set([...(next.blockers ?? []), `用户已有改动被触及: ${isolation.overwritten.join(', ')}`])];
       if (next.classification.continuity === 'handoff-required' || status === 'saved') {
         next.handoff = createHandoff({ ...next, status }, { stateRevision: task.stateRevision + 1, next: status });
@@ -354,9 +390,69 @@ export function deliverTask(options = {}) {
   });
 }
 
+function assertIntegratedTaskFresh(task) {
+  if (!task.integration?.required || task.integration.status !== 'integrated') return null;
+  const result = verifyCommitIntegrated({
+    gitRoot: task.integration.targetGitRoot,
+    expectedCommonDir: task.integration.gitCommonDir,
+    target: task.integration.target,
+    resultCommit: task.integration.targetCommit
+  });
+  if (!result.ok) throw new Error(`集成门禁已失效: ${result.reason}`);
+  return result;
+}
+
+export function confirmIntegration(options = {}) {
+  const current = readTask({ stateRoot: options.stateRoot, taskId: options.taskId });
+  const task = current.task;
+  if (task.status !== 'ready_to_integrate') throw new Error(`任务当前不能确认集成: ${task.status}`);
+  if (!task.integration?.resultCommit) throw new Error('任务缺少待集成结果提交');
+  const target = normalizeIntegrationTarget(options.target ?? task.integration.target);
+  if (target !== task.integration.target) throw new Error(`集成目标不匹配: 任务要求 ${task.integration.target}`);
+  const targetGitRoot = path.resolve(options.cwd ?? process.cwd());
+  const result = verifyCommitIntegrated({
+    gitRoot: targetGitRoot,
+    expectedCommonDir: task.integration.gitCommonDir,
+    target,
+    resultCommit: task.integration.resultCommit,
+    baseCommit: task.integration.baseCommit
+  });
+  if (!result.ok) {
+    const hint = result.reason === 'result-not-reachable'
+      ? `；请先将 ${task.integration.resultCommit} cherry-pick 或 merge 到 ${target}`
+      : '';
+    throw new Error(`尚未确认集成: ${result.reason}${hint}`);
+  }
+  deletePendingIntegrationRef(targetGitRoot, task.integration.pendingRef, task.integration.resultCommit);
+  return updateTask({
+    stateRoot: options.stateRoot,
+    taskId: task.taskId,
+    expectedRevision: task.stateRevision,
+    transitionTo: 'waiting_acceptance',
+    event: 'integration',
+    mutate(next) {
+      next.integration = {
+        ...next.integration,
+        status:'integrated',
+        targetGitRoot,
+        targetCommit:result.targetCommit,
+        method:result.method,
+        integratedAt:new Date().toISOString()
+      };
+      next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
+      next.verification = { ...next.verification, stopReason:'evidence-sufficient' };
+      if (next.classification.continuity === 'handoff-required') {
+        next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
+      }
+      return next;
+    }
+  });
+}
+
 function revalidateForAcceptance(task) {
-  const changeSet = computeChangeSet(task.baseline);
-  if (changeSet.fingerprint !== task.changeSet?.fingerprint) throw new Error('交付后的目标文件已经变化，必须重新验证和交付');
+  const integrated = assertIntegratedTaskFresh(task);
+  const changeSet = integrated ? task.changeSet : computeChangeSet(task.baseline);
+  if (!integrated && changeSet.fingerprint !== task.changeSet?.fingerprint) throw new Error('交付后的目标文件已经变化，必须重新验证和交付');
   const scopeValidation = assertChangeSetWithinScope(changeSet, task.authorization.scope[0]);
   const isolation = userChangesRemainIsolated(task.baseline, changeSet, task.authorization.allowedExistingChanges ?? []);
   const requiredCovers = determineEvidenceRequirements({
@@ -371,7 +467,9 @@ function revalidateForAcceptance(task) {
     requiredCovers,
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle: task.verification?.inputCycle ?? 0, gitRoot: changeSet.gitRoot }
   });
-  const specState = revalidateSpecState(task, changeSet);
+  const specState = integrated
+    ? { specTraceability:task.specTraceability, specConsistency:task.specConsistency }
+    : revalidateSpecState(task, changeSet);
   const traceability = specState.specTraceability;
   const specConsistency = specState.specConsistency;
   if (specConsistency && !specConsistency.ok) throw new Error(`验收前规格一致性门禁已失效: ${specConsistency.blockingIssues.map((item) => item.id).join(', ')}`);

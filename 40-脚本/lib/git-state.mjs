@@ -10,6 +10,7 @@ function hashFile(file) {
 }
 
 function gitRaw(root, args) { const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 }); return result.status === 0 && !result.error ? result.stdout : null; }
+function gitResult(root, args) { return spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 }); }
 function statusEntries(gitRoot) {
   const raw = gitRaw(gitRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
   if (raw === null) return [];
@@ -60,7 +61,12 @@ export function scopeAbsolute(scope, gitRoot) {
 export function captureBaseline(gitRoot) {
   if (!gitRoot) throw new Error('缺少 Git Root');
   const root = path.resolve(gitRoot); const files = statusEntries(root);
-  return { schemaVersion:3, gitRoot:root, head:runGit(root,['rev-parse','HEAD']), files,
+  const gitDir = runGit(root, ['rev-parse', '--path-format=absolute', '--git-dir']);
+  const gitCommonDir = runGit(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  const branch = runGit(root, ['branch', '--show-current']) || null;
+  return { schemaVersion:4, gitRoot:root, head:runGit(root,['rev-parse','HEAD']), files,
+    branch, gitDir:gitDir ? path.resolve(gitDir) : null, gitCommonDir:gitCommonDir ? path.resolve(gitCommonDir) : null,
+    linkedWorktree:Boolean(gitDir && gitCommonDir && normalizePath(gitDir) !== normalizePath(gitCommonDir)),
     fingerprint:fingerprint(files), capturedAt:new Date().toISOString() };
 }
 
@@ -89,8 +95,88 @@ export function computeChangeSet(baseline) {
   const currentHead=runGit(root,['rev-parse','HEAD']);
   for(const item of committedChanges(root,baseline.head,currentHead)){const idx=changes.findIndex(x=>x.path===item.path); if(idx>=0)changes[idx]=item;else changes.push(item);}
   changes.sort((a,b)=>a.path.localeCompare(b.path));
-  return {schemaVersion:3,gitRoot:root,baselineHead:baseline.head,currentHead,files:changes,
+  const uncommittedTaskChanges = JSON.stringify(currentEntries) !== JSON.stringify(baseline.files ?? []);
+  return {schemaVersion:4,gitRoot:root,baselineHead:baseline.head,currentHead,files:changes,uncommittedTaskChanges,
     fingerprint:fingerprint(changes,{head:currentHead}),computedAt:new Date().toISOString()};
+}
+
+export function normalizeIntegrationTarget(value) {
+  const raw = String(value ?? '').trim().replace(/^refs\/heads\//u, '');
+  if (!raw || raw.startsWith('-') || raw.includes('..') || raw.includes('@{') || raw.endsWith('.lock') || !/^[A-Za-z0-9._/-]+$/u.test(raw)) {
+    throw new Error('集成目标必须是有效的本地分支名');
+  }
+  return raw;
+}
+
+export function integrationRequiredForBaseline(baseline, explicitTarget = null) {
+  return Boolean(explicitTarget || baseline?.linkedWorktree || !baseline?.branch);
+}
+
+export function assertIntegrationTargetExists(gitRoot, target) {
+  const normalized = normalizeIntegrationTarget(target);
+  if (!runGit(gitRoot, ['rev-parse', '--verify', `refs/heads/${normalized}^{commit}`])) {
+    throw new Error(`集成目标分支不存在: ${normalized}`);
+  }
+  return normalized;
+}
+
+export function createPendingIntegrationRef(gitRoot, taskId, commit) {
+  if (!/^task-[A-Za-z0-9._-]+$/u.test(taskId ?? '')) throw new Error('任务编号无效');
+  if (!/^[0-9a-f]{40,64}$/iu.test(commit ?? '')) throw new Error('结果提交无效');
+  const ref = `refs/ai/pending/${taskId}`;
+  const result = gitResult(gitRoot, ['update-ref', ref, commit]);
+  if (result.status !== 0 || result.error) throw new Error(`无法保存待集成提交: ${(result.stderr || result.error?.message || '').trim()}`);
+  return ref;
+}
+
+export function verifyIntegrationCandidate(task, changeSet) {
+  if (!task.integration?.required) return { ok:true, reasons:[] };
+  const reasons = [];
+  if (!changeSet.currentHead || changeSet.currentHead === changeSet.baselineHead) reasons.push('missing-result-commit');
+  if (changeSet.uncommittedTaskChanges) reasons.push('uncommitted-task-changes');
+  if (changeSet.currentHead && changeSet.baselineHead) {
+    const ancestry = gitResult(changeSet.gitRoot, ['merge-base', '--is-ancestor', changeSet.baselineHead, changeSet.currentHead]);
+    if (ancestry.status !== 0) reasons.push('result-not-descendant-of-baseline');
+  }
+  return { ok:reasons.length === 0, reasons, resultCommit:changeSet.currentHead ?? null };
+}
+
+function commonGitDir(gitRoot) {
+  const value = runGit(gitRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  return value ? normalizePath(value) : null;
+}
+
+export function verifyCommitIntegrated(input = {}) {
+  const gitRoot = path.resolve(input.gitRoot);
+  const expectedCommonDir = input.expectedCommonDir ? normalizePath(input.expectedCommonDir) : null;
+  const actualCommonDir = commonGitDir(gitRoot);
+  if (!actualCommonDir || (expectedCommonDir && actualCommonDir !== expectedCommonDir)) {
+    return { ok:false, reason:'repository-mismatch', targetCommit:null };
+  }
+  const target = normalizeIntegrationTarget(input.target);
+  const targetRef = `refs/heads/${target}`;
+  const targetCommit = runGit(gitRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
+  if (!targetCommit) return { ok:false, reason:'target-not-found', target, targetRef, targetCommit:null };
+  const result = gitResult(gitRoot, ['merge-base', '--is-ancestor', input.resultCommit, targetCommit]);
+  if (result.status === 0) return { ok:true, reason:null, method:'ancestor', target, targetRef, targetCommit };
+  if (input.baseCommit) {
+    const cherry = gitResult(gitRoot, ['cherry', targetRef, input.resultCommit, input.baseCommit]);
+    const lines = String(cherry.stdout ?? '').split(/\r?\n/u).filter(Boolean);
+    if (cherry.status === 0 && lines.length > 0 && lines.every((line) => line.startsWith('- '))) {
+      return { ok:true, reason:null, method:'patch-equivalent', target, targetRef, targetCommit };
+    }
+  }
+  return { ok:false, reason:'result-not-reachable', method:null, target, targetRef, targetCommit };
+}
+
+export function deletePendingIntegrationRef(gitRoot, ref, expectedCommit) {
+  if (!/^refs\/ai\/pending\/task-[A-Za-z0-9._-]+$/u.test(ref ?? '')) throw new Error('待集成引用无效');
+  const current = runGit(gitRoot, ['rev-parse', '--verify', ref]);
+  if (!current) return false;
+  if (current !== expectedCommit) throw new Error('待集成引用已指向其他提交，拒绝删除');
+  const result = gitResult(gitRoot, ['update-ref', '-d', ref, expectedCommit]);
+  if (result.status !== 0 || result.error) throw new Error(`无法清理待集成引用: ${(result.stderr || result.error?.message || '').trim()}`);
+  return true;
 }
 
 export function validateChangeSetScope(changeSet, scope) {
