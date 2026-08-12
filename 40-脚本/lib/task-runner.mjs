@@ -159,6 +159,22 @@ export function deliverTask(options = {}) {
   const before = computeChangeSet(task.baseline);
   const scopeValidation = assertChangeSetWithinScope(before, scope);
   const isolation = userChangesRemainIsolated(task.baseline, before, task.authorization.allowedExistingChanges ?? []);
+  if (!isolation.ok) {
+    return updateTask({
+      stateRoot: options.stateRoot,
+      taskId: task.taskId,
+      expectedRevision: task.stateRevision,
+      transitionTo: 'blocked',
+      event: 'delivery',
+      mutate(next) {
+        next.changeSet = before;
+        next.verification = { ...next.verification, stopReason: 'isolation-failed' };
+        next.deliveryDecision = { decision: 'blocked', reasons: ['user-changes'] };
+        next.blockers = [...new Set([...(next.blockers ?? []), `用户已有改动被触及: ${isolation.overwritten.join(', ')}`])];
+        return next;
+      }
+    });
+  }
   const classification = reclassifyFromChangeSet(task.classification, before, { forcedMode: options.forceMode, forceReason: options.forceReason });
   let inputCycle = Number(task.verification?.inputCycle ?? 0);
   const inputChanged = Boolean(options.inputChange);

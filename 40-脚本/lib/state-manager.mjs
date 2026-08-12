@@ -7,6 +7,7 @@ import { createSpecImpact } from './spec-impact.mjs';
 
 const CURRENT_SCHEMA = 6;
 const TERMINAL = new Set(['accepted','cancelled']);
+const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
 const TRANSITIONS = {
   prepared: new Set(['implementing','verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   implementing: new Set(['verifying','reviewing','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
@@ -37,6 +38,18 @@ function taskFile(value, id) {
 
 function lockFile(value, id) {
   return path.join(value.locks, `${id}.lock`);
+}
+
+function workspaceLockFile(value, gitRoot) {
+  const key = crypto.createHash('sha256').update(normalizePath(gitRoot)).digest('hex').slice(0, 24);
+  return path.join(value.locks, `workspace-${key}.lock`);
+}
+
+function activeTasks(value) {
+  if (!fs.existsSync(value.active)) return [];
+  return fs.readdirSync(value.active)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => currentTask(readRaw(path.join(value.active, name))));
 }
 
 function createId() {
@@ -93,8 +106,18 @@ export function createTask(input = {}) {
     updatedAt: now,
     acceptedAt: null
   };
-  atomicWriteJson(taskFile(value, task.taskId), task, value.pending);
-  return { task, filePath: taskFile(value, task.taskId), stateRoot: value.root };
+  const write = () => {
+    const conflict = input.baseline?.gitRoot && activeTasks(value)
+      .find((item) => WRITING.has(item.status) && normalizePath(item.baseline?.gitRoot) === normalizePath(input.baseline.gitRoot));
+    if (conflict) {
+      throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写；请使用 \`git worktree add <新路径> -b codex/<分支名>\` 创建独立 worktree，并从新路径重新准备。系统不会自动创建或删除 worktree。`);
+    }
+    atomicWriteJson(taskFile(value, task.taskId), task, value.pending);
+    return { task, filePath: taskFile(value, task.taskId), stateRoot: value.root };
+  };
+  return input.baseline?.gitRoot
+    ? withFileLock(workspaceLockFile(value, input.baseline.gitRoot), write, { timeoutMs: 10000, staleMs: 60000 })
+    : write();
 }
 
 export function readTask(input = {}) {
@@ -154,10 +177,8 @@ export function updateTask(input = {}) {
 
 export function listTasks(input = {}) {
   const value = paths(input.stateRoot);
-  let tasks = fs.existsSync(value.active) ? fs.readdirSync(value.active)
-    .filter((name) => name.endsWith('.json'))
-    .map((name) => currentTask(readRaw(path.join(value.active, name))))
-    .sort((left, right) => (right.updatedAt ?? right.createdAt).localeCompare(left.updatedAt ?? left.createdAt)) : [];
+  let tasks = activeTasks(value)
+    .sort((left, right) => (right.updatedAt ?? right.createdAt).localeCompare(left.updatedAt ?? left.createdAt));
   if (input.gitRoot) {
     tasks = tasks.filter((task) => normalizePath(task.baseline?.gitRoot) === normalizePath(input.gitRoot));
   }

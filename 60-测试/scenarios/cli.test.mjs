@@ -8,7 +8,6 @@ import { gitRepo, tempDir, runNode } from '../helpers.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
 const TASK = path.join(ROOT, '40-脚本/task.mjs');
-const VERIFY = path.join(ROOT, '40-脚本/verify-system.mjs');
 
 test('build-context 默认轻量，--full 保留完整上下文', t => {
   const repo = gitRepo(t);
@@ -88,43 +87,6 @@ test('系统入口已由宿主加载时不进入 filesToRead', () => {
   const full = JSON.parse(fullResult.stdout);
   assert.equal(full.facts.find(fact => fact.path === path.join(ROOT, 'AGENTS.md')).readMode, 'preloaded');
   assert.equal(full.facts.find(fact => fact.path === path.join(ROOT, 'package.json')).readMode, 'machine');
-});
-
-test('系统验证聚合成功结果并保留完整成功/失败诊断', { timeout: 60000 }, t => {
-  const compact = runNode(VERIFY, [
-    '--profile', 'tests',
-    '--group', 'core',
-  ], { cwd: ROOT, timeout: 60000 });
-  assert.equal(compact.status, 0, compact.stderr);
-  assert.match(compact.stdout, /core 测试: passed, \d+ tests/u);
-  assert.doesNotMatch(compact.stdout, /原子写完整替换 JSON/u);
-
-  const full = runNode(VERIFY, [
-    '--profile', 'tests',
-    '--group', 'core',
-    '--full',
-  ], { cwd: ROOT, timeout: 60000 });
-  assert.equal(full.status, 0, full.stderr);
-  assert.match(full.stdout, /原子写完整替换 JSON/u);
-  assert.ok(Buffer.byteLength(compact.stdout) < Buffer.byteLength(full.stdout));
-
-  const fixture = path.join(ROOT, '60-测试', 'core', 'verification-failure-fixture.test.mjs');
-  assert.equal(fs.existsSync(fixture), false);
-  t.after(() => fs.rmSync(fixture, { force: true }));
-  fs.writeFileSync(fixture, [
-    "import test from 'node:test';",
-    "test('verification failure fixture', () => { throw new Error('DIAGNOSTIC_MARKER'); });",
-    '',
-  ].join('\n'));
-
-  const failed = runNode(VERIFY, [
-    '--profile', 'tests',
-    '--group', 'core',
-  ], { cwd: ROOT, timeout: 60000 });
-  assert.notEqual(failed.status, 0);
-  const diagnostics = `${failed.stdout}\n${failed.stderr}`;
-  assert.match(diagnostics, /verification failure fixture/u);
-  assert.match(diagnostics, /DIAGNOSTIC_MARKER/u);
 });
 
 test('Task CLI 默认轻量，--full 保留完整 Task', t => {

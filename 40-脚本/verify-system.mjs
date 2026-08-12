@@ -58,9 +58,11 @@ function run(name, args, timeout = 600000) {
 }
 
 if (profile !== 'tests') run('系统自检', ['./40-脚本/check-system.mjs']);
-for (const group of requestedGroup ? [requestedGroup] : availableGroups) {
-  run(`${group} 测试`, ['--test', ...testFiles(group)]);
-}
+const groups = requestedGroup ? [requestedGroup] : availableGroups;
+run(requestedGroup ? `${requestedGroup} 测试` : '全部测试', [
+  '--test',
+  ...groups.flatMap(testFiles),
+]);
 if (profile === 'release' && !requestedGroup) {
   run('发布清单', ['./40-脚本/build-release-inventory.mjs']);
 }
