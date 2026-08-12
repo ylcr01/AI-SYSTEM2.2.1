@@ -52,6 +52,16 @@ function activeTasks(value) {
     .map((name) => currentTask(readRaw(path.join(value.active, name))));
 }
 
+function assertWorkspaceAvailable(value, gitRoot, taskId = null) {
+  if (!gitRoot) return;
+  const conflict = activeTasks(value).find((item) => item.taskId !== taskId
+    && WRITING.has(item.status)
+    && normalizePath(item.baseline?.gitRoot) === normalizePath(gitRoot));
+  if (conflict) {
+    throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写；请使用 \`git worktree add <新路径> -b codex/<分支名>\` 创建独立 worktree，并从新路径重新准备。系统不会自动创建或删除 worktree。`);
+  }
+}
+
 function createId() {
   return `task-${new Date().toISOString().replace(/[-:.TZ]/gu, '')}-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -107,11 +117,7 @@ export function createTask(input = {}) {
     acceptedAt: null
   };
   const write = () => {
-    const conflict = input.baseline?.gitRoot && activeTasks(value)
-      .find((item) => WRITING.has(item.status) && normalizePath(item.baseline?.gitRoot) === normalizePath(input.baseline.gitRoot));
-    if (conflict) {
-      throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写；请使用 \`git worktree add <新路径> -b codex/<分支名>\` 创建独立 worktree，并从新路径重新准备。系统不会自动创建或删除 worktree。`);
-    }
+    assertWorkspaceAvailable(value, input.baseline?.gitRoot);
     atomicWriteJson(taskFile(value, task.taskId), task, value.pending);
     return { task, filePath: taskFile(value, task.taskId), stateRoot: value.root };
   };
@@ -160,18 +166,26 @@ export function updateTask(input = {}) {
     if (next.taskId !== current.taskId) throw new Error('状态更新不能改变 Task ID');
     const target = input.transitionTo ?? next.status;
     validateTransition(current.status, target, input.event);
-    next.status = target;
-    next.schemaVersion = CURRENT_SCHEMA;
-    next.stateRevision = current.stateRevision + 1;
-    next.updatedAt = new Date().toISOString();
-    if (TERMINAL.has(target)) {
-      if (target === 'accepted') next.acceptedAt = next.acceptedAt ?? next.updatedAt;
-      appendJsonLineLocked(value.history, next, value.historyLock);
-      fs.rmSync(file, { force: true });
-      return { task: next, filePath: null, stateRoot: value.root };
-    }
-    atomicWriteJson(file, next, value.pending);
-    return { task: next, filePath: file, stateRoot: value.root };
+    const write = () => {
+      if (!WRITING.has(current.status) && WRITING.has(target)) {
+        assertWorkspaceAvailable(value, current.baseline?.gitRoot, current.taskId);
+      }
+      next.status = target;
+      next.schemaVersion = CURRENT_SCHEMA;
+      next.stateRevision = current.stateRevision + 1;
+      next.updatedAt = new Date().toISOString();
+      if (TERMINAL.has(target)) {
+        if (target === 'accepted') next.acceptedAt = next.acceptedAt ?? next.updatedAt;
+        appendJsonLineLocked(value.history, next, value.historyLock);
+        fs.rmSync(file, { force: true });
+        return { task: next, filePath: null, stateRoot: value.root };
+      }
+      atomicWriteJson(file, next, value.pending);
+      return { task: next, filePath: file, stateRoot: value.root };
+    };
+    return !WRITING.has(current.status) && WRITING.has(target) && current.baseline?.gitRoot
+      ? withFileLock(workspaceLockFile(value, current.baseline.gitRoot), write, { timeoutMs: 10000, staleMs: 60000 })
+      : write();
   }, { timeoutMs: 10000, staleMs: 60000 });
 }
 
