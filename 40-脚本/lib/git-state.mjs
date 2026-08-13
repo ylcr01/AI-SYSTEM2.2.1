@@ -38,11 +38,15 @@ function nearestExisting(value) {
 }
 
 export function normalizeScope(executionTarget, scopeValue, gitRoot) {
+  if (Array.isArray(scopeValue)) throw new Error('授权 Scope 只能指定一个路径；多个文件或目录请改用共同父目录');
+  const rawScope = String(scopeValue ?? '.').trim();
+  if (/[,，]/u.test(rawScope)) throw new Error('授权 Scope 不接受逗号拼接；多个文件或目录请改用共同父目录');
+  if (/[*?\[\]{}]/u.test(rawScope)) throw new Error('授权 Scope 不支持 glob；请改用明确的共同父目录');
   const root = normalizePath(gitRoot); const target = normalizePath(executionTarget);
   if (!pathContains(root, target)) throw new Error('执行目标不在 Git Root 内');
-  const candidate = path.isAbsolute(String(scopeValue ?? '.'))
-    ? path.resolve(String(scopeValue ?? '.'))
-    : path.resolve(target, String(scopeValue ?? '.'));
+  const candidate = path.isAbsolute(rawScope)
+    ? path.resolve(rawScope)
+    : path.resolve(target, rawScope);
   const lexicalRelative = path.relative(path.resolve(root), path.resolve(candidate));
   if (path.isAbsolute(lexicalRelative) || lexicalRelative === '..' || lexicalRelative.startsWith(`..${path.sep}`)) throw new Error('授权 Scope 必须位于当前 Git Root 内');
   const realParent = normalizePath(nearestExisting(candidate));
