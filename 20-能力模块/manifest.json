@@ -16,6 +16,13 @@
       "artifactKinds": ["knowledge"]
     },
     {
+      "name": "project-workstations",
+      "status": "active",
+      "skill": "20-能力模块/project-workstations/SKILL.md",
+      "contract": "20-能力模块/project-workstations/CONTRACT.md",
+      "artifactKinds": ["documentation", "knowledge"]
+    },
+    {
       "name": "design-product",
       "status": "active",
       "skill": "20-能力模块/design-product/SKILL.md",

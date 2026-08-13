@@ -65,6 +65,19 @@ worktree 内的任务必须先提交。可信交付会记录 `baseCommit`、`res
 - `.ai/30-经验/`：正式经验与候选草稿；
 - `.ai/quality.json`：项目级 Contract 和 Canonical。
 
+## 项目业务工作站
+
+中央系统保存工作站方法、模板与命令；每个项目将自身的领域索引、业务档案和运行手册保存在 `.ai/workstations/`。工作站是用户可直接对话的长期业务身份，不是目录权限，也不永久绑定对话、分支或 Worktree。
+
+```powershell
+node ./40-脚本/workstations.mjs 分析 --cwd <项目>
+node ./40-脚本/workstations.mjs 初始化 --cwd <项目> --plan <已确认方案.json> --confirm-plan
+node ./40-脚本/workstations.mjs 检查 --cwd <项目>
+node ./40-脚本/workstations.mjs 路由 --cwd <项目> --intent "修复订单退款问题"
+```
+
+上下文按“索引 → 共享规则 → 唯一命中的领域档案 → 写任务运行手册 → 当前代码”加载；多领域同分时使用 `--workstation <id>` 显式选择。初始化拒绝覆盖已有目录，档案全部按当前提交复核后才可运行 `刷新 --confirm-reviewed`。
+
 整理经验：
 
 ```powershell

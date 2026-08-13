@@ -126,7 +126,8 @@ export function prepareTask(options = {}) {
     intent,
     acceptance: acceptance.map((item) => item.description).join(' '),
     classification: initial,
-    skills: options.skills ?? []
+    skills: options.skills ?? [],
+    workstation: options.workstation ?? null,
   });
   const gitRoot = built.context.gitRoot;
   if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');

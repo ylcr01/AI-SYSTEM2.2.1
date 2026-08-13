@@ -5,6 +5,7 @@ import { resolveRepositoryPath } from './path-boundary.mjs';
 import { readProjectManifests } from './manifest-reader.mjs';
 import { loadQualityContext } from './quality-registry.mjs';
 import { classifyTask } from './task-policy.mjs';
+import { routeWorkstation } from './workstations.mjs';
 
 function inferRole(context, intent) {
   const registered = context.module?.role ?? context.template?.role;
@@ -106,6 +107,7 @@ export function buildContext(options = {}) {
     handoffRequired: options.handoffRequired,
   });
   const facts = [];
+  let workstationRouting = null;
 
   if (context.projectPath) {
     addRepositoryFact(facts, context.projectPath, context.project?.entrypoints?.agents ?? 'AGENTS.md', 'project', '项目入口');
@@ -141,6 +143,15 @@ export function buildContext(options = {}) {
     addFact(facts, path.join(SYSTEM_ROOT, 'AGENTS.md'), 'system', '系统入口', 'preloaded');
   }
 
+  const workstationRoot = context.projectPath ?? context.gitRoot;
+  if (workstationRoot) {
+    workstationRouting = routeWorkstation(workstationRoot, intent, options.workstation ?? null);
+    for (const file of workstationRouting?.files ?? []) {
+      const reason = file.endsWith(`${path.sep}index.json`) ? '项目工作站索引' : '任务命中的工作站资料';
+      addFact(facts, file, 'project', reason);
+    }
+  }
+
   const manifests = readProjectManifests(context);
   for (const item of manifests) addFact(facts, item.path, 'reality', `项目 Manifest: ${item.kind}`, 'machine');
   const quality = loadQualityContext({
@@ -171,6 +182,7 @@ export function buildContext(options = {}) {
     manifests,
     configuration,
     quality,
+    workstationRouting,
     filesToRead: [...new Set([...semanticFacts, ...relevantMachineFacts, ...quality.files])],
     next: [
       '先读取项目入口、任务相关资料、目标代码和直接调用方',

@@ -132,6 +132,7 @@ function output(result) {
 function help() {
   console.log(`AI 研发操作系统 V2.2.1：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+       [--workstation <业务领域工作站 id>]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
@@ -174,6 +175,7 @@ try {
         description: args['review-description'] ?? '用户或项目明确要求 Review',
       } : null,
       integrationTarget: args['integration-target'],
+      workstation: args.workstation,
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({
