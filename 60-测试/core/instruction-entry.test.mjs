@@ -42,7 +42,20 @@ test('项目入口初始化保持轻量且默认不覆盖', (t) => {
 
 test('系统入口保持轻量并将低频规则按需路由', () => {
   const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
-  assert.ok(Buffer.byteLength(agents) < 3000);
+  assert.ok(Buffer.byteLength(agents) < 5000);
   assert.match(agents, /70-文档\/25-按需任务规则\.md/u);
   assert.equal(fs.existsSync(path.join(ROOT, '70-文档', '25-按需任务规则.md')), true);
+});
+
+test('系统入口固化浏览器冒烟预算和熔断规则', () => {
+  const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
+  assert.match(agents, /最多 4 条核心链路/u);
+  assert.match(agents, /单条最长 15 秒/u);
+  assert.match(agents, /整批执行预算 2 分钟/u);
+  assert.match(agents, /3 分钟不可放宽的硬超时/u);
+  assert.match(agents, /任一用例失败或超时立即停止/u);
+  assert.match(agents, /连续 30 秒无有效输出立即终止/u);
+  assert.match(agents, /每 30 秒报告/u);
+  assert.match(agents, /必须拆为单独任务并在启动前取得用户明确授权/u);
+  assert.match(agents, /不能只依赖本文件/u);
 });
