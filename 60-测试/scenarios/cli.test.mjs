@@ -9,6 +9,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
 const TASK = path.join(ROOT, '40-脚本/task.mjs');
 
+test('Task CLI 帮助公开已有修改授权参数', () => {
+  const result = runNode(TASK, ['--help'], { cwd: ROOT });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /--allow-existing-change/u);
+});
+
 test('build-context 默认轻量，--full 保留完整上下文', t => {
   const repo = gitRepo(t);
   fs.writeFileSync(path.join(repo, 'AGENTS.md'), '# test\n');

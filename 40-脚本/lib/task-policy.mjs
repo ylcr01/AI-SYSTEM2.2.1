@@ -11,10 +11,11 @@ const HARD_RISK_PATTERNS = [
   ['public-contract', /(^|\/)(api|contracts?|public)(\/|$)/iu]
 ];
 
-function inferArtifactKinds(text) {
+function inferArtifactKinds(intent, acceptance) {
   const kinds=[];
-  if (/产品|规划|product/iu.test(text)) kinds.push('product');
-  if (/需求|范围|验收|requirement/iu.test(text)) kinds.push('requirements');
+  const text=[intent,acceptance].filter(Boolean).join(' ');
+  if (/产品|规划|product/iu.test(intent)) kinds.push('product');
+  if (/需求|范围|requirement/iu.test(intent)) kinds.push('requirements');
   if (/界面|交互|视觉|\bui\b|\bux\b/iu.test(text)) kinds.push('ui');
   if (/接口|API/iu.test(text)) kinds.push('api');
   if (/数据|迁移|schema/iu.test(text)) kinds.push('data');
@@ -26,15 +27,19 @@ function inferArtifactKinds(text) {
 }
 
 export function classifyTask(input = {}) {
-  const text=[input.intent,input.acceptance].filter(Boolean).join(' ');
+  const intent=String(input.intent??'');
+  const text=[intent,input.acceptance].filter(Boolean).join(' ');
   const intentRisk=CONTROLLED_WORDS.test(text);
-  const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)?'quick':'standard';
+  const artifactKinds=inferArtifactKinds(intent,input.acceptance);
+  const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
+  const structural=STRUCTURAL_WORDS.test(text);
+  const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
   return {
     controlMode,
     recommendedControlMode:controlMode,
-    structureImpact:STRUCTURAL_WORDS.test(text)?'structural':controlMode==='quick'?'none':'local',
+    structureImpact:structural?'structural':controlMode==='quick'?'none':'local',
     continuity:input.handoffRequired?'handoff-required':input.tracked===false?'ephemeral':'tracked',
-    artifactKinds:inferArtifactKinds(text),
+    artifactKinds,
     reasons:intentRisk?['intent-risk-signal']:[]
   };
 }
@@ -43,10 +48,16 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
   const reasons=[];
   for(const file of changeSet?.files??[]) for(const [reason,pattern] of HARD_RISK_PATTERNS) if(pattern.test(file.path)) reasons.push(`${reason}:${file.path}`);
   const unique=[...new Set(reasons)];
-  const runtimeChanged=(changeSet?.files??[]).some(file=>!/\.(md|txt)$/iu.test(file.path));
+  const runtimeChanged=(changeSet?.files??[]).some(file=>!/\.(md|mdx|rst|adoc)$/iu.test(file.path));
+  const semanticDocument=(classification.artifactKinds??[]).some(kind=>['product','requirements'].includes(kind));
+  const documentationOnly=(changeSet?.files??[]).length>0&&!runtimeChanged;
+  const artifactKinds=documentationOnly
+    ? [...new Set([...(classification.artifactKinds??[]).filter(kind=>['product','requirements'].includes(kind)),'documentation'])]
+    : classification.artifactKinds;
   let controlMode=classification.controlMode;
   if(unique.length) controlMode='controlled';
-  else if(classification.reasons?.includes('intent-risk-signal')) controlMode=runtimeChanged?'standard':'quick';
+  else if(documentationOnly&&!semanticDocument&&classification.structureImpact!=='structural') controlMode='quick';
+  else if(classification.reasons?.includes('intent-risk-signal')) controlMode='standard';
   else if(controlMode==='quick'&&runtimeChanged) controlMode='standard';
   if(input.forcedMode){
     const order={quick:0,standard:1,controlled:2};
@@ -54,7 +65,7 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
     if(unique.length&&input.forcedMode==='quick') throw new Error('真实高风险 ChangeSet 不得降到 Quick');
     controlMode=input.forcedMode;
   }
-  return {...classification,controlMode,reclassificationReasons:unique,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
+  return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,reclassificationReasons:unique,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
 }
 
 export function determineEvidenceRequirements(input = {}) {

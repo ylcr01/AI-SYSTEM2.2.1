@@ -133,6 +133,7 @@ function help() {
   console.log(`AI 研发操作系统 V2.2.1：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--workstation <业务领域工作站 id>]
+       [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]

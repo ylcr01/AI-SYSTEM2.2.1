@@ -38,8 +38,15 @@ function acceptanceItems(value, classification) {
   const items = values.flatMap((item) => typeof item === 'string' ? String(item).split(/[;；\n]/u) : [item]).filter(Boolean);
   const normalized = items.length ? items : ['完成用户目标并提供可信证据'];
   return normalized.map((item, index) => typeof item === 'string'
-    ? { id: `A${index + 1}`, description: item.trim(), requiredCovers: defaultAcceptanceCovers(classification), status: 'open' }
-    : { id: item.id ?? `A${index + 1}`, description: String(item.description ?? item.statement ?? ''), requiredCovers: item.requiredCovers ?? defaultAcceptanceCovers(classification), status: 'open' });
+    ? { id: `A${index + 1}`, description: item.trim(), requiredCovers: defaultAcceptanceCovers(classification), requiredCoversInferred: true, status: 'open' }
+    : { id: item.id ?? `A${index + 1}`, description: String(item.description ?? item.statement ?? ''), requiredCovers: item.requiredCovers ?? defaultAcceptanceCovers(classification), requiredCoversInferred: item.requiredCovers === undefined, status: 'open' });
+}
+
+function acceptanceForClassification(acceptance, classification) {
+  const inferred = defaultAcceptanceCovers(classification);
+  return (acceptance ?? []).map((item) => item.requiredCoversInferred === true
+    ? { ...item, requiredCovers: inferred }
+    : item);
 }
 
 function loadJsonFile(file) {
@@ -56,6 +63,11 @@ function stableFailureFingerprint(changeFingerprint, planFingerprint, inputCycle
   return hash({ changeFingerprint, planFingerprint, inputCycle });
 }
 
+function existingChangesBlocker(paths) {
+  const joined = paths.join(', ');
+  return `用户已有改动被触及: ${joined}；若用户明确授权继续修改，请取消本任务后重新准备并传入 --allow-existing-change "${joined}"`;
+}
+
 function scopeAndDiffEvidence(task, changeSet, inputCycle) {
   return createEvidence({
     kind: 'tool',
@@ -70,13 +82,13 @@ function scopeAndDiffEvidence(task, changeSet, inputCycle) {
   });
 }
 
-function evidenceFromCheck(task, changeSet, inputCycle, check) {
+function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task.acceptance) {
   return createEvidence({
     kind: 'tool',
     taskId: task.taskId,
     changeFingerprint: changeSet.fingerprint,
     inputCycle,
-    acceptanceIds: acceptanceIdsForCheck(check, task.acceptance),
+    acceptanceIds: acceptanceIdsForCheck(check, acceptance),
     covers: check.covers ?? [],
     source: {
       type: 'command', actor: 'ai-system', session: null,
@@ -192,12 +204,13 @@ export function deliverTask(options = {}) {
         next.changeSet = before;
         next.verification = { ...next.verification, stopReason: 'isolation-failed' };
         next.deliveryDecision = { decision: 'blocked', reasons: ['user-changes'] };
-        next.blockers = [...new Set([...(next.blockers ?? []), `用户已有改动被触及: ${isolation.overwritten.join(', ')}`])];
+        next.blockers = [...new Set([...(next.blockers ?? []), existingChangesBlocker(isolation.overwritten)])];
         return next;
       }
     });
   }
   const classification = reclassifyFromChangeSet(task.classification, before, { forcedMode: options.forceMode, forceReason: options.forceReason });
+  const acceptance = acceptanceForClassification(task.acceptance, classification);
   let inputCycle = Number(task.verification?.inputCycle ?? 0);
   const inputChanged = Boolean(options.inputChange);
   if (inputChanged) {
@@ -212,9 +225,9 @@ export function deliverTask(options = {}) {
   ];
   const reviews = [...(task.reviews ?? []), ...loadJsonFile(options.reviewFile)];
   let changeSet = before;
-  let requiredCovers = determineEvidenceRequirements({ classification, changeSet, acceptance: task.acceptance, observableBrowserBehavior: options.observableBrowserBehavior === true });
+  let requiredCovers = determineEvidenceRequirements({ classification, changeSet, acceptance, observableBrowserBehavior: options.observableBrowserBehavior === true });
   let summary = evidenceSummary({
-    acceptance: task.acceptance,
+    acceptance,
     evidence,
     requiredCovers,
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle, gitRoot: changeSet.gitRoot }
@@ -230,7 +243,7 @@ export function deliverTask(options = {}) {
       profile: classification.controlMode,
       requiredCovers: summary.missingCovers,
       existingCovers: summary.covers,
-      acceptance: task.acceptance,
+      acceptance,
       acceptanceCoverage: summary.acceptanceCoverage,
       checks
     });
@@ -261,7 +274,7 @@ export function deliverTask(options = {}) {
       diagnosticRetryUsed = true;
       lastFailure = failureFingerprint;
     } else {
-      evidence.push(...checkExecution.results.filter((item) => item.status === 0 && !item.error).map((item) => evidenceFromCheck(task, changeSet, inputCycle, item)));
+      evidence.push(...checkExecution.results.filter((item) => item.status === 0 && !item.error).map((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance)));
       if (!checkExecution.ok) {
         lastFailure = failureFingerprint;
         if (options.diagnosticRetry === true) diagnosticRetryUsed = true;
@@ -269,9 +282,9 @@ export function deliverTask(options = {}) {
     }
   }
 
-  requiredCovers = determineEvidenceRequirements({ classification, changeSet, acceptance: task.acceptance, observableBrowserBehavior: options.observableBrowserBehavior === true });
+  requiredCovers = determineEvidenceRequirements({ classification, changeSet, acceptance, observableBrowserBehavior: options.observableBrowserBehavior === true });
   summary = evidenceSummary({
-    acceptance: task.acceptance,
+    acceptance,
     evidence,
     requiredCovers,
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle, gitRoot: changeSet.gitRoot }
@@ -287,7 +300,7 @@ export function deliverTask(options = {}) {
       taskId: task.taskId,
       changeFingerprint: changeSet.fingerprint,
       goal: task.goal,
-      acceptance: task.acceptance,
+      acceptance,
       ...refs,
       evidenceSummary: {
         coveredAcceptance: summary.coveredAcceptance,
@@ -353,6 +366,7 @@ export function deliverTask(options = {}) {
     event: 'delivery',
     mutate(next) {
       next.classification = classification;
+      next.acceptance = acceptance;
       next.changeSet = changeSet;
       next.evidence = evidence;
       next.reviews = validReviews;
@@ -382,7 +396,7 @@ export function deliverTask(options = {}) {
           pendingRef
         };
       }
-      next.blockers = isolation.ok ? next.blockers : [...new Set([...(next.blockers ?? []), `用户已有改动被触及: ${isolation.overwritten.join(', ')}`])];
+      next.blockers = isolation.ok ? next.blockers : [...new Set([...(next.blockers ?? []), existingChangesBlocker(isolation.overwritten)])];
       if (next.classification.continuity === 'handoff-required' || status === 'saved') {
         next.handoff = createHandoff({ ...next, status }, { stateRevision: task.stateRevision + 1, next: status });
       }
