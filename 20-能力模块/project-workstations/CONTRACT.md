@@ -20,6 +20,8 @@ artifactKinds: [documentation, knowledge]
 - 初始化必须基于用户确认的方案并拒绝覆盖已有工作站目录。
 - 工作站可由用户直接派发任务并自治提交；仓库写入、Evidence、集成和用户验收继续遵守项目入口规则。
 - 工作站不永久绑定 Chat、分支、Worktree 或临时子 Agent。
+- 同一项目的并行写任务必须各自使用独立 managed/detached Worktree；Local/目标分支工作区只允许一个写 Task 或负责串行集成。
+- `needs_rework` 保持写占用；暂不继续时必须显式保存，恢复时重新检查工作树冲突。
 
 ## 最小项目产物
 

@@ -26,10 +26,10 @@ const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
 function nextAction(status) {
   return {
     prepared: '读取 filesToRead，并在授权 Scope 内实施。',
-    needs_rework: '修复验证或规格问题后重新交付。',
+    needs_rework: '修复验证或规格问题后重新交付；若暂不继续，运行“保存”显式释放当前工作树。',
     ready_to_integrate: '由中央工作区将 resultCommit 集成到目标分支，然后运行“集成”。',
     waiting_acceptance: '等待用户验收。',
-    saved: '需要继续时恢复 Task。',
+    saved: '需要继续时恢复 Task；恢复会重新竞争原工作树写权限。',
   }[status];
 }
 
@@ -144,7 +144,9 @@ function help() {
   验收 --task-id <id> --decision 通过|退回
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
-  保存|恢复|交接|查看|取消
+  保存 --task-id <id>（暂停并释放工作树写占用）
+  恢复 --task-id <id>（重新竞争原工作树写权限）
+  交接|查看|取消
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。

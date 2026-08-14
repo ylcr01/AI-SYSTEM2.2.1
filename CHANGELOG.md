@@ -24,6 +24,7 @@
 
 - 增加项目业务工作站能力：中央控制层、项目内领域档案、渐进上下文路由和非覆盖初始化。
 - 工作站支持用户直接派发任务、软领域归属、临时子 Agent 与按任务 detached worktree，继续复用单一集成门禁。
+- 并行写任务改为 Worktree 优先：Codex managed Worktree 或 detached worktree 按任务隔离，Local/目标分支工作区只保留单写或串行集成，并明确返工任务的保存释放与恢复重检。
 - 所有 spec-map 路径强制限制在 Git Root 内。
 - Decision 门禁校验 `id/status/affects/sourceTaskId/supersededBy`。
 - `insufficient` Experience Candidate 默认不落盘。

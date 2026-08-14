@@ -1,6 +1,6 @@
 ---
 name: project-workstations
-description: 分析真实项目的业务能力、架构与依赖，提出并维护可直接对话的长期成员工作站；项目档案按领域渐进加载，任务可独立执行并按需使用临时子 Agent 或 detached worktree。
+description: 分析真实项目的业务能力、架构与依赖，提出并维护可直接对话的长期成员工作站；项目档案按领域渐进加载，任务可独立执行并按需使用临时子 Agent 或 managed/detached Worktree。
 ---
 
 # project-workstations
@@ -11,7 +11,7 @@ description: 分析真实项目的业务能力、架构与依赖，提出并维�
 
 任务上下文按 `index.json → shared.md → 单个 profile.md → 写任务 runbook.md → 当前代码` 渐进加载。领域是默认专业归属而非路径权限：允许完成真实任务所需的跨域分析和最小修改。
 
-每个工作站是用户可直接派发任务的长期身份，不依赖主 Agent 串行分配。它可以自行分析、实现、验证和提交，并按任务复杂度启动临时子 Agent。Worktree 只服务并行写隔离，不作为工作站永久目录；并行提交继续走单一集成入口。
+每个工作站是用户可直接派发任务的长期身份，不依赖主 Agent 串行分配。它可以自行分析、实现、验证和提交，并按任务复杂度启动临时子 Agent。同一项目只有一个写任务时可使用 Local/主工作区；出现并行写时，每个任务必须在准备前进入独立 Worktree，Codex 桌面端优先使用任务专属 managed Worktree，其他宿主使用 detached worktree。Worktree 不作为工作站永久目录；Local/目标分支工作区只保留一个写任务或执行串行集成，并行提交继续走单一集成入口。`needs_rework` 暂不继续时运行 `保存` 释放工作树，`恢复` 时重新竞争写权限。
 
 只有用户明确要求创建 Codex 任务时，才为每个领域创建独立顶层任务。使用新任务而不是从重对话 Fork，初始提示仅引用项目根、工作站 ID 和档案路径。标题使用 `(进行中) <项目>-<领域>-S01`；需要显式路由时给 `build-context` 或 `task.mjs 准备` 传入 `--workstation <id>`。
 

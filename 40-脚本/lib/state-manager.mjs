@@ -59,7 +59,7 @@ function assertWorkspaceAvailable(value, gitRoot, taskId = null) {
     && WRITING.has(item.status)
     && normalizePath(item.baseline?.gitRoot) === normalizePath(gitRoot));
   if (conflict) {
-    throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写；请使用 \`git worktree add --detach <新路径> <起点>\` 创建独立 worktree，并在准备时声明 \`--integration-target <目标分支>\`。系统不会自动创建或删除 worktree。`);
+    throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写。若使用 Codex 桌面端，请为新对话选择“Worktree”，或先用 Handoff 将当前对话移入 Worktree；每个并行写 Task 必须独占一个 managed Worktree。其他宿主请使用 \`git worktree add --detach <新路径> <起点>\` 创建独立 worktree。进入 Worktree 后准备 Task 时必须声明 \`--integration-target <目标分支>\`。若冲突 Task 暂不继续，可运行 \`task.mjs 保存 --task-id ${conflict.taskId}\` 显式释放工作树，恢复时会重新检查写冲突。系统不会自动创建、移动或删除 worktree。`);
   }
 }
 

@@ -29,9 +29,13 @@ test('同一工作树拒绝并行 Task，不同 worktree 允许准备',t=>{
   const first=prepareTask({cwd:repo,stateRoot,intent:'第一个写任务',acceptance:['完成'],scope:'.'});
   assert.throws(()=>prepareTask({cwd:repo,stateRoot,intent:'第二个写任务',acceptance:['完成'],scope:'.'}),error=>{
     assert.match(error.message,new RegExp(first.task.taskId,'u'));
+    assert.match(error.message,/Codex 桌面端/u);
+    assert.match(error.message,/Handoff/u);
+    assert.match(error.message,/managed Worktree/u);
     assert.match(error.message,/git worktree add --detach/u);
     assert.match(error.message,/--integration-target/u);
-    assert.match(error.message,/不会自动创建或删除 worktree/u);
+    assert.match(error.message,/保存 --task-id/u);
+    assert.match(error.message,/不会自动创建、移动或删除 worktree/u);
     return true;
   });
   const parent=tempDir(t),worktree=path.join(parent,'worktree'),target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
