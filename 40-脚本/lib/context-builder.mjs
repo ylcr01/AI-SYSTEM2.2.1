@@ -134,6 +134,7 @@ export function buildContext(options = {}) {
   }
   if (context.kind === 'transient' && context.gitRoot) {
     addFact(facts, path.join(context.gitRoot, 'AGENTS.md'), 'project', '临时项目入口');
+    addFact(facts, path.join(context.gitRoot, 'README.md'), 'project', '临时项目说明');
     addFact(facts, path.join(context.gitRoot, '.ai', 'contract.md'), 'project', '临时项目契约');
     addFact(facts, path.join(context.gitRoot, '.ai', 'quality.json'), 'project', '临时项目质量清单', 'machine');
     addFact(facts, path.join(context.gitRoot, '.ai', 'spec-map.json'), 'project', '临时项目规格映射', 'machine');
@@ -171,6 +172,11 @@ export function buildContext(options = {}) {
   const configuration = facts
     .filter(item => item.readMode === 'machine' && !manifestPaths.has(item.path))
     .map(configurationSummary);
+  const filesToRead = [...new Set([...semanticFacts, ...relevantMachineFacts, ...quality.files])];
+  const warnings = [];
+  if (classification.structureImpact === 'structural' && filesToRead.length === 0) {
+    warnings.push('结构性任务没有可读取的项目资料或质量契约，请显式补充上下文后再实施。');
+  }
 
   return {
     schemaVersion: 3,
@@ -183,7 +189,8 @@ export function buildContext(options = {}) {
     configuration,
     quality,
     workstationRouting,
-    filesToRead: [...new Set([...semanticFacts, ...relevantMachineFacts, ...quality.files])],
+    filesToRead,
+    warnings,
     next: [
       '先读取项目入口、任务相关资料、目标代码和直接调用方',
       classification.structureImpact === 'structural'

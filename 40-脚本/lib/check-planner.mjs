@@ -47,7 +47,7 @@ function packageChecks(root, fallback) {
 }
 
 export function loadChecks(cwd, options = {}) {
-  const project = readJson(path.join(cwd, '.ai', 'checks.json'), { schemaVersion: 4, packageFallback: { mode: 'auto' }, checks: [] });
+  const project = readJson(path.join(cwd, '.ai', 'checks.json'), { schemaVersion: 4, packageFallback: { mode: 'none' }, checks: [] });
   const template = options.templateRoot
     ? readJson(path.join(options.templateRoot, '.ai', 'checks.json'), { checks: [] })
     : { checks: [] };

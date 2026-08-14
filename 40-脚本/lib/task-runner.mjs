@@ -63,6 +63,24 @@ function stableFailureFingerprint(changeFingerprint, planFingerprint, inputCycle
   return hash({ changeFingerprint, planFingerprint, inputCycle });
 }
 
+function firstFailureDiagnostic(execution, limit = 5000) {
+  const failure = execution?.results?.find((item) => item.status !== 0 || item.error);
+  if (!failure) return null;
+  const parts = [];
+  if (failure.stderr?.text) parts.push(`stderr:\n${failure.stderr.text}`);
+  if (failure.stdout?.text) parts.push(`stdout:\n${failure.stdout.text}`);
+  const completeOutput = parts.join('\n\n');
+  return {
+    name: failure.name,
+    command: failure.command,
+    args: failure.args ?? [],
+    exitCode: failure.status ?? null,
+    error: failure.error ?? null,
+    output: completeOutput.slice(-limit),
+    truncated: completeOutput.length > limit || failure.stderr?.truncated === true || failure.stdout?.truncated === true
+  };
+}
+
 function existingChangesBlocker(paths) {
   const joined = paths.join(', ');
   return `用户已有改动被触及: ${joined}；若用户明确授权继续修改，请取消本任务后重新准备并传入 --allow-existing-change "${joined}"`;
@@ -354,6 +372,7 @@ export function deliverTask(options = {}) {
     });
   }
   const status = decision.decision;
+  const firstFailure = firstFailureDiagnostic(checkExecution);
   const pendingRef = status === 'ready_to_integrate'
     ? createPendingIntegrationRef(changeSet.gitRoot, task.taskId, integrationCandidate.resultCommit)
     : task.integration?.pendingRef ?? null;
@@ -384,6 +403,7 @@ export function deliverTask(options = {}) {
         requiredCovers,
         missingCovers: summary.missingCovers,
         missingAcceptance: summary.missingAcceptance,
+        firstFailure,
         stopReason: checkExecution?.stopReason ?? (status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
         lastInputChange: inputChanged ? { type: options.inputChange, reason: options.inputChangeReason } : null
       };

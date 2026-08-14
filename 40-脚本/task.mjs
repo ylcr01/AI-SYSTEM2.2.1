@@ -79,6 +79,7 @@ function compactTask(task, result) {
       missingCovers: task.verification.missingCovers ?? [],
       stopReason: task.verification.stopReason ?? null,
     };
+    if (task.verification.firstFailure) receipt.verification.firstFailure = task.verification.firstFailure;
   }
 
   if (task.specImpact) {

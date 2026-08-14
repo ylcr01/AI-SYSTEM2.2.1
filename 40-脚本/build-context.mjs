@@ -41,7 +41,7 @@ function compactContext(result) {
     configuration: result.configuration ?? [],
     workstationRouting: result.workstationRouting ?? null,
     filesToRead: result.filesToRead ?? [],
-    warnings: [],
+    warnings: [...(result.warnings ?? [])],
   };
 
   if (result.role) compact.role = result.role;

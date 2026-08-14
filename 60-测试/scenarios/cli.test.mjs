@@ -216,6 +216,28 @@ test('CLI 准备→交付→验收完整闭环', t => {
   assert.equal(JSON.parse(accepted.stdout).status, 'accepted');
 });
 
+test('Task CLI 轻量回执包含首个失败诊断', t => {
+  const repo = gitRepo(t, { checks: [{
+    name: 'failing-check', command: process.execPath,
+    args: ['-e', "process.stderr.write('boom');process.exit(1)"],
+    profiles: ['standard'], covers: ['behavior'], sideEffect: 'none',
+    estimatedCost: 'very-low', timeoutMs: 5000, acceptanceMode: 'matching-covers'
+  }] });
+  const stateRoot = tempDir(t);
+  const prepared = runNode(TASK, ['准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确', '--scope', '.', '--state-root', stateRoot], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const delivered = runNode(TASK, ['交付', '--task-id', task.taskId, '--state-root', stateRoot], { cwd: ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  const receipt = JSON.parse(delivered.stdout);
+  assert.equal(receipt.status, 'needs_rework');
+  assert.equal(receipt.verification.firstFailure.name, 'failing-check');
+  assert.equal(receipt.verification.firstFailure.exitCode, 1);
+  assert.match(receipt.verification.firstFailure.output, /boom/u);
+  assert.equal('evidence' in receipt, false);
+});
+
 test('系统完整检查通过', () => {
   const result = runNode(path.join(ROOT, '40-脚本/check-system.mjs'), [], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
