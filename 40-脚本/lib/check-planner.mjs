@@ -149,11 +149,13 @@ function tail(value, max = 5000) {
   return { text: text.slice(-max), bytes: Buffer.byteLength(text), truncated: text.length > max };
 }
 
-function resolveCommand(command) {
+export function resolveCommand(command, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const comSpec = options.comSpec ?? process.env.ComSpec ?? 'cmd.exe';
   if (command === 'node') return { command: process.execPath, prefix: [] };
-  if (process.platform !== 'win32') return { command, prefix: [] };
-  if (/\.(cmd|bat)$/iu.test(command)) return { command: process.env.ComSpec ?? 'cmd.exe', prefix: ['/d', '/s', '/c', command] };
-  if (['npm', 'npx'].includes(command)) return { command: process.env.ComSpec ?? 'cmd.exe', prefix: ['/d', '/s', '/c', `${command}.cmd`] };
+  if (platform !== 'win32') return { command, prefix: [] };
+  if (/\.(cmd|bat)$/iu.test(command)) return { command: comSpec, prefix: ['/d', '/s', '/c', command] };
+  if (['npm', 'npx', 'pnpm', 'pnpx'].includes(command)) return { command: comSpec, prefix: ['/d', '/s', '/c', `${command}.cmd`] };
   return { command, prefix: [] };
 }
 
