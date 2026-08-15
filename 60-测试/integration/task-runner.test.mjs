@@ -44,6 +44,18 @@ test('预算耗尽的 Task 只能按原因有界续期',t=>{
   assert.equal(continued.task.verification.budget.spentMs,100);
   assert.equal(continued.task.verification.budget.extensions.length,1);
 });
+test('检查被剩余预算截断后可有界续期并完成交付',t=>{
+  const repo=gitRepo(t,{checks:[{name:'slow',command:process.execPath,args:['-e','setTimeout(()=>{},60)'],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);
+  const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通功能',acceptance:['功能正确'],scope:'.',budgetMs:20});
+  fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');
+  const exhausted=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(exhausted.task.status,'saved');
+  assert.equal(exhausted.task.verification.stopReason,'budget');
+  assert.equal(exhausted.task.verification.lastFailureFingerprint,null);
+  continueVerification({stateRoot,taskId:prepared.task.taskId,additionalBudgetMs:200,reason:'完成被总预算截断的检查'});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(delivered.task.status,'waiting_acceptance');
+});
 test('相同输入失败保存限长诊断并禁止机械重跑，输入变化后可继续',t=>{const repo=gitRepo(t,{checks:[{name:'environment',command:process.execPath,args:['-e',"if(process.env.READY !== '1'){process.stderr.write('START-'+ 'x'.repeat(6000));process.exit(1)}"],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通服务功能',acceptance:['服务正常'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const old=process.env.READY;process.env.READY='0';try{const failed=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(failed.task.status,'needs_rework');assert.equal(failed.task.verification.firstFailure.name,'environment');assert.equal(failed.task.verification.firstFailure.command,process.execPath);assert.equal(failed.task.verification.firstFailure.exitCode,1);assert.ok(failed.task.verification.firstFailure.output.length<=5000);assert.equal(failed.task.verification.firstFailure.output.includes('START-'),false);assert.equal(failed.task.verification.firstFailure.truncated,true);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId}),/禁止机械重复/);process.env.READY='1';const passed=deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'服务已启动'});assert.equal(passed.task.status,'waiting_acceptance');assert.equal(passed.task.verification.firstFailure,null);}finally{if(old===undefined)delete process.env.READY;else process.env.READY=old;}});
 
 test('隔离失败立即阻断且不执行检查、规格或 Review',t=>{

@@ -300,7 +300,7 @@ export function deliverTask(options = {}) {
     } else {
       evidence.push(...checkExecution.results.filter((item) => item.status === 0 && !item.error).map((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance)));
       if (!checkExecution.ok) {
-        lastFailure = failureFingerprint;
+        lastFailure = checkExecution.stopReason === 'budget' ? null : failureFingerprint;
         if (options.diagnosticRetry === true) diagnosticRetryUsed = true;
       } else lastFailure = null;
     }

@@ -17,7 +17,7 @@ const TRANSITIONS = {
   saved: new Set(['implementing','verifying','cancelled']),
   needs_rework: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','blocked','saved','cancelled']),
   ready_to_integrate: new Set(['waiting_acceptance','needs_rework','cancelled']),
-  waiting_acceptance: new Set(['verifying','accepted','needs_rework','cancelled'])
+  waiting_acceptance: new Set(['verifying','accepted','needs_rework','saved','cancelled'])
 };
 
 function paths(stateRoot) {

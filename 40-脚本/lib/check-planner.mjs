@@ -205,13 +205,17 @@ export function executeCheckPlan(plan, options = {}) {
   for (const check of plan.checks ?? []) {
     const decision = budgetDecision(budget);
     if (!decision.allowed) return { ok: false, status: 'unavailable', stopReason: 'budget', results, budget };
-    const timeout = Math.max(1, Math.min(Number(check.timeoutMs ?? 600000), remainingBudget(budget)));
+    const remainingMs = remainingBudget(budget);
+    const checkTimeoutMs = Number(check.timeoutMs ?? 600000);
+    const budgetLimited = remainingMs <= checkTimeoutMs;
+    const timeout = Math.max(1, Math.min(checkTimeoutMs, remainingMs));
     const result = executeOne(check, options.cwd, timeout);
     budget = consumeBudget(budget, result.durationMs);
     results.push(result);
     if (result.status !== 0 || result.error) {
-      const timedOut = result.error?.includes('timed out');
-      return { ok: false, status: timedOut ? 'unavailable' : 'failed', results, budget, stopReason: timedOut ? 'timeout' : 'failed' };
+      const timedOut = /ETIMEDOUT|timed out/iu.test(result.error ?? '');
+      const stopReason = timedOut ? (budgetLimited ? 'budget' : 'timeout') : 'failed';
+      return { ok: false, status: timedOut ? 'unavailable' : 'failed', results, budget, stopReason };
     }
   }
   const ok = results.length === (plan.checks ?? []).length && results.every((item) => item.status === 0 && !item.error);
