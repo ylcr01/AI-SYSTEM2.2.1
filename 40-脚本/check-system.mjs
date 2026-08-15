@@ -25,7 +25,7 @@ for (const check of checkRegistry?.checks ?? []) {
 }
 
 for (const relative of [
-  'README.md', 'AGENTS.md', '.ai/checks.json',
+  'README.md', 'AGENTS.md', '.ai/checks.json', '.github/workflows/ci.yml',
   '.ai/templates/module-spec-template.md', '.ai/templates/decision-template.md', '.ai/templates/spec-map.example.json', '.ai/templates/spec-policy.example.json',
   '.ai/templates/workstations/plan.example.json', '.ai/templates/workstations/profile-template.md', '.ai/templates/workstations/runbook-template.md', '.ai/templates/workstations/shared-template.md',
   '00-大模型接入/接入说明.md',
@@ -38,7 +38,8 @@ for (const relative of [
   '40-脚本/lib/state-manager.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
   '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs', '40-脚本/lib/workstations.mjs',
-  '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-PROJECT-WORKSTATIONS-001.md', '80-运行记录/README.md'
+  '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-PROJECT-WORKSTATIONS-001.md',
+  '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '80-运行记录/README.md'
 ]) requireFile(relative);
 
 try {
@@ -85,6 +86,8 @@ const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
 for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
+const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
+for (const marker of ['继续验证','重验集成']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复命令 ${marker}`);
 
 const result = {
   ok: errors.length === 0,

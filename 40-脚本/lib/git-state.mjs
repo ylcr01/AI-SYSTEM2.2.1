@@ -2,18 +2,28 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { runGit, pathContains, normalizePath } from './registry.mjs';
+import { pathContains, normalizePath } from './registry.mjs';
 
 function hashFile(file) {
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return null;
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-function gitRaw(root, args) { const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 }); return result.status === 0 && !result.error ? result.stdout : null; }
 function gitResult(root, args) { return spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 }); }
+function gitCommandError(root, args, result) {
+  const detail = String(result.stderr || result.error?.message || `exit ${result.status ?? 'unknown'}`).trim();
+  const error = new Error(`Git 状态无法确认: git -C ${root} ${args.join(' ')}${detail ? `；${detail}` : ''}`);
+  error.code = 'GIT_STATE_UNAVAILABLE';
+  error.git = { root, args:[...args], exitCode:result.status ?? null, detail };
+  return error;
+}
+function gitRawStrict(root, args) {
+  const result = gitResult(root, args);
+  if (result.status !== 0 || result.error) throw gitCommandError(root, args, result);
+  return result.stdout;
+}
 function statusEntries(gitRoot) {
-  const raw = gitRaw(gitRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
-  if (raw === null) return [];
+  const raw = gitRawStrict(gitRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
   const fields = raw.split('\0'); const entries = [];
   for (let index = 0; index < fields.length; index += 1) {
     const row = fields[index]; if (!row || row.length < 4) continue;
@@ -65,10 +75,11 @@ export function scopeAbsolute(scope, gitRoot) {
 export function captureBaseline(gitRoot) {
   if (!gitRoot) throw new Error('缺少 Git Root');
   const root = path.resolve(gitRoot); const files = statusEntries(root);
-  const gitDir = runGit(root, ['rev-parse', '--path-format=absolute', '--git-dir']);
-  const gitCommonDir = runGit(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  const branch = runGit(root, ['branch', '--show-current']) || null;
-  return { schemaVersion:4, gitRoot:root, head:runGit(root,['rev-parse','HEAD']), files,
+  const gitDir = gitRawStrict(root, ['rev-parse', '--path-format=absolute', '--git-dir']).trim();
+  const gitCommonDir = gitRawStrict(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
+  const branch = gitRawStrict(root, ['branch', '--show-current']).trim() || null;
+  const head = gitRawStrict(root, ['rev-parse', 'HEAD']).trim();
+  return { schemaVersion:4, gitRoot:root, head, files,
     branch, gitDir:gitDir ? path.resolve(gitDir) : null, gitCommonDir:gitCommonDir ? path.resolve(gitCommonDir) : null,
     linkedWorktree:Boolean(gitDir && gitCommonDir && normalizePath(gitDir) !== normalizePath(gitCommonDir)),
     fingerprint:fingerprint(files), capturedAt:new Date().toISOString() };
@@ -76,7 +87,7 @@ export function captureBaseline(gitRoot) {
 
 function committedChanges(root, before, after) {
   if (!before || !after || before === after) return [];
-  const raw = runGit(root, ['diff','--name-status','-z','--find-renames',before,after,'--']) ?? '';
+  const raw = gitRawStrict(root, ['diff','--name-status','-z','--find-renames',before,after,'--']);
   const fields = raw.split('\0'); const changes=[];
   for (let i=0;i<fields.length;) {
     const status=fields[i++]; if(!status) continue;
@@ -96,7 +107,7 @@ export function computeChangeSet(baseline) {
   const paths=new Set([...before.keys(),...current.keys()]); const changes=[];
   for(const filePath of paths){const left=before.get(filePath)??null; const right=current.get(filePath)??null;
     if(JSON.stringify(left)!==JSON.stringify(right)) changes.push(right??{path:filePath,status:'D ',hash:null});}
-  const currentHead=runGit(root,['rev-parse','HEAD']);
+  const currentHead=gitRawStrict(root,['rev-parse','HEAD']).trim();
   for(const item of committedChanges(root,baseline.head,currentHead)){const idx=changes.findIndex(x=>x.path===item.path); if(idx>=0)changes[idx]=item;else changes.push(item);}
   changes.sort((a,b)=>a.path.localeCompare(b.path));
   const uncommittedTaskChanges = JSON.stringify(currentEntries) !== JSON.stringify(baseline.files ?? []);
@@ -118,7 +129,9 @@ export function integrationRequiredForBaseline(baseline, explicitTarget = null) 
 
 export function assertIntegrationTargetExists(gitRoot, target) {
   const normalized = normalizeIntegrationTarget(target);
-  if (!runGit(gitRoot, ['rev-parse', '--verify', `refs/heads/${normalized}^{commit}`])) {
+  const result = gitResult(gitRoot, ['rev-parse', '--verify', `refs/heads/${normalized}^{commit}`]);
+  if (result.error) throw gitCommandError(gitRoot, ['rev-parse', '--verify', `refs/heads/${normalized}^{commit}`], result);
+  if (result.status !== 0) {
     throw new Error(`集成目标分支不存在: ${normalized}`);
   }
   return normalized;
@@ -140,43 +153,54 @@ export function verifyIntegrationCandidate(task, changeSet) {
   if (changeSet.uncommittedTaskChanges) reasons.push('uncommitted-task-changes');
   if (changeSet.currentHead && changeSet.baselineHead) {
     const ancestry = gitResult(changeSet.gitRoot, ['merge-base', '--is-ancestor', changeSet.baselineHead, changeSet.currentHead]);
-    if (ancestry.status !== 0) reasons.push('result-not-descendant-of-baseline');
+    if (ancestry.error || ![0,1].includes(ancestry.status)) throw gitCommandError(changeSet.gitRoot, ['merge-base', '--is-ancestor', changeSet.baselineHead, changeSet.currentHead], ancestry);
+    if (ancestry.status === 1) reasons.push('result-not-descendant-of-baseline');
   }
   return { ok:reasons.length === 0, reasons, resultCommit:changeSet.currentHead ?? null };
 }
 
 function commonGitDir(gitRoot) {
-  const value = runGit(gitRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  return value ? normalizePath(value) : null;
+  return normalizePath(gitRawStrict(gitRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim());
 }
 
 export function verifyCommitIntegrated(input = {}) {
   const gitRoot = path.resolve(input.gitRoot);
   const expectedCommonDir = input.expectedCommonDir ? normalizePath(input.expectedCommonDir) : null;
-  const actualCommonDir = commonGitDir(gitRoot);
+  let actualCommonDir;
+  try {
+    actualCommonDir = commonGitDir(gitRoot);
+  } catch (error) {
+    return { ok:false, reason:'repository-unavailable', targetCommit:null, diagnostic:error.message };
+  }
   if (!actualCommonDir || (expectedCommonDir && actualCommonDir !== expectedCommonDir)) {
     return { ok:false, reason:'repository-mismatch', targetCommit:null };
   }
   const target = normalizeIntegrationTarget(input.target);
   const targetRef = `refs/heads/${target}`;
-  const targetCommit = runGit(gitRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
-  if (!targetCommit) return { ok:false, reason:'target-not-found', target, targetRef, targetCommit:null };
+  const targetResult = gitResult(gitRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
+  if (targetResult.error) return { ok:false, reason:'repository-unavailable', target, targetRef, targetCommit:null, diagnostic:targetResult.error.message };
+  if (targetResult.status !== 0) return { ok:false, reason:'target-not-found', target, targetRef, targetCommit:null };
+  const targetCommit = targetResult.stdout.trim();
   const result = gitResult(gitRoot, ['merge-base', '--is-ancestor', input.resultCommit, targetCommit]);
   if (result.status === 0) return { ok:true, reason:null, method:'ancestor', target, targetRef, targetCommit };
+  if (result.error || result.status !== 1) return { ok:false, reason:'repository-unavailable', target, targetRef, targetCommit, diagnostic:gitCommandError(gitRoot, ['merge-base', '--is-ancestor', input.resultCommit, targetCommit], result).message };
   if (input.baseCommit) {
     const cherry = gitResult(gitRoot, ['cherry', targetRef, input.resultCommit, input.baseCommit]);
     const lines = String(cherry.stdout ?? '').split(/\r?\n/u).filter(Boolean);
     if (cherry.status === 0 && lines.length > 0 && lines.every((line) => line.startsWith('- '))) {
       return { ok:true, reason:null, method:'patch-equivalent', target, targetRef, targetCommit };
     }
+    if (cherry.error || cherry.status !== 0) return { ok:false, reason:'repository-unavailable', target, targetRef, targetCommit, diagnostic:gitCommandError(gitRoot, ['cherry', targetRef, input.resultCommit, input.baseCommit], cherry).message };
   }
   return { ok:false, reason:'result-not-reachable', method:null, target, targetRef, targetCommit };
 }
 
 export function deletePendingIntegrationRef(gitRoot, ref, expectedCommit) {
   if (!/^refs\/ai\/pending\/task-[A-Za-z0-9._-]+$/u.test(ref ?? '')) throw new Error('待集成引用无效');
-  const current = runGit(gitRoot, ['rev-parse', '--verify', ref]);
-  if (!current) return false;
+  const lookup = gitResult(gitRoot, ['show-ref', '--verify', '--hash', ref]);
+  if (lookup.error || ![0,1].includes(lookup.status)) throw gitCommandError(gitRoot, ['show-ref', '--verify', '--hash', ref], lookup);
+  if (lookup.status === 1) return false;
+  const current = lookup.stdout.trim();
   if (current !== expectedCommit) throw new Error('待集成引用已指向其他提交，拒绝删除');
   const result = gitResult(gitRoot, ['update-ref', '-d', ref, expectedCommit]);
   if (result.status !== 0 || result.error) throw new Error(`无法清理待集成引用: ${(result.stderr || result.error?.message || '').trim()}`);

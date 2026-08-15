@@ -25,6 +25,7 @@
 - 没有 `.ai/spec-map.json` 且 `specImpact=none` 时，详细规格追踪不进入 Task 主路径。
 - 有规格映射或声明 `updated/decision-required` 时，规格与 Decision 门禁自动启用。
 - 检查每次基于当前输入重新执行，不维护成功缓存；总验证预算和失败重试保护仍保留。
+- 所有验证预算均为有限值；预算耗尽后只能由用户说明原因并追加明确的毫秒数，不存在无限继续开关。
 - Experience Candidate 只从已验收 Task 生成 Markdown 草稿，仅做精确指纹查重，由用户人工决定是否晋升。
 - 发布 Inventory 按需生成到 `80-运行记录/release/`，不作为源码提交。
 
@@ -43,6 +44,8 @@ node ./40-脚本/configure-model-entry.mjs 检查
 node ./40-脚本/task.mjs 准备 --cwd <项目> --intent "<目标>" --acceptance "<验收>" --scope "."
 node ./40-脚本/task.mjs 交付 --task-id <编号> --spec-impact none|updated|decision-required
 node ./40-脚本/task.mjs 集成 --task-id <编号> --cwd <目标工作区>
+node ./40-脚本/task.mjs 重验集成 --task-id <编号> --cwd <目标工作区>
+node ./40-脚本/task.mjs 继续验证 --task-id <编号> --additional-budget-ms 120000 --reason "用户批准继续"
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过
 ```
 
@@ -57,7 +60,7 @@ git worktree add --detach <新路径> <起点>
 node ./40-脚本/task.mjs 准备 --cwd <新路径> --intent "<目标>" --acceptance "<验收>" --scope "." --integration-target main
 ```
 
-worktree 内的任务必须先提交。可信交付会记录 `baseCommit`、`resultCommit` 和集成目标，并用 `refs/ai/pending/<taskId>` 保活待集成提交。中央工作区完成 merge 或 cherry-pick 后运行 `集成`：merge 必须使原提交可达；cherry-pick 必须能证明从 `baseCommit` 到 `resultCommit` 的每个补丁都有等价提交。确认后系统记录目标提交，后续继续用 Git 可达性检查防止目标分支回退越过已集成成果。
+worktree 内的任务必须先提交。可信交付会记录 `baseCommit`、`resultCommit` 和集成目标，并用 `refs/ai/pending/<taskId>` 保活待集成提交。中央工作区完成 merge 或 cherry-pick 后运行 `集成`：merge 必须使原提交可达；cherry-pick 必须能证明从 `baseCommit` 到 `resultCommit` 的每个补丁都有等价提交。用户验收要求目标分支 HEAD 与已确认提交完全一致；若目标 HEAD 后续变化，必须在干净的目标工作区运行“重验集成”，重新执行必要检查并生成绑定新 HEAD 的 Integration Evidence，之后才能验收。
 
 `needs_rework` 仍属于活动写状态，避免失败后的未提交改动被其他任务覆盖。若暂不继续，运行 `task.mjs 保存 --task-id <taskId>` 显式释放该工作树；`恢复` 时系统重新检查是否已有其他写 Task 占用。系统不自动创建、移动或删除命令行 worktree。
 

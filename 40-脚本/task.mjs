@@ -6,8 +6,10 @@ import {
   acceptTask,
   saveTask,
   resumeTask,
+  continueVerification,
   recordHandoff,
   confirmIntegration,
+  revalidateIntegration,
   cancelTask,
   findTask,
   listTasks,
@@ -20,6 +22,8 @@ const aliases = new Map([
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
   ['handoff', '交接'], ['resume', '恢复'], ['show', '查看'], ['list', '列表'],
   ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'], ['integrate', '集成'],
+  ['continue-verification', '继续验证'],
+  ['revalidate-integration', '重验集成'],
 ]);
 const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
 
@@ -29,6 +33,7 @@ function nextAction(status) {
     needs_rework: '修复验证或规格问题后重新交付；若暂不继续，运行“保存”显式释放当前工作树。',
     ready_to_integrate: '由中央工作区将 resultCommit 集成到目标分支，然后运行“集成”。',
     waiting_acceptance: '等待用户验收。',
+    verifying: '运行“交付”继续验证。',
     saved: '需要继续时恢复 Task；恢复会重新竞争原工作树写权限。',
   }[status];
 }
@@ -70,6 +75,7 @@ function compactTask(task, result) {
       resultCommit: task.integration.resultCommit,
       pendingRef: task.integration.pendingRef,
       targetCommit: task.integration.targetCommit,
+      revalidatedAt: task.integration.revalidatedAt ?? null,
     };
   }
 
@@ -79,6 +85,13 @@ function compactTask(task, result) {
       missingCovers: task.verification.missingCovers ?? [],
       stopReason: task.verification.stopReason ?? null,
     };
+    if (task.verification.budget) {
+      receipt.verification.budget = {
+        limitMs:task.verification.budget.limitMs,
+        spentMs:task.verification.budget.spentMs,
+        extensionCount:task.verification.budget.extensions?.length ?? 0,
+      };
+    }
     if (task.verification.firstFailure) receipt.verification.firstFailure = task.verification.firstFailure;
   }
 
@@ -97,7 +110,11 @@ function compactTask(task, result) {
   if (result?.filePath) receipt.recordPath = result.filePath;
   if (result?.source) receipt.recordSource = result.source;
 
-  const next = nextAction(task.status);
+  const next = task.verification?.stopReason === 'budget'
+    ? '由用户运行“继续验证 --additional-budget-ms <毫秒> --reason <原因>”有界追加预算。'
+    : String(task.verification?.stopReason ?? '').startsWith('integration-')
+      ? '修复目标分支或检查问题后，再次运行“重验集成”。'
+    : nextAction(task.status);
   if (next) receipt.next = next;
 
   return receipt;
@@ -141,6 +158,8 @@ function help() {
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   审查 --task-id <id> --review-file <json>
   集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
+  重验集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
+  继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
   验收 --task-id <id> --decision 通过|退回
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
@@ -213,6 +232,20 @@ try {
       taskId: requiredArg(args, 'task-id'),
       cwd: args.cwd ?? process.cwd(),
       target: args.target,
+    }));
+  } else if (action === '重验集成') {
+    output(revalidateIntegration({
+      stateRoot:args['state-root'],
+      taskId:requiredArg(args, 'task-id'),
+      cwd:args.cwd ?? process.cwd(),
+      target:args.target,
+    }));
+  } else if (action === '继续验证') {
+    output(continueVerification({
+      stateRoot:args['state-root'],
+      taskId:requiredArg(args, 'task-id'),
+      additionalBudgetMs:Number(requiredArg(args, 'additional-budget-ms')),
+      reason:requiredArg(args, 'reason'),
     }));
   } else if (action === '保存') {
     output(saveTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));

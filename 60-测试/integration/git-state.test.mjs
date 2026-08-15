@@ -3,3 +3,12 @@ test('Baseline 后只计算任务新增变化',t=>{const repo=gitRepo(t);const b
 test('Scope 相对目标解析、越界和符号链接逃逸被拒绝',t=>{const repo=gitRepo(t),outside=tempDir(t,'outside-');fs.mkdirSync(path.join(repo,'allowed'));const scope=normalizeScope(repo,'allowed',repo);const baseline=captureBaseline(repo);fs.writeFileSync(path.join(repo,'outside.txt'),'x');assert.throws(()=>assertChangeSetWithinScope(computeChangeSet(baseline),scope),/越出授权范围/);assert.throws(()=>normalizeScope(repo,'../outside',repo),/必须位于/);try{fs.symlinkSync(outside,path.join(repo,'link'),'dir');assert.throws(()=>normalizeScope(repo,'link',repo),/符号链接/);}catch(error){if(!['EPERM','EACCES'].includes(error.code))throw error;}});
 test('Scope 立即拒绝重复值、逗号拼接和 glob',t=>{const repo=gitRepo(t);assert.throws(()=>normalizeScope(repo,['src','test'],repo),/只能指定一个路径.*共同父目录/);assert.throws(()=>normalizeScope(repo,'src,test',repo),/不接受逗号拼接.*共同父目录/);assert.throws(()=>normalizeScope(repo,'src\/**',repo),/不支持 glob.*共同父目录/);});
 test('默认保护准备前用户已有改动，可显式授权同路径',t=>{const repo=gitRepo(t);fs.writeFileSync(path.join(repo,'README.md'),'user change\n');const baseline=captureBaseline(repo);fs.writeFileSync(path.join(repo,'README.md'),'task change\n');const c=computeChangeSet(baseline);assert.equal(userChangesRemainIsolated(baseline,c).ok,false);assert.equal(userChangesRemainIsolated(baseline,c,['README.md']).ok,true);});
+test('Git 状态无法确认时 Baseline 和 ChangeSet 都严格失败',t=>{
+  const baselineRepo=gitRepo(t),baselineGit=path.join(baselineRepo,'.git');
+  fs.renameSync(baselineGit,`${baselineGit}-disabled`);
+  assert.throws(()=>captureBaseline(baselineRepo),/Git 状态无法确认.*status/u);
+
+  const changeRepo=gitRepo(t),baseline=captureBaseline(changeRepo),changeGit=path.join(changeRepo,'.git');
+  fs.renameSync(changeGit,`${changeGit}-disabled`);
+  assert.throws(()=>computeChangeSet(baseline),/Git 状态无法确认.*status/u);
+});

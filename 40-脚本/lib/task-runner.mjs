@@ -19,7 +19,7 @@ import {
 import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, evaluateDeliveryEligibility, canRerunVerification } from './task-policy.mjs';
 import { createEvidence, evidenceSummary } from './evidence.mjs';
 import { planChecks, executeCheckPlan, loadChecks, acceptanceIdsForCheck } from './check-planner.mjs';
-import { createBudget } from './verification-budget.mjs';
+import { createBudget, extendBudget } from './verification-budget.mjs';
 import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, reviewHasBlockingFindings } from './review.mjs';
 import { createTask, readTask, findTask, updateTask, listTasks } from './state-manager.mjs';
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
@@ -84,6 +84,11 @@ function firstFailureDiagnostic(execution, limit = 5000) {
 function existingChangesBlocker(paths) {
   const joined = paths.join(', ');
   return `用户已有改动被触及: ${joined}；若用户明确授权继续修改，请取消本任务后重新准备并传入 --allow-existing-change "${joined}"`;
+}
+
+function withoutDerivedBlockers(blockers = []) {
+  return blockers.filter((item) => !String(item).startsWith('用户已有改动被触及:')
+    && item !== 'Handoff 或 ChangeSet 已变化，必须重新验证');
 }
 
 function scopeAndDiffEvidence(task, changeSet, inputCycle) {
@@ -211,6 +216,7 @@ export function deliverTask(options = {}) {
   const before = computeChangeSet(task.baseline);
   const scopeValidation = assertChangeSetWithinScope(before, scope);
   const isolation = userChangesRemainIsolated(task.baseline, before, task.authorization.allowedExistingChanges ?? []);
+  const persistentBlockers = withoutDerivedBlockers(task.blockers ?? []);
   if (!isolation.ok) {
     return updateTask({
       stateRoot: options.stateRoot,
@@ -222,7 +228,7 @@ export function deliverTask(options = {}) {
         next.changeSet = before;
         next.verification = { ...next.verification, stopReason: 'isolation-failed' };
         next.deliveryDecision = { decision: 'blocked', reasons: ['user-changes'] };
-        next.blockers = [...new Set([...(next.blockers ?? []), existingChangesBlocker(isolation.overwritten)])];
+        next.blockers = [...new Set([...persistentBlockers, existingChangesBlocker(isolation.overwritten)])];
         return next;
       }
     });
@@ -357,7 +363,7 @@ export function deliverTask(options = {}) {
       identityValid: Boolean(task.context?.context?.gitRoot),
       scopeValid: scopeValidation.ok,
       userChangesIsolated: isolation.ok,
-      blockers: task.blockers,
+      blockers: persistentBlockers,
       invalidEvidence: summary.invalid,
       missingAcceptance: summary.missingAcceptance,
       missingCovers: summary.missingCovers,
@@ -416,7 +422,7 @@ export function deliverTask(options = {}) {
           pendingRef
         };
       }
-      next.blockers = isolation.ok ? next.blockers : [...new Set([...(next.blockers ?? []), existingChangesBlocker(isolation.overwritten)])];
+      next.blockers = persistentBlockers;
       if (next.classification.continuity === 'handoff-required' || status === 'saved') {
         next.handoff = createHandoff({ ...next, status }, { stateRevision: task.stateRevision + 1, next: status });
       }
@@ -431,10 +437,119 @@ function assertIntegratedTaskFresh(task) {
     gitRoot: task.integration.targetGitRoot,
     expectedCommonDir: task.integration.gitCommonDir,
     target: task.integration.target,
-    resultCommit: task.integration.targetCommit
+    resultCommit: task.integration.resultCommit,
+    baseCommit: task.integration.baseCommit,
   });
   if (!result.ok) throw new Error(`集成门禁已失效: ${result.reason}`);
+  if (result.targetCommit !== task.integration.targetCommit) {
+    throw new Error(`集成目标 HEAD 已变化: 已验证 ${task.integration.targetCommit}，当前 ${result.targetCommit}；请运行“task.mjs 重验集成 --task-id ${task.taskId} --cwd <目标工作区>”`);
+  }
   return result;
+}
+
+function compactIntegrationEvidence(task, targetHead, plan, execution) {
+  return {
+    schemaVersion:1,
+    targetHead,
+    planFingerprint:plan.fingerprint,
+    requiredCovers:task.verification?.requiredCovers ?? [],
+    checks:(execution.results ?? []).map((item) => ({
+      name:item.name,
+      covers:item.covers ?? [],
+      status:item.status,
+      durationMs:item.durationMs,
+      resultFingerprint:item.resultFingerprint,
+    })),
+    createdAt:new Date().toISOString(),
+  };
+}
+
+export function revalidateIntegration(options = {}) {
+  const current = readTask({ stateRoot:options.stateRoot, taskId:options.taskId });
+  const task = current.task;
+  if (!task.integration?.required || task.integration.status !== 'integrated') throw new Error('只有已经确认集成的 Task 才能重验集成');
+  if (!['waiting_acceptance','verifying'].includes(task.status)) throw new Error(`任务当前不能重验集成: ${task.status}`);
+  const target = normalizeIntegrationTarget(options.target ?? task.integration.target);
+  if (target !== task.integration.target) throw new Error(`集成目标不匹配: 任务要求 ${task.integration.target}`);
+  const targetGitRoot = path.resolve(options.cwd ?? task.integration.targetGitRoot ?? process.cwd());
+  const integrated = verifyCommitIntegrated({
+    gitRoot:targetGitRoot,
+    expectedCommonDir:task.integration.gitCommonDir,
+    target,
+    resultCommit:task.integration.resultCommit,
+    baseCommit:task.integration.baseCommit,
+  });
+  if (!integrated.ok) throw new Error(`集成门禁已失效: ${integrated.reason}`);
+
+  const before = captureBaseline(targetGitRoot);
+  if (before.head !== integrated.targetCommit) throw new Error('目标工作区 HEAD 与集成目标分支不一致，拒绝生成重验 Evidence');
+  if (before.files.length > 0) throw new Error('目标工作区存在未提交改动，拒绝生成绑定目标 HEAD 的重验 Evidence');
+
+  const checks = loadChecks(targetGitRoot, { templateRoot:task.context?.context?.template?.path ?? null });
+  const plan = planChecks({
+    cwd:targetGitRoot,
+    profile:task.classification.controlMode,
+    requiredCovers:task.verification?.requiredCovers ?? [],
+    existingCovers:['scope','diff'],
+    acceptance:task.acceptance,
+    acceptanceCoverage:{},
+    checks,
+  });
+  if (plan.missingCovers.length || plan.missingAcceptance.length) {
+    throw new Error(`集成重验缺少检查覆盖: ${[...plan.missingCovers, ...plan.missingAcceptance].join(', ')}`);
+  }
+  const execution = executeCheckPlan(plan, { cwd:targetGitRoot, budget:task.verification.budget });
+  const after = captureBaseline(targetGitRoot);
+  let stopReason = execution.ok
+    ? null
+    : execution.stopReason === 'budget'
+      ? 'budget'
+      : `integration-check-${execution.stopReason ?? execution.status ?? 'failed'}`;
+  if (after.head !== before.head || after.fingerprint !== before.fingerprint) stopReason = 'integration-check-mutated-target';
+  if (!execution.ok || stopReason) {
+    return updateTask({
+      stateRoot:options.stateRoot,
+      taskId:task.taskId,
+      expectedRevision:task.stateRevision,
+      transitionTo:task.status,
+      event:'integration-revalidation',
+      mutate(next) {
+        next.verification = {
+          ...next.verification,
+          budget:execution.budget,
+          stopReason:stopReason ?? 'integration-check-failed',
+          firstFailure:firstFailureDiagnostic(execution),
+        };
+        next.deliveryDecision = { decision:'verifying', reasons:[stopReason ?? 'integration-check-failed'] };
+        return next;
+      }
+    });
+  }
+
+  const integrationEvidence = compactIntegrationEvidence(task, integrated.targetCommit, plan, execution);
+  return updateTask({
+    stateRoot:options.stateRoot,
+    taskId:task.taskId,
+    expectedRevision:task.stateRevision,
+    transitionTo:'waiting_acceptance',
+    event:'integration-revalidation',
+    mutate(next) {
+      next.integration = {
+        ...next.integration,
+        targetGitRoot,
+        targetCommit:integrated.targetCommit,
+        method:integrated.method,
+        integrationEvidence,
+        revalidatedAt:integrationEvidence.createdAt,
+      };
+      next.verification = { ...next.verification, budget:execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
+      next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
+      if (next.classification.continuity === 'handoff-required') {
+        next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
+      }
+      return next;
+    }
+  });
 }
 
 export function confirmIntegration(options = {}) {
@@ -515,7 +630,7 @@ function revalidateForAcceptance(task) {
     identityValid: Boolean(task.context?.context?.gitRoot),
     scopeValid: scopeValidation.ok,
     userChangesIsolated: isolation.ok,
-    blockers: task.blockers,
+    blockers: withoutDerivedBlockers(task.blockers ?? []),
     invalidEvidence: summary.invalid,
     missingAcceptance: summary.missingAcceptance,
     missingCovers: summary.missingCovers,
@@ -583,6 +698,9 @@ export function resumeTask(options = {}) {
   const current = readTask({ stateRoot: options.stateRoot, taskId: options.taskId });
   const task = current.task;
   if (!['saved','blocked','needs_rework'].includes(task.status)) throw new Error(`任务当前不能恢复: ${task.status}`);
+  if (task.status === 'saved' && task.verification?.stopReason === 'budget') {
+    throw new Error('任务因验证预算耗尽而保存；必须使用“继续验证”并说明追加预算和原因');
+  }
   const changeSet = computeChangeSet(task.baseline);
   const fresh = handoffIsFresh(task.handoff, task) && task.handoff.changeFingerprint === (changeSet.fingerprint ?? null);
   return updateTask({
@@ -594,7 +712,35 @@ export function resumeTask(options = {}) {
     mutate(next) {
       next.changeSet = changeSet;
       next.handoff = null;
-      if (!fresh) next.blockers = [...new Set([...(next.blockers ?? []), 'Handoff 或 ChangeSet 已变化，必须重新验证'])];
+      next.blockers = withoutDerivedBlockers(next.blockers ?? []);
+      if (!fresh) next.verification = { ...next.verification, stopReason:'handoff-stale' };
+      return next;
+    }
+  });
+}
+
+export function continueVerification(options = {}) {
+  const current = readTask({ stateRoot:options.stateRoot, taskId:options.taskId });
+  const task = current.task;
+  if (!['saved','waiting_acceptance','verifying'].includes(task.status) || task.verification?.stopReason !== 'budget') {
+    throw new Error('只有因验证预算耗尽而暂停的 Task 才能继续验证');
+  }
+  const budget = extendBudget(task.verification.budget, {
+    additionalMs:options.additionalBudgetMs,
+    reason:options.reason,
+  });
+  const changeSet = computeChangeSet(task.baseline);
+  return updateTask({
+    stateRoot:options.stateRoot,
+    taskId:task.taskId,
+    expectedRevision:task.stateRevision,
+    transitionTo:'verifying',
+    event:'verification-continue',
+    mutate(next) {
+      next.changeSet = changeSet;
+      next.handoff = null;
+      next.blockers = withoutDerivedBlockers(next.blockers ?? []);
+      next.verification = { ...next.verification, budget, stopReason:'budget-extended' };
       return next;
     }
   });

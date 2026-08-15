@@ -127,7 +127,9 @@ export function createTask(input = {}) {
       gitCommonDir:input.baseline?.gitCommonDir ?? null,
       targetGitRoot:null,
       targetCommit:null,
-      integratedAt:null
+      integratedAt:null,
+      integrationEvidence:null,
+      revalidatedAt:null,
     } : null,
     createdAt: now,
     updatedAt: now,

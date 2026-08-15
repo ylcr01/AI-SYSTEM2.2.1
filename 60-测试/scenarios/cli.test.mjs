@@ -4,15 +4,25 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, tempDir, runNode } from '../helpers.mjs';
+import { updateTask } from '../../40-脚本/lib/state-manager.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
 const TASK = path.join(ROOT, '40-脚本/task.mjs');
+const RUN_CHECKS = path.join(ROOT, '40-脚本/run-checks.mjs');
 
 test('Task CLI 帮助公开已有修改授权参数', () => {
   const result = runNode(TASK, ['--help'], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--allow-existing-change/u);
+  assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
+  assert.match(result.stdout, /重验集成/u);
+});
+
+test('独立检查入口拒绝旧的无限继续参数', () => {
+  const result = runNode(RUN_CHECKS, ['--continue'], { cwd:ROOT });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /无限继续参数已移除/u);
 });
 
 test('build-context 默认轻量，--full 保留完整上下文', t => {
@@ -214,6 +224,26 @@ test('CLI 准备→交付→验收完整闭环', t => {
   ], { cwd: ROOT });
   assert.equal(accepted.status, 0, accepted.stderr);
   assert.equal(JSON.parse(accepted.stdout).status, 'accepted');
+});
+
+test('CLI 继续验证按原因追加有限预算', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const prepared = runNode(TASK, ['准备', '--cwd', repo, '--intent', '验证普通功能', '--acceptance', '功能正确', '--scope', '.', '--budget-ms', '100', '--state-root', stateRoot], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  updateTask({
+    stateRoot,
+    taskId:task.taskId,
+    expectedRevision:task.stateRevision,
+    transitionTo:'saved',
+    event:'delivery',
+    mutate(next){next.verification.budget.spentMs=100;next.verification.stopReason='budget';return next;}
+  });
+  const continued = runNode(TASK, ['继续验证', '--task-id', task.taskId, '--state-root', stateRoot, '--additional-budget-ms', '50', '--reason', '用户批准继续'], { cwd:ROOT });
+  assert.equal(continued.status, 0, continued.stderr);
+  const receipt = JSON.parse(continued.stdout);
+  assert.equal(receipt.status, 'verifying');
+  assert.deepEqual(receipt.verification.budget, { limitMs:150, spentMs:100, extensionCount:1 });
 });
 
 test('Task CLI 轻量回执包含首个失败诊断', t => {
