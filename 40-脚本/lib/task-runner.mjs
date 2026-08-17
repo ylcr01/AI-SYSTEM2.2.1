@@ -23,6 +23,7 @@ import { createBudget, extendBudget } from './verification-budget.mjs';
 import {
   loadAlignmentFile,
   validateAlignmentForPreparation,
+  validateAlignmentForRealignment,
   buildAlignedGoal,
   synthesizeQuickAlignment,
   recordAlignmentEvent,
@@ -565,6 +566,73 @@ function compactIntegrationEvidence(task, targetHead, plan, execution) {
     })),
     createdAt:new Date().toISOString(),
   };
+}
+
+export function realignTask(options = {}) {
+  const current = findTask({ stateRoot: options.stateRoot, taskId: options.taskId });
+  const task = current.task;
+  const reason = String(options.reason ?? '').trim();
+  if (!reason) throw new Error('重新对齐必须说明原因');
+  const nextAlignment = loadAlignmentFile(options.alignmentFile);
+  if (!nextAlignment) throw new Error('重新对齐必须提供 --alignment-file');
+  if (!nextAlignment.originalRequest) {
+    nextAlignment.originalRequest = task.goal?.originalRequest ?? task.goal?.summary ?? '';
+  }
+  validateAlignmentForRealignment({ currentTask: task, nextAlignment });
+  const scope = task.authorization.scope[0];
+  const acceptance = acceptanceItems([
+    ...nextAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
+    ...nextAlignment.protectedBehaviors.map((description) => ({ description, source: 'protected-behavior' })),
+  ], task.classification);
+  const base = buildAlignedGoal(nextAlignment, acceptance, scope);
+  const nextGoal = {
+    ...base,
+    alignment: {
+      ...base.alignment,
+      revision: Number(task.goal?.alignment?.revision ?? 0) + 1,
+      events: [
+        ...(task.goal?.alignment?.events ?? []),
+        {
+          at: new Date().toISOString(),
+          type: 'realignment',
+          reason,
+          oldBaselineFingerprint: task.goal?.alignment?.baselineFingerprint ?? null,
+          newBaselineFingerprint: base.alignment.baselineFingerprint,
+          action: 'realigned',
+        },
+      ],
+    },
+  };
+  return updateTask({
+    stateRoot: options.stateRoot,
+    taskId: task.taskId,
+    expectedRevision: task.stateRevision,
+    transitionTo: 'implementing',
+    event: 'realign',
+    mutate(next) {
+      next.goal = nextGoal;
+      next.acceptance = acceptance;
+      next.evidence = [];
+      next.reviews = [];
+      next.reviewPackage = null;
+      next.handoff = null;
+      next.changeRationale = null;
+      next.changeSet = null;
+      next.blockers = [];
+      next.verification = {
+        ...next.verification,
+        inputCycle: Number(next.verification?.inputCycle ?? 0) + 1,
+        requiredCovers: [],
+        missingCovers: [],
+        missingAcceptance: [],
+        firstFailure: null,
+        lastFailureFingerprint: null,
+        diagnosticRetryUsed: false,
+        stopReason: null,
+      };
+      return next;
+    },
+  });
 }
 
 export function revalidateIntegration(options = {}) {

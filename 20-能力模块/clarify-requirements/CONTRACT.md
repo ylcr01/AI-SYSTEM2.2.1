@@ -32,4 +32,5 @@ artifactKinds: [requirements, product]
 - `direct`：目标清楚、Scope 局部、Acceptance 可从需求与项目事实直接形成、无项目事实冲突、无需用户实质决定；Controlled/Structural 任务禁止 direct。
 - `confirmed`：用户确认了 Goal、最终效果或关键方案，必须记录 `decisionNote`；`delegated`：用户明确委托，必须记录 `delegatedTopics` 与边界，不能绕过现有 Scope、外部写入与不可逆动作门禁。
 - 执行中只有 Goal、Outcome、Acceptance、Scope、已确认决定或风险发生实质变化时才暂停重新对齐；普通实现变化、假设被低风险推翻不触发。
-- 交付时 Standard/Controlled 对齐任务必须提供 Change Rationale，把所有 ChangeSet 文件映射到 Goal 或 Acceptance；未知文件、未知 Acceptance、空 reason 与旧指纹被机器拒绝，未映射文件不能进入等待验收。`重新对齐` 命令仍属后续阶段，未启用前沿用现有停止/重新准备流程。
+- 交付时 Standard/Controlled 对齐任务必须提供 Change Rationale，把所有 ChangeSet 文件映射到 Goal 或 Acceptance；未知文件、未知 Acceptance、空 reason 与旧指纹被机器拒绝，未映射文件不能进入等待验收。
+- `重新对齐` 命令允许在 Codex 进度中修订目标后继续同一 Task：仅 confirmed/delegated，必须记录 decisionNote 与原因；修订号加一，清空旧 Evidence/Review/Handoff/Change Rationale 并回到 implementing；不改变 Scope、外部授权、集成目标与用户已有改动授权；已 ready_to_integrate 或结束的任务应创建新 Task。

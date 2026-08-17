@@ -108,6 +108,30 @@ export function validateAlignmentForPreparation({ alignment, classification }) {
   return alignment;
 }
 
+export function validateAlignmentForRealignment({ currentTask, nextAlignment }) {
+  if (currentTask && (currentTask.status === 'accepted' || currentTask.status === 'cancelled')) {
+    throw new Error('已结束任务不能重新对齐，应创建新 Task');
+  }
+  if (currentTask?.status === 'ready_to_integrate') {
+    throw new Error('已 ready_to_integrate 的任务不能重新对齐，应创建新 Task');
+  }
+  if (!nextAlignment?.originalRequest) throw new Error('缺少 originalRequest');
+  if (!nextAlignment?.goal) throw new Error('缺少 Goal');
+  if (!nextAlignment?.expectedOutcomes?.length) throw new Error('至少需要一个 Expected Outcome');
+  if (!nextAlignment?.acceptance?.length && !nextAlignment?.protectedBehaviors?.length) {
+    throw new Error('至少需要一条 Acceptance 或 Protected Behavior');
+  }
+  const mode = nextAlignment?.alignment?.mode;
+  if (mode !== 'confirmed' && mode !== 'delegated') {
+    throw new Error('重新对齐只能使用 confirmed 或 delegated');
+  }
+  if (!nextAlignment.alignment.decisionNote) throw new Error('重新对齐必须记录 decisionNote');
+  if (mode === 'delegated' && !nextAlignment.alignment.delegatedTopics?.length) {
+    throw new Error('delegated 必须明确 delegatedTopics');
+  }
+  return nextAlignment;
+}
+
 export function computeAlignmentFingerprint({ goal, acceptance, scope }) {
   const canonical = {
     originalRequest: goal?.originalRequest ?? null,

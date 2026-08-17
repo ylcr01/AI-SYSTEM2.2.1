@@ -3,6 +3,7 @@ import { parseArgs, listArg, requiredArg } from './lib/args.mjs';
 import {
   prepareTask,
   deliverTask,
+  realignTask,
   acceptTask,
   saveTask,
   resumeTask,
@@ -20,6 +21,7 @@ import { findGitRoot } from './lib/registry.mjs';
 const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
+  ['realign', '重新对齐'],
   ['handoff', '交接'], ['resume', '恢复'], ['show', '查看'], ['list', '列表'],
   ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'], ['integrate', '集成'],
   ['continue-verification', '继续验证'],
@@ -178,6 +180,8 @@ function help() {
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Standard/Controlled 对齐任务必填）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
+  重新对齐 --task-id <id> --alignment-file <json> --reason <text>
+       （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
   集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
   重验集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
@@ -242,6 +246,13 @@ try {
       specImpactReason: args['spec-impact-reason'],
       affectedSpecificationIds: listArg(args['spec-id']),
       affectedSpecificationIdsProvided: args['spec-id'] !== undefined,
+    }));
+  } else if (action === '重新对齐') {
+    output(realignTask({
+      stateRoot: args['state-root'],
+      taskId: requiredArg(args, 'task-id'),
+      alignmentFile: requiredArg(args, 'alignment-file'),
+      reason: args.reason,
     }));
   } else if (action === '验收') {
     output(acceptTask({

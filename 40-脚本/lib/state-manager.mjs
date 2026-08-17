@@ -10,14 +10,14 @@ const TERMINAL = new Set(['accepted','cancelled']);
 const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
 const TRANSITIONS = {
   prepared: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
-  implementing: new Set(['verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
-  verifying: new Set(['verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
-  reviewing: new Set(['reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  implementing: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  verifying: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
+  reviewing: new Set(['implementing','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   blocked: new Set(['implementing','verifying','saved','cancelled']),
   saved: new Set(['implementing','verifying','cancelled']),
   needs_rework: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','blocked','saved','cancelled']),
   ready_to_integrate: new Set(['waiting_acceptance','needs_rework','cancelled']),
-  waiting_acceptance: new Set(['verifying','accepted','needs_rework','saved','cancelled'])
+  waiting_acceptance: new Set(['implementing','verifying','accepted','needs_rework','saved','cancelled'])
 };
 
 function paths(stateRoot) {
