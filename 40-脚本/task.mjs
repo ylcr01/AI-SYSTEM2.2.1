@@ -49,6 +49,18 @@ function compactTask(task, result) {
   };
 
   if (task.goal?.summary) receipt.goal = task.goal.summary;
+  if (task.goal?.expectedOutcomes) receipt.expectedOutcomes = task.goal.expectedOutcomes;
+  if (task.goal?.protectedBehaviors) receipt.protectedBehaviors = task.goal.protectedBehaviors;
+  if (task.goal?.alignment) {
+    receipt.alignment = {
+      mode: task.goal.alignment.mode,
+      revision: task.goal.alignment.revision,
+      baselineFingerprint: task.goal.alignment.baselineFingerprint,
+      reasonCodes: task.goal.alignment.reasonCodes ?? [],
+      decisionNote: task.goal.alignment.decisionNote ?? null,
+      delegatedTopics: task.goal.alignment.delegatedTopics ?? [],
+    };
+  }
 
   if (action === '准备' || action === '查看') {
     receipt.acceptance = (task.acceptance ?? []).map(({ id, description, requiredCovers }) => ({
@@ -64,6 +76,14 @@ function compactTask(task, result) {
     receipt.changeSet = {
       fingerprint: task.changeSet.fingerprint,
       files: (task.changeSet.files ?? []).map(({ path, status }) => ({ path, status })),
+    };
+  }
+  if (task.changeRationale) {
+    receipt.changeRationale = {
+      provided: task.changeRationale.provided,
+      ok: task.changeRationale.ok,
+      invalid: task.changeRationale.invalid ?? [],
+      unmappedFiles: task.changeRationale.unmappedFiles ?? [],
     };
   }
 
@@ -150,11 +170,13 @@ function output(result) {
 function help() {
   console.log(`AI 研发操作系统 V2.2.1：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+       [--alignment-file <json>（目标对齐文件，含 goal/expectedOutcomes/protectedBehaviors/acceptance/alignment.mode）]
        [--workstation <业务领域工作站 id>]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
+       [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Standard/Controlled 对齐任务必填）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   审查 --task-id <id> --review-file <json>
   集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
@@ -180,6 +202,7 @@ try {
       cwd: args.cwd ?? process.cwd(),
       intent: requiredArg(args, 'intent'),
       acceptance: listArg(args.acceptance),
+      alignmentFile: args['alignment-file'],
       scope: args.scope ?? '.',
       projectId: args.project,
       skills: listArg(args.skill),
@@ -206,6 +229,7 @@ try {
       taskId: requiredArg(args, 'task-id'),
       evidenceFile: args['evidence-file'],
       reviewFile: args['review-file'],
+      rationaleFile: args['rationale-file'],
       autoChecks: action === '审查' ? false : args['no-auto-checks'] !== true,
       inputChange: args['input-change'],
       inputChangeReason: args['input-change-reason'],

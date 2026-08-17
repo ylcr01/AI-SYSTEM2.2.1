@@ -20,6 +20,14 @@ import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, e
 import { createEvidence, evidenceSummary } from './evidence.mjs';
 import { planChecks, executeCheckPlan, loadChecks, acceptanceIdsForCheck } from './check-planner.mjs';
 import { createBudget, extendBudget } from './verification-budget.mjs';
+import {
+  loadAlignmentFile,
+  validateAlignmentForPreparation,
+  buildAlignedGoal,
+  synthesizeQuickAlignment,
+  recordAlignmentEvent,
+} from './alignment.mjs';
+import { loadChangeRationale, validateChangeRationale, changeRationaleSummary } from './change-rationale.mjs';
 import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, reviewHasBlockingFindings } from './review.mjs';
 import { createTask, readTask, findTask, updateTask, listTasks } from './state-manager.mjs';
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
@@ -39,7 +47,14 @@ function acceptanceItems(value, classification) {
   const normalized = items.length ? items : ['完成用户目标并提供可信证据'];
   return normalized.map((item, index) => typeof item === 'string'
     ? { id: `A${index + 1}`, description: item.trim(), requiredCovers: defaultAcceptanceCovers(classification), requiredCoversInferred: true, status: 'open' }
-    : { id: item.id ?? `A${index + 1}`, description: String(item.description ?? item.statement ?? ''), requiredCovers: item.requiredCovers ?? defaultAcceptanceCovers(classification), requiredCoversInferred: item.requiredCovers === undefined, status: 'open' });
+    : {
+      id: item.id ?? `A${index + 1}`,
+      description: String(item.description ?? item.statement ?? ''),
+      requiredCovers: item.requiredCovers ?? defaultAcceptanceCovers(classification),
+      requiredCoversInferred: item.requiredCovers === undefined,
+      ...(item.source !== undefined ? { source: String(item.source) } : {}),
+      status: 'open',
+    });
 }
 
 function acceptanceForClassification(acceptance, classification) {
@@ -148,13 +163,30 @@ export function prepareTask(options = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const intent = String(options.intent ?? '').trim();
   if (!intent) throw new Error('准备任务必须提供 Intent');
+  const providedAlignment = loadAlignmentFile(options.alignmentFile);
+  if (providedAlignment && !providedAlignment.originalRequest) providedAlignment.originalRequest = intent;
+  const classificationText = providedAlignment
+    ? [
+      providedAlignment.originalRequest,
+      providedAlignment.goal,
+      ...providedAlignment.expectedOutcomes,
+      ...providedAlignment.confirmedDecisions,
+      ...providedAlignment.acceptance,
+    ].join(' ')
+    : intent;
   const initial = classifyTask({
-    intent,
-    acceptance: (options.acceptance ?? []).toString(),
+    intent: classificationText,
+    acceptance: providedAlignment ? providedAlignment.acceptance.join(' ') : (options.acceptance ?? []).toString(),
     tracked: options.tracked !== false,
     handoffRequired: options.handoffRequired === true
   });
-  const acceptance = acceptanceItems(options.acceptance, initial);
+  if (providedAlignment) validateAlignmentForPreparation({ alignment: providedAlignment, classification: initial });
+  const acceptance = providedAlignment
+    ? acceptanceItems([
+      ...providedAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
+      ...providedAlignment.protectedBehaviors.map((description) => ({ description, source: 'protected-behavior' })),
+    ], initial)
+    : acceptanceItems(options.acceptance, initial);
   const built = buildContext({
     cwd,
     projectId: options.projectId,
@@ -177,9 +209,14 @@ export function prepareTask(options = {}) {
     ? { required:true, target:assertIntegrationTargetExists(gitRoot, normalizeIntegrationTarget(options.integrationTarget)) }
     : null;
   const budget = createBudget({ mode: initial.controlMode, limitMs: options.budgetMs });
+  const goal = providedAlignment
+    ? buildAlignedGoal(providedAlignment, acceptance, scope)
+    : initial.controlMode === 'quick'
+      ? buildAlignedGoal(synthesizeQuickAlignment({ intent, acceptance: options.acceptance, nonGoals: options.nonGoals }), acceptance, scope)
+      : { summary: intent, nonGoals: options.nonGoals ?? [], assumptions: [], openQuestions: [] };
   return createTask({
     stateRoot: options.stateRoot,
-    goal: { summary: intent, nonGoals: options.nonGoals ?? [], assumptions: [], openQuestions: [] },
+    goal,
     acceptance,
     authorization: {
       scope: [scope],
@@ -234,6 +271,9 @@ export function deliverTask(options = {}) {
     });
   }
   const classification = reclassifyFromChangeSet(task.classification, before, { forcedMode: options.forceMode, forceReason: options.forceReason });
+  const alignmentEscalation = task.goal?.alignment?.mode === 'direct'
+    && (classification.controlMode === 'controlled'
+      || (classification.reclassificationReasons?.length ?? 0) > 0);
   const acceptance = acceptanceForClassification(task.acceptance, classification);
   let inputCycle = Number(task.verification?.inputCycle ?? 0);
   const inputChanged = Boolean(options.inputChange);
@@ -313,6 +353,11 @@ export function deliverTask(options = {}) {
     requiredCovers,
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle, gitRoot: changeSet.gitRoot }
   });
+  const rationale = loadChangeRationale(options.rationaleFile);
+  const rationaleValidation = validateChangeRationale({ rationale, task, changeSet });
+  const rationaleRequired = classification.controlMode !== 'quick'
+    && (Boolean(task.goal?.alignment) || Boolean(rationale));
+  const rationaleGate = !rationaleRequired || rationaleValidation.ok;
 
   const specState = buildSpecState(task, changeSet, options);
   const stableSpecState = stableSpecReviewState(specState);
@@ -335,6 +380,27 @@ export function deliverTask(options = {}) {
       specImpact: stableSpecState.specImpact,
       specTraceability: stableSpecState.specTraceability,
       specConsistency: stableSpecState.specConsistency,
+      alignment: task.goal?.alignment
+        ? {
+          mode: task.goal.alignment.mode,
+          revision: task.goal.alignment.revision,
+          baselineFingerprint: task.goal.alignment.baselineFingerprint,
+          decisionNote: task.goal.alignment.decisionNote,
+          delegatedTopics: task.goal.alignment.delegatedTopics ?? [],
+          protectedBehaviors: task.goal.protectedBehaviors ?? [],
+          confirmedDecisions: task.goal.confirmedDecisions ?? [],
+          events: task.goal.alignment.events ?? [],
+        }
+        : null,
+      changeRationale: rationale
+        ? {
+          provided: true,
+          ok: rationaleValidation.ok,
+          invalid: rationaleValidation.invalid,
+          unmappedFiles: rationaleValidation.unmappedFiles,
+          items: rationale.items,
+        }
+        : null,
       residualRisks: options.residualRisks ?? []
     };
     const candidatePackage = buildReviewPackage({ ...reviewInput, createdAt: task.reviewPackage?.createdAt });
@@ -377,6 +443,26 @@ export function deliverTask(options = {}) {
       integrationReasons: integrationCandidate.reasons
     });
   }
+  if (alignmentEscalation) {
+    decision = { decision: 'needs_rework', reasons: ['alignment-risk-escalation'] };
+  } else if (!rationaleGate) {
+    if (classification.controlMode === 'controlled') {
+      decision = { decision: 'needs_rework', reasons: ['change-rationale-unmapped'] };
+    } else if (decision.decision === 'waiting_acceptance' || decision.decision === 'ready_to_integrate') {
+      decision = { decision: 'verifying', reasons: ['change-rationale-required'] };
+    } else {
+      decision = { ...decision, reasons: [...decision.reasons, 'change-rationale-required'] };
+    }
+  }
+  const alignmentBlockers = [];
+  if (alignmentEscalation) {
+    alignmentBlockers.push('实际 ChangeSet 风险高于 direct 准备判断，必须重新对齐或获得用户明确委托');
+  } else if (!rationaleGate && classification.controlMode === 'controlled') {
+    alignmentBlockers.push(`Change Rationale 未映射或无效: ${[
+      ...rationaleValidation.invalid,
+      ...rationaleValidation.unmappedFiles.map((file) => `未映射 ${file}`),
+    ].join('; ')}`);
+  }
   const status = decision.decision;
   const firstFailure = firstFailureDiagnostic(checkExecution);
   const pendingRef = status === 'ready_to_integrate'
@@ -397,6 +483,19 @@ export function deliverTask(options = {}) {
       next.reviews = validReviews;
       next.reviewPackage = reviewPackage;
       next.residualRisks = options.residualRisks ?? next.residualRisks;
+      if (rationale || rationaleRequired) {
+        next.changeRationale = rationale
+          ? changeRationaleSummary(rationaleValidation)
+          : { provided: false, ok: false, invalid: ['missing-rationale'], unmappedFiles: rationaleValidation.unmappedFiles };
+      }
+      if (alignmentEscalation) {
+        next.goal = recordAlignmentEvent(next.goal, {
+          type: 'alignment-risk-escalation',
+          summary: '真实 ChangeSet 风险高于 direct 准备判断',
+          impact: '需要重新对齐或获得用户明确委托',
+          action: 'needs_rework',
+        });
+      }
       next.specImpact = specState.specImpact;
       next.specTraceability = specState.specTraceability;
       next.specConsistency = specState.specConsistency;
@@ -410,7 +509,11 @@ export function deliverTask(options = {}) {
         missingCovers: summary.missingCovers,
         missingAcceptance: summary.missingAcceptance,
         firstFailure,
-        stopReason: checkExecution?.stopReason ?? (status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
+        stopReason: checkExecution?.stopReason
+          ?? (alignmentEscalation ? 'alignment-risk-escalation'
+            : !rationaleGate && classification.controlMode === 'controlled' ? 'change-rationale-unmapped'
+            : !rationaleGate ? 'change-rationale-required'
+            : status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
         lastInputChange: inputChanged ? { type: options.inputChange, reason: options.inputChangeReason } : null
       };
       next.deliveryDecision = decision;
@@ -422,7 +525,7 @@ export function deliverTask(options = {}) {
           pendingRef
         };
       }
-      next.blockers = persistentBlockers;
+      next.blockers = [...new Set([...persistentBlockers, ...alignmentBlockers])];
       if (next.classification.continuity === 'handoff-required' || status === 'saved') {
         next.handoff = createHandoff({ ...next, status }, { stateRevision: task.stateRevision + 1, next: status });
       }
