@@ -203,6 +203,7 @@ function help() {
   console.log(`AI 研发操作系统 V2.2.1：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--alignment-file <json>（目标对齐文件，含 goal/expectedOutcomes/protectedBehaviors/acceptance/alignment.mode）]
+       [--goal-card-file <json>（--alignment-file 的语义别名，二选一）]
        [--workstation <业务领域工作站 id>]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
@@ -211,7 +212,7 @@ function help() {
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
        [--task-check-file <json>（针对性检查显式绑定具体 Acceptance，由系统执行生成 system Evidence）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
-  重新对齐 --task-id <id> --alignment-file <json> --reason <text>
+  重新对齐 --task-id <id> --alignment-file <json>|--goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
   集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
@@ -232,12 +233,15 @@ function help() {
 
 try {
   if (action === '准备') {
+    if (args['alignment-file'] && args['goal-card-file']) {
+      throw new Error('--alignment-file 与 --goal-card-file 只能提供一个');
+    }
     output(prepareTask({
       stateRoot: args['state-root'],
       cwd: args.cwd ?? process.cwd(),
       intent: requiredArg(args, 'intent'),
       acceptance: listArg(args.acceptance),
-      alignmentFile: args['alignment-file'],
+      alignmentFile: args['alignment-file'] ?? args['goal-card-file'],
       scope: args.scope ?? '.',
       projectId: args.project,
       skills: listArg(args.skill),
@@ -280,10 +284,13 @@ try {
       affectedSpecificationIdsProvided: args['spec-id'] !== undefined,
     }));
   } else if (action === '重新对齐') {
+    if (args['alignment-file'] && args['goal-card-file']) {
+      throw new Error('--alignment-file 与 --goal-card-file 只能提供一个');
+    }
     output(realignTask({
       stateRoot: args['state-root'],
       taskId: requiredArg(args, 'task-id'),
-      alignmentFile: requiredArg(args, 'alignment-file'),
+      alignmentFile: args['alignment-file'] ?? args['goal-card-file'] ?? requiredArg(args, 'alignment-file'),
       reason: args.reason,
     }));
   } else if (action === '验收') {

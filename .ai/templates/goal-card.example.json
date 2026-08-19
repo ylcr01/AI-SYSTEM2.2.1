@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "originalRequest": "",
+  "goal": "",
+  "expectedOutcomes": [],
+  "protectedBehaviors": [],
+  "acceptance": [],
+  "confirmedDecisions": [],
+  "nonGoals": [],
+  "assumptions": [],
+  "alignment": {
+    "mode": "direct",
+    "reasonCodes": [],
+    "decisionNote": null,
+    "delegatedTopics": []
+  }
+}

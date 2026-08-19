@@ -292,6 +292,50 @@ test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t 
   assert.match(receipt.next, /A2（部分退款只恢复对应数量）/u);
 });
 
+test('--goal-card-file 是 --alignment-file 的语义别名且二选一', t => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const card = {
+    schemaVersion: 1,
+    originalRequest: '修复普通功能',
+    goal: '修复普通功能',
+    expectedOutcomes: ['功能正确'],
+    protectedBehaviors: [],
+    acceptance: ['功能正确'],
+    confirmedDecisions: [],
+    nonGoals: [],
+    assumptions: [],
+    alignment: { mode: 'direct', reasonCodes: [], decisionNote: null, delegatedTopics: [] },
+  };
+  const cardFile = path.join(stateRoot, 'goal-card.json');
+  fs.writeFileSync(cardFile, JSON.stringify(card));
+  const prepared = runNode(TASK, [
+    '准备',
+    '--cwd', repo,
+    '--state-root', stateRoot,
+    '--intent', '修复普通功能',
+    '--goal-card-file', cardFile,
+    '--scope', '.',
+  ], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const receipt = JSON.parse(prepared.stdout);
+  assert.equal(receipt.status, 'prepared');
+  assert.equal(receipt.alignment.mode, 'direct');
+  assert.deepEqual(receipt.alignment.reasonCodes, []);
+
+  const both = runNode(TASK, [
+    '准备',
+    '--cwd', repo,
+    '--state-root', stateRoot,
+    '--intent', '修复普通功能',
+    '--goal-card-file', cardFile,
+    '--alignment-file', cardFile,
+    '--scope', '.',
+  ], { cwd: ROOT });
+  assert.notEqual(both.status, 0);
+  assert.match(both.stderr, /只能提供一个/u);
+});
+
 test('CLI 继续验证按原因追加有限预算', t => {
   const repo = gitRepo(t), stateRoot = tempDir(t);
   const prepared = runNode(TASK, ['准备', '--cwd', repo, '--intent', '验证普通功能', '--acceptance', '功能正确', '--scope', '.', '--budget-ms', '100', '--state-root', stateRoot], { cwd: ROOT });

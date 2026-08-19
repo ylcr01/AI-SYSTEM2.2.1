@@ -16,11 +16,30 @@ artifactKinds: [requirements, product]
 - 已确认、合理推断和开放问题必须区分。
 - 验收必须可观察、可判断，不以“代码已修改”代替。
 
-## 默认结构
-背景与问题 → 用户与结果 → 范围/非目标 → 主流程 → 异常/状态 → 数据/权限/依赖 → 验收 → 开放问题。
+## 默认结构：Goal Card First
+
+默认先用 Goal Card 对齐目标：`originalRequest` → 一句 Goal → 1~4 条可观察 Expected Outcome → 与变更邻近的 Protected Behavior → 可判断 Acceptance → 仅在易膨胀时写 Non-goal → 低风险 Assumptions。
+
+只有复杂 Product / Requirement 任务才展开完整结构：
+
+```text
+背景与问题 → 用户与结果 → 范围/非目标 → 主流程 → 异常/状态 → 数据/权限/依赖 → 验收 → 开放问题
+```
 
 ## 偏离
-小型机械修改可以只形成一句目标和一个验收，不要求完整文档。
+
+Quick 或单一可观察结果的局部任务不需要 Goal Card 文件；小型机械修改只形成一句目标和一个验收，不要求完整文档。
+
+## Goal Card 生成协议
+
+1. `originalRequest` 原样保存用户原话。
+2. Goal 一句话表达用户最终想改变的结果，不写“修改 xx 文件 / 增加 xx 函数”。
+3. Expected Outcomes 写 1~4 条用户可观察或工程可验证的结果。
+4. Protected Behaviors 只加入与本次变更邻近、确实可能被破坏的行为，来源优先：用户明确要求 > 现有测试 > 直接调用方 > 项目事实 > Spec/Contract，禁止凭空发明。
+5. 每条 Acceptance 必须可判断、可验证、与 Goal 直接相关；不写“代码优雅 / 质量高 / 性能好”等不可判定句，代码质量由质量基线处理。
+6. Non-goals 只有容易发生 Scope 膨胀时才写。
+7. Assumptions 只允许低风险、可逆、不改变业务语义的假设。
+8. 只有存在两种以上合理解释，且会改变最终业务结果、数据、权限、兼容、Scope 或外部影响时才问用户，其他情况模型自行处理。
 
 ## 验证
 核对 Goal、Non-goal、主流程、异常、权限、数据、依赖和 Acceptance 是否一致；普通内部实现细节不要求用户决定。
