@@ -16,6 +16,11 @@ const HUMAN_FORBIDDEN = new Set([
   'data', 'rollback', 'architecture', 'browser', 'negative-path', 'target-environment'
 ]);
 const NON_PROOF = new Set(['scope', 'diff', 'static', 'typecheck', 'lint']);
+const TECHNICAL_COVERS = new Set([
+  'scope', 'diff', 'static', 'typecheck', 'lint', 'unit', 'behavior', 'integration',
+  'package', 'browser', 'negative-path', 'data', 'rollback', 'architecture',
+  'target-environment'
+]);
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -148,7 +153,19 @@ export function evidenceSummary(input = {}) {
     ...(input.context ?? {}),
     acceptance: input.acceptance ?? []
   });
-  const passed = checked.valid.filter((item) => ['passed', 'accepted'].includes(item.result?.status));
+  const systemEvidenceHashes = new Set(input.systemEvidenceHashes ?? []);
+  const untrustedTechnicalEvidence = [];
+  const trusted = [];
+  for (const evidence of checked.valid) {
+    const isSystemObserved = systemEvidenceHashes.has(evidence.payloadHash);
+    const technicalCovers = (evidence.covers ?? []).filter((cover) => TECHNICAL_COVERS.has(cover));
+    if (technicalCovers.length && !isSystemObserved) {
+      untrustedTechnicalEvidence.push({ id: evidence.id, covers: technicalCovers });
+    }
+    const trustedCovers = (evidence.covers ?? []).filter((cover) => !TECHNICAL_COVERS.has(cover) || isSystemObserved);
+    if (trustedCovers.length) trusted.push({ ...evidence, covers: trustedCovers });
+  }
+  const passed = trusted.filter((item) => ['passed', 'accepted'].includes(item.result?.status));
   const covers = [...new Set(passed.flatMap((item) => item.covers ?? []))];
   const acceptanceCoverage = {};
   for (const acceptance of input.acceptance ?? []) {
@@ -166,9 +183,11 @@ export function evidenceSummary(input = {}) {
     acceptanceCoverage,
     coveredAcceptance: Object.entries(acceptanceCoverage).filter(([, value]) => value.satisfied).map(([id]) => id),
     missingAcceptance: Object.entries(acceptanceCoverage).filter(([, value]) => !value.satisfied).map(([id]) => id),
-    missingCovers: (input.requiredCovers ?? []).filter((cover) => !covers.includes(cover))
+    missingCovers: (input.requiredCovers ?? []).filter((cover) => !covers.includes(cover)),
+    untrustedTechnicalEvidence
   };
 }
 
 export const evidenceKinds = ALLOWED_KINDS;
 export const evidenceSourceTypes = ALLOWED_SOURCE_TYPES;
+export const technicalEvidenceCovers = TECHNICAL_COVERS;

@@ -51,10 +51,74 @@ test('Acceptance 必须由 required covers 证明', () => {
     acceptance: context().acceptance,
     evidence: [behavior, documentation],
     requiredCovers: ['behavior', 'documentation'],
+    systemEvidenceHashes: [behavior.payloadHash],
     context: context()
   });
   assert.deepEqual(summary.missingAcceptance, []);
   assert.deepEqual(summary.missingCovers, []);
+});
+
+test('Imported 技术 Evidence 即使结构合法也不能满足技术 Cover', () => {
+  const behavior = createEvidence({
+    taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,
+    acceptanceIds: ['A1'], covers: ['behavior'], source: { type: 'command' }, result: { status: 'passed', exitCode: 0 }
+  });
+  const summary = evidenceSummary({
+    acceptance: context().acceptance,
+    evidence: [behavior],
+    requiredCovers: ['behavior'],
+    systemEvidenceHashes: [],
+    context: context()
+  });
+  assert.equal(summary.invalid.length, 0);
+  assert.deepEqual(summary.missingAcceptance, ['A1', 'A2']);
+  assert.deepEqual(summary.missingCovers, ['behavior']);
+  assert.deepEqual(summary.untrustedTechnicalEvidence, [{ id: behavior.id, covers: ['behavior'] }]);
+});
+
+test('相同 Evidence 的 payloadHash 属于 systemEvidenceHashes 时可信', () => {
+  const behavior = createEvidence({
+    taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,
+    acceptanceIds: ['A1'], covers: ['behavior'], source: { type: 'command' }, result: { status: 'passed', exitCode: 0 }
+  });
+  const summary = evidenceSummary({
+    acceptance: context().acceptance,
+    evidence: [behavior],
+    requiredCovers: ['behavior'],
+    systemEvidenceHashes: [behavior.payloadHash],
+    context: context()
+  });
+  assert.deepEqual(summary.missingAcceptance, ['A2']);
+  assert.deepEqual(summary.missingCovers, []);
+  assert.deepEqual(summary.untrustedTechnicalEvidence, []);
+});
+
+test('Imported 非技术 Evidence 仍可证明 documentation', () => {
+  const documentation = createEvidence({
+    taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,
+    acceptanceIds: ['A2'], covers: ['documentation'], source: { type: 'file' }, result: { status: 'passed' }
+  });
+  const summary = evidenceSummary({
+    acceptance: context().acceptance,
+    evidence: [documentation],
+    requiredCovers: ['documentation'],
+    systemEvidenceHashes: [],
+    context: context()
+  });
+  assert.deepEqual(summary.missingAcceptance, ['A1']);
+  assert.deepEqual(summary.missingCovers, []);
+  assert.deepEqual(summary.untrustedTechnicalEvidence, []);
+});
+
+test('篡改 payloadHash 继续被结构校验拒绝', () => {
+  const evidence = createEvidence({
+    taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,
+    acceptanceIds: ['A1'], covers: ['behavior'], source: { type: 'command' }, result: { status: 'passed', exitCode: 0 }
+  });
+  evidence.payloadHash = payloadHash(evidence).replace(/^./u, (char) => char === 'a' ? 'b' : 'a');
+  const result = validateEvidence(evidence, context());
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(' '), /Payload Hash 无效/u);
 });
 
 test('人工 Evidence 不能冒充技术检查', () => {

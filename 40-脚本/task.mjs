@@ -115,6 +115,9 @@ function compactTask(task, result) {
       };
     }
     if (task.verification.firstFailure) receipt.verification.firstFailure = task.verification.firstFailure;
+    if ((task.verification.untrustedTechnicalEvidence ?? []).length > 0) {
+      receipt.verification.untrustedTechnicalEvidence = task.verification.untrustedTechnicalEvidence;
+    }
   }
 
   if (task.specImpact) {

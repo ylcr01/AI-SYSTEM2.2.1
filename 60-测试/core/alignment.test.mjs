@@ -7,6 +7,7 @@ import {
   loadAlignmentFile,
   normalizeAlignment,
   validateAlignmentForPreparation,
+  evaluateFinalAlignment,
   computeAlignmentFingerprint,
   buildAlignedGoal,
   synthesizeQuickAlignment,
@@ -80,6 +81,35 @@ test('Controlled/Structural 拒绝 direct', () => {
   ]) {
     assert.throws(() => validateAlignmentForPreparation({ alignment: DIRECT_ALIGNMENT, classification }), /Controlled\/Structural/u);
   }
+});
+
+test('最终对齐门禁只要求 Controlled/Structural 具有 confirmed/delegated', () => {
+  assert.deepEqual(
+    evaluateFinalAlignment({ goal: {}, classification: { controlMode: 'standard', structureImpact: 'local' } }),
+    { required: false, satisfied: true, reason: null }
+  );
+  assert.deepEqual(
+    evaluateFinalAlignment({ goal: {}, classification: { controlMode: 'controlled', structureImpact: 'local' } }),
+    { required: true, satisfied: false, reason: 'alignment-required' }
+  );
+  assert.deepEqual(
+    evaluateFinalAlignment({ goal: {}, classification: { controlMode: 'standard', structureImpact: 'structural' } }),
+    { required: true, satisfied: false, reason: 'alignment-required' }
+  );
+  assert.deepEqual(
+    evaluateFinalAlignment({ goal: { alignment: { mode: 'direct' } }, classification: { controlMode: 'controlled', structureImpact: 'local' } }),
+    { required: true, satisfied: false, reason: 'alignment-risk-escalation' }
+  );
+  for (const mode of ['confirmed', 'delegated']) {
+    assert.deepEqual(
+      evaluateFinalAlignment({ goal: { alignment: { mode } }, classification: { controlMode: 'controlled', structureImpact: 'structural' } }),
+      { required: true, satisfied: true, reason: null }
+    );
+  }
+  assert.deepEqual(
+    evaluateFinalAlignment({ goal: {}, classification: { controlMode: 'quick', structureImpact: 'none' } }),
+    { required: false, satisfied: true, reason: null }
+  );
 });
 
 test('confirmed/delegated 必须记录 decisionNote，delegated 必须列明委托事项', () => {

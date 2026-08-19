@@ -14,6 +14,10 @@
 
 可信内核硬控项目身份、Scope、用户已有改动、ChangeSet、Evidence、显式 Review、按需规格一致性、Handoff 和用户最终验收；模型仍自主理解、设计和实现。
 
+## 可信边界
+
+AI-SYSTEM 的可信目标是防止模型误判、状态失真、Evidence 过期、Scope 越界、覆盖用户改动等工程错误，并把系统亲自执行产生的 Evidence 与外部导入 Evidence 分开计算可信等级。当前无常驻 Host Adapter 的架构不把宿主模型视为恶意攻击者；“用户验收只能由用户产生”由宿主协议与 Task 状态门禁共同保证，本版本不提供密码学意义上的 Human Identity Attestation。
+
 ## 轻量边界
 
 - `build-context` 与 Task CLI 默认只返回当前执行所需的轻量视图；完整 Context、Task 账本和 Evidence 不删减，诊断或审计时使用 `--full`。

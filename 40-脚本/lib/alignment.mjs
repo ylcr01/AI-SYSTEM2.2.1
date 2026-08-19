@@ -132,6 +132,20 @@ export function validateAlignmentForRealignment({ currentTask, nextAlignment }) 
   return nextAlignment;
 }
 
+export function evaluateFinalAlignment({ goal, classification }) {
+  const required = classification?.controlMode === 'controlled'
+    || classification?.structureImpact === 'structural';
+  if (!required) return { required: false, satisfied: true, reason: null };
+  const mode = goal?.alignment?.mode;
+  if (mode === 'confirmed' || mode === 'delegated') {
+    return { required: true, satisfied: true, reason: null };
+  }
+  if (mode === 'direct') {
+    return { required: true, satisfied: false, reason: 'alignment-risk-escalation' };
+  }
+  return { required: true, satisfied: false, reason: 'alignment-required' };
+}
+
 export function computeAlignmentFingerprint({ goal, acceptance, scope }) {
   const canonical = {
     originalRequest: goal?.originalRequest ?? null,

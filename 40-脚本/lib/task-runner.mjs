@@ -24,6 +24,7 @@ import {
   loadAlignmentFile,
   validateAlignmentForPreparation,
   validateAlignmentForRealignment,
+  evaluateFinalAlignment,
   buildAlignedGoal,
   synthesizeQuickAlignment,
   recordAlignmentEvent,
@@ -234,6 +235,7 @@ export function prepareTask(options = {}) {
       inputCycle: 0,
       lastFailureFingerprint: null,
       diagnosticRetryUsed: false,
+      systemEvidenceHashes: [],
       requiredCovers: [],
       missingCovers: [],
       stopReason: null
@@ -272,9 +274,9 @@ export function deliverTask(options = {}) {
     });
   }
   const classification = reclassifyFromChangeSet(task.classification, before, { forcedMode: options.forceMode, forceReason: options.forceReason });
-  const alignmentEscalation = task.goal?.alignment?.mode === 'direct'
-    && (classification.controlMode === 'controlled'
-      || (classification.reclassificationReasons?.length ?? 0) > 0);
+  const finalAlignment = evaluateFinalAlignment({ goal: task.goal, classification });
+  const alignmentEscalation = finalAlignment.required && finalAlignment.reason === 'alignment-risk-escalation';
+  const alignmentMissing = finalAlignment.required && finalAlignment.reason === 'alignment-required';
   const acceptance = acceptanceForClassification(task.acceptance, classification);
   let inputCycle = Number(task.verification?.inputCycle ?? 0);
   const inputChanged = Boolean(options.inputChange);
@@ -283,11 +285,20 @@ export function deliverTask(options = {}) {
     inputCycle += 1;
   }
 
+  const scopeDiffEvidence = scopeAndDiffEvidence(task, before, inputCycle);
+  const systemCreatedHashes = new Set([scopeDiffEvidence.payloadHash]);
+  const previousSystemHashes = new Set(task.verification?.systemEvidenceHashes ?? []);
   let evidence = [
     ...(task.evidence ?? []).filter((item) => item.subject?.changeFingerprint === before.fingerprint && Number(item.subject?.inputCycle ?? -1) === inputCycle),
     ...loadJsonFile(options.evidenceFile),
-    scopeAndDiffEvidence(task, before, inputCycle)
+    scopeDiffEvidence
   ];
+  const computeSystemEvidenceHashes = () => [...new Set(
+    evidence
+      .filter((item) => systemCreatedHashes.has(item.payloadHash) || previousSystemHashes.has(item.payloadHash))
+      .map((item) => item.payloadHash)
+  )];
+  let systemEvidenceHashes = computeSystemEvidenceHashes();
   const reviews = [...(task.reviews ?? []), ...loadJsonFile(options.reviewFile)];
   let changeSet = before;
   let requiredCovers = determineEvidenceRequirements({ classification, changeSet, acceptance, observableBrowserBehavior: options.observableBrowserBehavior === true });
@@ -295,6 +306,7 @@ export function deliverTask(options = {}) {
     acceptance,
     evidence,
     requiredCovers,
+    systemEvidenceHashes,
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle, gitRoot: changeSet.gitRoot }
   });
   let checkExecution = null;
@@ -334,24 +346,31 @@ export function deliverTask(options = {}) {
       changeSet = after;
       checkExecution = { ...checkExecution, ok: false, status: 'unavailable', stopReason: 'check-mutated-input', failure: '自动检查改变了任务输入，原 Evidence 已失效' };
       evidence = [];
+      systemCreatedHashes.clear();
     } else if (options.diagnosticRetry === true && checkExecution.status === 'passed') {
       checkExecution = { ...checkExecution, ok: false, status: 'unavailable', stopReason: 'diagnostic-only', failure: '诊断性重试通过不能直接成为稳定 Evidence' };
       diagnosticRetryUsed = true;
       lastFailure = failureFingerprint;
     } else {
-      evidence.push(...checkExecution.results.filter((item) => item.status === 0 && !item.error).map((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance)));
+      const checkEvidence = checkExecution.results
+        .filter((item) => item.status === 0 && !item.error)
+        .map((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance));
+      for (const item of checkEvidence) systemCreatedHashes.add(item.payloadHash);
+      evidence.push(...checkEvidence);
       if (!checkExecution.ok) {
         lastFailure = checkExecution.stopReason === 'budget' ? null : failureFingerprint;
         if (options.diagnosticRetry === true) diagnosticRetryUsed = true;
       } else lastFailure = null;
     }
   }
+  systemEvidenceHashes = computeSystemEvidenceHashes();
 
   requiredCovers = determineEvidenceRequirements({ classification, changeSet, acceptance, observableBrowserBehavior: options.observableBrowserBehavior === true });
   summary = evidenceSummary({
     acceptance,
     evidence,
     requiredCovers,
+    systemEvidenceHashes,
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle, gitRoot: changeSet.gitRoot }
   });
   const rationale = loadChangeRationale(options.rationaleFile);
@@ -446,6 +465,8 @@ export function deliverTask(options = {}) {
   }
   if (alignmentEscalation) {
     decision = { decision: 'needs_rework', reasons: ['alignment-risk-escalation'] };
+  } else if (alignmentMissing) {
+    decision = { decision: 'needs_rework', reasons: ['alignment-required'] };
   } else if (!rationaleGate) {
     if (classification.controlMode === 'controlled') {
       decision = { decision: 'needs_rework', reasons: ['change-rationale-unmapped'] };
@@ -458,6 +479,8 @@ export function deliverTask(options = {}) {
   const alignmentBlockers = [];
   if (alignmentEscalation) {
     alignmentBlockers.push('实际 ChangeSet 风险高于 direct 准备判断，必须重新对齐或获得用户明确委托');
+  } else if (alignmentMissing) {
+    alignmentBlockers.push('最终分类为 Controlled/Structural 但缺少 confirmed/delegated Alignment，必须先重新对齐');
   } else if (!rationaleGate && classification.controlMode === 'controlled') {
     alignmentBlockers.push(`Change Rationale 未映射或无效: ${[
       ...rationaleValidation.invalid,
@@ -509,9 +532,12 @@ export function deliverTask(options = {}) {
         requiredCovers,
         missingCovers: summary.missingCovers,
         missingAcceptance: summary.missingAcceptance,
+        systemEvidenceHashes,
+        untrustedTechnicalEvidence: summary.untrustedTechnicalEvidence ?? [],
         firstFailure,
         stopReason: checkExecution?.stopReason
           ?? (alignmentEscalation ? 'alignment-risk-escalation'
+            : alignmentMissing ? 'alignment-required'
             : !rationaleGate && classification.controlMode === 'controlled' ? 'change-rationale-unmapped'
             : !rationaleGate ? 'change-rationale-required'
             : status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
@@ -625,6 +651,8 @@ export function realignTask(options = {}) {
         requiredCovers: [],
         missingCovers: [],
         missingAcceptance: [],
+        systemEvidenceHashes: [],
+        untrustedTechnicalEvidence: [],
         firstFailure: null,
         lastFailureFingerprint: null,
         diagnosticRetryUsed: false,
@@ -786,6 +814,7 @@ function revalidateForAcceptance(task) {
     acceptance: task.acceptance,
     evidence: task.evidence,
     requiredCovers,
+    systemEvidenceHashes: task.verification?.systemEvidenceHashes ?? [],
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle: task.verification?.inputCycle ?? 0, gitRoot: changeSet.gitRoot }
   });
   const specState = integrated
