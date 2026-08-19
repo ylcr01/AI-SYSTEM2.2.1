@@ -358,6 +358,14 @@ test('--goal-card-file 是 --alignment-file 的语义别名且二选一', t => {
   assert.match(both.stderr, /只能提供一个/u);
 });
 
+test('需求契约包含严格 Preservation 的 Goal Card 扩展示例', () => {
+  const contract = fs.readFileSync(path.join(ROOT, '20-能力模块', 'clarify-requirements', 'CONTRACT.md'), 'utf8');
+  assert.match(contract, /Goal Card 的严格 Preservation 扩展/u);
+  assert.match(contract, /基础 Goal Card 保持轻量/u);
+  assert.match(contract, /"preservation"/u);
+  assert.match(contract, /referenceRoots/u);
+});
+
 test('交付被隔离阻断时 outcomes 不得标记为已证明', t => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
