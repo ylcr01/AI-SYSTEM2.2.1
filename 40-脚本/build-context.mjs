@@ -49,6 +49,9 @@ function compactContext(result) {
     configuration: result.configuration ?? [],
     workstationRouting: result.workstationRouting ?? null,
     filesToRead: result.filesToRead ?? [],
+    readPlan: (result.facts ?? [])
+      .filter(fact => fact.readMode !== 'machine')
+      .map(fact => ({ path: fact.path, reason: fact.reason, authority: fact.authority })),
     warnings: [...(result.warnings ?? [])],
   };
 

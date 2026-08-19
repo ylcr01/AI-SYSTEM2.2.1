@@ -193,6 +193,7 @@ export function buildContext(options = {}) {
     warnings,
     next: [
       '先读取项目入口、任务相关资料、目标代码和直接调用方',
+      '代码任务按 Context Ladder 逐层加载：入口与资料 → 目标实现 → 直接测试与调用方；仅当结构或业务不确定时才加载 Contract/Workstation，涉及规格影响才加载 Spec，明显命中才加载 Experience',
       classification.structureImpact === 'structural'
         ? '读取一个主要 Contract 和最多一个 Active Canonical'
         : '保持局部，不默认加载 Contract/Canonical',

@@ -25,6 +25,30 @@ artifactKinds: [requirements, product]
 ## 验证
 核对 Goal、Non-goal、主流程、异常、权限、数据、依赖和 Acceptance 是否一致；普通内部实现细节不要求用户决定。
 
+## Context Ladder
+
+上下文逐层加载，只有上层无法可靠决定时才向下：
+
+```text
+L0：用户目标 + 项目身份
+→ L1：目标代码 + 直接相关测试
+→ L2：直接调用方 / 数据流 / 依赖
+→ L3：项目 Contract / Workstation
+→ L4：Spec / Canonical / Experience
+```
+
+代码任务搜索顺序：
+
+1. 先读 build-context 给出的入口和资料；
+2. 找目标实现；
+3. 找与目标行为直接相关的测试；
+4. 找直接调用方；
+5. 仍存在结构或业务不确定时才加载 Contract / Workstation；
+6. 涉及规格影响时才加载 Spec；
+7. 明显命中时才加载 Experience。
+
+AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Context 的原因；目标代码由宿主模型用 ripgrep、IDE Search、Git 与调用方搜索自行定位。
+
 ## 目标对齐
 
 - 区分四类事实：用户原话（`originalRequest`，原样保留）、项目事实、已确认决定（`confirmedDecisions`）、低风险假设（`assumptions`，可被事实推翻，不是硬约束）。

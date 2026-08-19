@@ -47,6 +47,10 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(fs.existsSync(compact.context.gitRoot), true);
   assert.ok(compact.filesToRead.some(file => file.endsWith('AGENTS.md')));
   assert.ok(!compact.filesToRead.some(file => file.endsWith('package.json')));
+  assert.ok(Array.isArray(compact.readPlan));
+  assert.ok(compact.readPlan.some(item => item.path.endsWith('AGENTS.md') && item.reason && item.authority === 'project'));
+  assert.ok(compact.readPlan.every(item => compact.filesToRead.includes(item.path)));
+  assert.ok(!compact.readPlan.some(item => item.path.endsWith('package.json')));
   assert.equal(compact.manifests[0].name, 'sample-app');
   assert.deepEqual(compact.manifests[0].frameworks, ['vue']);
   assert.equal('facts' in compact, false);
