@@ -313,7 +313,7 @@ export function deliverTask(options = {}) {
   let lastFailure = inputChanged ? null : task.verification?.lastFailureFingerprint ?? null;
   let diagnosticRetryUsed = inputChanged ? false : task.verification?.diagnosticRetryUsed === true;
 
-  if (options.autoChecks !== false && (summary.missingCovers.length > 0 || summary.missingAcceptance.length > 0)) {
+  if (finalAlignment.satisfied && options.autoChecks !== false && (summary.missingCovers.length > 0 || summary.missingAcceptance.length > 0)) {
     const checks = loadChecks(changeSet.gitRoot, { templateRoot: task.context?.context?.template?.path ?? null });
     const plan = planChecks({
       cwd: changeSet.gitRoot,
@@ -804,6 +804,13 @@ function revalidateForAcceptance(task) {
   if (!integrated && changeSet.fingerprint !== task.changeSet?.fingerprint) throw new Error('交付后的目标文件已经变化，必须重新验证和交付');
   const scopeValidation = assertChangeSetWithinScope(changeSet, task.authorization.scope[0]);
   const isolation = userChangesRemainIsolated(task.baseline, changeSet, task.authorization.allowedExistingChanges ?? []);
+  const finalAlignment = evaluateFinalAlignment({
+    goal: task.goal,
+    classification: task.classification
+  });
+  if (!finalAlignment.satisfied) {
+    throw new Error(`验收前目标对齐门禁已失效: ${finalAlignment.reason}`);
+  }
   const requiredCovers = determineEvidenceRequirements({
     classification: task.classification,
     changeSet,

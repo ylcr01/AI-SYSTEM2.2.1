@@ -135,11 +135,14 @@ function compactTask(task, result) {
   if (result?.filePath) receipt.recordPath = result.filePath;
   if (result?.source) receipt.recordSource = result.source;
 
-  const next = task.verification?.stopReason === 'budget'
-    ? '由用户运行“继续验证 --additional-budget-ms <毫秒> --reason <原因>”有界追加预算。'
-    : String(task.verification?.stopReason ?? '').startsWith('integration-')
-      ? '修复目标分支或检查问题后，再次运行“重验集成”。'
-    : nextAction(task.status);
+  const stopReason = String(task.verification?.stopReason ?? '');
+  const next = stopReason === 'alignment-required' || stopReason === 'alignment-risk-escalation'
+    ? `运行“重新对齐 --task-id ${task.taskId} --alignment-file <json> --reason <原因>”，使用 confirmed/delegated Alignment 完成对齐后重新交付。`
+    : stopReason === 'budget'
+      ? '由用户运行“继续验证 --additional-budget-ms <毫秒> --reason <原因>”有界追加预算。'
+      : stopReason.startsWith('integration-')
+        ? '修复目标分支或检查问题后，再次运行“重验集成”。'
+        : nextAction(task.status);
   if (next) receipt.next = next;
 
   return receipt;

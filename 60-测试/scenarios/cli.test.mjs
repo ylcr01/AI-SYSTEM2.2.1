@@ -5,6 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, tempDir, runNode } from '../helpers.mjs';
 import { updateTask } from '../../40-脚本/lib/state-manager.mjs';
+import { createEvidence } from '../../40-脚本/lib/evidence.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
@@ -266,6 +267,78 @@ test('Task CLI 轻量回执包含首个失败诊断', t => {
   assert.equal(receipt.verification.firstFailure.exitCode, 1);
   assert.match(receipt.verification.firstFailure.output, /boom/u);
   assert.equal('evidence' in receipt, false);
+});
+
+test('Alignment 失败的交付回执 next 要求重新对齐且不提示继续验证', t => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = runNode(TASK, [
+    '准备',
+    '--cwd', repo,
+    '--intent', '修改用户权限判断逻辑',
+    '--scope', '.',
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'user-service.js'), 'export const x = 1;\n');
+  const delivered = runNode(TASK, [
+    '交付',
+    '--task-id', task.taskId,
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  const receipt = JSON.parse(delivered.stdout);
+  assert.equal(receipt.status, 'needs_rework');
+  assert.equal(receipt.verification.stopReason, 'alignment-required');
+  assert.match(receipt.next, /重新对齐/u);
+  assert.doesNotMatch(receipt.next, /继续验证/u);
+});
+
+test('CLI 回执显示 untrustedTechnicalEvidence', t => {
+  const repo = gitRepo(t, { checks: [] });
+  const stateRoot = tempDir(t);
+  const prepared = runNode(TASK, [
+    '准备',
+    '--cwd', repo,
+    '--intent', '修复普通功能',
+    '--acceptance', '功能正确',
+    '--scope', '.',
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const first = runNode(TASK, [
+    '交付',
+    '--task-id', task.taskId,
+    '--no-auto-checks',
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(first.status, 0, first.stderr);
+  const firstReceipt = JSON.parse(first.stdout);
+  const fake = createEvidence({
+    taskId: task.taskId,
+    changeFingerprint: firstReceipt.changeSet.fingerprint,
+    inputCycle: 0,
+    acceptanceIds: ['A1'],
+    covers: ['behavior'],
+    source: { type: 'command' },
+    result: { status: 'passed', exitCode: 0 },
+  });
+  const fakeFile = path.join(stateRoot, 'fake-evidence.json');
+  fs.writeFileSync(fakeFile, JSON.stringify([fake]));
+  const second = runNode(TASK, [
+    '交付',
+    '--task-id', task.taskId,
+    '--evidence-file', fakeFile,
+    '--no-auto-checks',
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(second.status, 0, second.stderr);
+  const receipt = JSON.parse(second.stdout);
+  assert.ok(receipt.verification.untrustedTechnicalEvidence.some((item) => item.id === fake.id && item.covers.includes('behavior')));
 });
 
 test('系统完整检查通过', () => {

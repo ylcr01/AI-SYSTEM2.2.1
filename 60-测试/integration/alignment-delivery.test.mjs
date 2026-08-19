@@ -103,6 +103,65 @@ test('Structural 任务无 Alignment 时交付必须 needs_rework', (t) => {
   assert.deepEqual(delivered.task.deliveryDecision, { decision: 'needs_rework', reasons: ['alignment-required'] });
 });
 
+test('Alignment 缺失时 Auto Check 完全不执行', (t) => {
+  const marker = path.join(tempDir(t), 'auto-check-ran.txt');
+  const repo = gitRepo(t, {
+    checks: [{
+      name: 'must-not-run',
+      command: process.execPath,
+      args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes')`],
+      profiles: ['controlled'],
+      covers: ['behavior', 'negative-path'],
+      sideEffect: 'workspace',
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+      acceptanceMode: 'matching-covers',
+    }],
+  });
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修改用户权限判断逻辑', scope: '.' });
+  assert.equal(prepared.task.classification.controlMode, 'controlled');
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'user-service.js'), 'export const x = 1;\n');
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  assert.equal(delivered.task.status, 'needs_rework');
+  assert.equal(delivered.task.verification.stopReason, 'alignment-required');
+  assert.deepEqual(delivered.task.deliveryDecision, { decision: 'needs_rework', reasons: ['alignment-required'] });
+  assert.equal(fs.existsSync(marker), false);
+});
+
+test('direct 风险升级时 Auto Check 同样不执行', (t) => {
+  const marker = path.join(tempDir(t), 'auto-check-ran.txt');
+  const repo = gitRepo(t, {
+    checks: [{
+      name: 'must-not-run',
+      command: process.execPath,
+      args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes')`],
+      profiles: ['controlled'],
+      covers: ['behavior', 'negative-path'],
+      sideEffect: 'workspace',
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+      acceptanceMode: 'matching-covers',
+    }],
+  });
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: '修复普通功能',
+    alignmentFile: writeJson(t, DIRECT_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'auth', 'token.js'), 'export const x = 1;\n');
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  assert.equal(delivered.task.status, 'needs_rework');
+  assert.equal(delivered.task.verification.stopReason, 'alignment-risk-escalation');
+  assert.deepEqual(delivered.task.deliveryDecision, { decision: 'needs_rework', reasons: ['alignment-risk-escalation'] });
+  assert.equal(fs.existsSync(marker), false);
+});
+
 for (const mode of ['confirmed', 'delegated']) {
   test(`Controlled + ${mode} Alignment 且 Evidence 满足可正常交付`, (t) => {
     const repo = gitRepo(t);
