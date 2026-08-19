@@ -1,0 +1,371 @@
+[
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r1-real-create-tool-selection",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A1"
+    ],
+    "covers": [
+      "behavior",
+      "contract",
+      "target-environment"
+    ],
+    "source": {
+      "type": "command",
+      "command": "PID_WORKBENCH_REAL_MODEL_EVAL=1 pnpm --filter @pid-workbench/editor-server eval:ai-custom-valve-real",
+      "sideEffect": "authorized-paid-model-eval"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "summary": "R1/A1：受控真实模型 Eval 使用已配置 deepseek-v4-flash。首轮模型自主选择 custom_valve.plan_draft_template，仅提交 elements，没有 typeKey、shapeName、名称、端口或颜色等应用层元数据。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.762Z",
+    "payloadHash": "222018e29af37c487e7159bf415c87c9774c3172df31a5fa72d8ded0f047e31e"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r1-a2-deterministic-defaults",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A2"
+    ],
+    "covers": [
+      "behavior",
+      "unit",
+      "contract",
+      "negative-path"
+    ],
+    "source": {
+      "type": "file",
+      "paths": [
+        "apps/editor-web/src/views/pid/editor/modules/catalog/application/custom-valve-ai-draft.spec.ts",
+        "apps/editor-web/src/views/pid/editor/modules/ai-workbench/application/browser-ai-custom-valve-management-tools.spec.ts"
+      ],
+      "verification": "final pnpm check"
+    },
+    "result": {
+      "status": "passed",
+      "summary": "A2：聚焦测试证明模型只给几何 elements 时，应用确定性补齐模板身份、中英文名称、尺寸、安全颜色和至少两个端口，并通过现有领域校验；创建 Schema 不再暴露技术身份和涂色字段。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.764Z",
+    "payloadHash": "4c73978d57b269921cc825e492a357767eb27658cffd64c445fbb253bcc6f1b9"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r2-active-draft-lifecycle",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A3"
+    ],
+    "covers": [
+      "behavior",
+      "unit",
+      "contract"
+    ],
+    "source": {
+      "type": "file",
+      "paths": [
+        "apps/editor-web/src/views/pid/editor/modules/ai-workbench/application/browser-ai-agent-session.spec.ts",
+        "apps/editor-web/src/views/pid/editor/modules/ai-workbench/application/use-ai-assistant.spec.ts",
+        "apps/editor-web/src/views/pid/editor/modules/catalog/application/custom-valve-ai-draft-patch.spec.ts"
+      ],
+      "verification": "final pnpm check"
+    },
+    "result": {
+      "status": "passed",
+      "summary": "R2：草稿转交后保留 draftId、revision、安全元素摘要、owner session 和 active-unsaved 状态；user-review-required/用户接管不释放上下文，仅在保存、关闭、取消、替换或清除会话时失效。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.764Z",
+    "payloadHash": "2ef6898902a6c45968e566c0cc495933de6cae8842958d35c6bdabe5401dd3fb"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r3-real-second-turn-routing",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A3"
+    ],
+    "covers": [
+      "behavior",
+      "contract",
+      "target-environment",
+      "negative-path"
+    ],
+    "source": {
+      "type": "command",
+      "command": "PID_WORKBENCH_REAL_MODEL_EVAL=1 pnpm --filter @pid-workbench/editor-server eval:ai-custom-valve-real",
+      "sideEffect": "authorized-paid-model-eval"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "summary": "R3：同一受控真实模型 Eval 的第二轮“将中间的颜色修改成红色”自主选择 custom_valve.patch_draft_template；模型可见工具仅有该 patch 工具，未调用 drawing.get_selection、drawing.get_summary 或 drawing.query_topology。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.764Z",
+    "payloadHash": "0771783492c7557cd2c264d1ff478f88ff12c842bde4ccacd1fbe8cc0223b478"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r4-live-red-preview",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A3"
+    ],
+    "covers": [
+      "behavior",
+      "browser",
+      "visual",
+      "integration"
+    ],
+    "source": {
+      "type": "command",
+      "command": "PID_WORKBENCH_E2E_BASE_URL=http://127.0.0.1:4273 pnpm exec playwright test tests/e2e/ai-custom-valve-agent-turn.smoke.spec.ts --max-failures=1 --workers=1 --reporter=line",
+      "sideEffect": "local-test"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 8100,
+      "summary": "R4/A3：确定性浏览器全链路中，第二轮 patch 后管理器的 center-star 立即变为 #ff0000，模板身份与两个端口保持不变，影响预览和保存入口可用。Mock 只证明 UI/业务接线，R3 由真实 Eval 单独证明。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.764Z",
+    "payloadHash": "5a5d887ec986d7a64107c627dbc299e4963b3444f3664e890650219ae3f41fe3"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r5-preconfirm-no-write",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A4"
+    ],
+    "covers": [
+      "behavior",
+      "browser",
+      "negative-path",
+      "data"
+    ],
+    "source": {
+      "type": "command",
+      "command": "PID_WORKBENCH_E2E_BASE_URL=http://127.0.0.1:4273 pnpm exec playwright test tests/e2e/ai-custom-valve-agent-turn.smoke.spec.ts --max-failures=1 --workers=1 --reporter=line",
+      "sideEffect": "local-test"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 8100,
+      "summary": "R5/A4：浏览器测试在用户确认前显式断言持久化模板、组件目录和 PID Drawing 均无变化；创建与 patch 工具结果也记录 persistenceMutated=false、drawingMutated=false、confirmationRecorded=false。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.764Z",
+    "payloadHash": "88123649545dcf1392c5314b2529ad43570e8c13bd297a053012f2c8195ae204"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r6-save-canonical-readback",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A5"
+    ],
+    "covers": [
+      "behavior",
+      "browser",
+      "integration",
+      "data",
+      "contract"
+    ],
+    "source": {
+      "type": "command",
+      "command": "PID_WORKBENCH_E2E_BASE_URL=http://127.0.0.1:4273 pnpm exec playwright test tests/e2e/ai-custom-valve-agent-turn.smoke.spec.ts --max-failures=1 --workers=1 --reporter=line",
+      "sideEffect": "local-test"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 8100,
+      "summary": "R6/A5：用户执行一次现有保存确认后，复用既有计划、影响预览、确认、CAS、审计和 canonical readback 链，红色草稿成功持久化并读回。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.765Z",
+    "payloadHash": "aff39755c2e6bac97732c48a7c3936e7a3ce61b6723a74616d5efffeb3621285"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r6-reopen-catalog-canvas-red",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A6"
+    ],
+    "covers": [
+      "behavior",
+      "browser",
+      "integration",
+      "data",
+      "visual"
+    ],
+    "source": {
+      "type": "command",
+      "command": "PID_WORKBENCH_E2E_BASE_URL=http://127.0.0.1:4273 pnpm exec playwright test tests/e2e/ai-custom-valve-agent-turn.smoke.spec.ts --max-failures=1 --workers=1 --reporter=line",
+      "sideEffect": "local-test"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "durationMs": 8100,
+      "summary": "R6/A6：同一浏览器链路验证保存后组件库可见，重新打开时图形、属性和端口一致，从目录放置到 PID 画布后精确匹配的五角星 path 仍为 #ff0000。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.765Z",
+    "payloadHash": "c6505d1e712f909bfa2173317248624062fabc41818140bd39f42a7eba95cc46"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r7-fail-closed-draft-patches",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A7"
+    ],
+    "covers": [
+      "behavior",
+      "unit",
+      "negative-path",
+      "contract",
+      "data"
+    ],
+    "source": {
+      "type": "file",
+      "paths": [
+        "apps/editor-web/src/views/pid/editor/modules/catalog/application/custom-valve-ai-draft-patch.spec.ts",
+        "apps/editor-web/src/views/pid/editor/modules/ai-workbench/application/browser-ai-tool-routing.spec.ts",
+        "packages/pid-application/src/catalog/pid-custom-valve-template-mutation-confirmation.spec.ts"
+      ],
+      "verification": "final pnpm check"
+    },
+    "result": {
+      "status": "passed",
+      "summary": "R7/A7：聚焦拒绝路径覆盖无活动草稿、其他 Agent owner、revision 过期、目标不明确、未知元素、非法颜色/字段/DSL、名称或保存冲突；全部失败关闭，不转去 Drawing，不产生部分写入。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.765Z",
+    "payloadHash": "dca2ef36ebce81440462fd1f9dce7a6cc022840e5998aef5ef9d30fafb5a3235"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-r8-session-reset-and-unlimited-turns",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [
+      "A8"
+    ],
+    "covers": [
+      "behavior",
+      "unit",
+      "contract",
+      "negative-path"
+    ],
+    "source": {
+      "type": "file",
+      "paths": [
+        "apps/editor-web/src/views/pid/editor/modules/ai-workbench/application/use-ai-assistant.spec.ts",
+        "apps/editor-web/src/views/pid/editor/modules/ai-workbench/application/browser-ai-agent-session.spec.ts",
+        "apps/editor-server/test/ai-route.spec.ts"
+      ],
+      "verification": "final pnpm check"
+    },
+    "result": {
+      "status": "passed",
+      "summary": "R8/A8：回归测试证明清除对话会释放旧草稿控制权并创建隔离的新 Agent session；前端 session 和服务端 route 不再因固定模型轮次上限终止，仍保留工具调用总量安全限制。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.765Z",
+    "payloadHash": "5188829a85e2331628ad7e4b940cfe42f4e750640865ded70b95a7cbae211d94"
+  },
+  {
+    "schemaVersion": 4,
+    "id": "evidence-final-pnpm-check-cycle-1",
+    "kind": "tool",
+    "subject": {
+      "taskId": "task-20260815220210977-d67be37b",
+      "changeFingerprint": "d919702a691c491692fda54c365ae02a02bf1ab1245ef179d05bd7b28e223f97",
+      "inputCycle": 1
+    },
+    "acceptanceIds": [],
+    "covers": [
+      "typecheck",
+      "unit",
+      "behavior",
+      "negative-path",
+      "package",
+      "integration",
+      "contract"
+    ],
+    "source": {
+      "type": "command",
+      "command": "pnpm check",
+      "sideEffect": "local-test"
+    },
+    "result": {
+      "status": "passed",
+      "exitCode": 0,
+      "summary": "R1–R8 最终 ChangeSet 上 pnpm check 通过：packages 158 files/1330 tests，editor-web 99 files/666 tests，editor-server 5 files/28 tests；全部类型检查和 web/server 生产构建通过。"
+    },
+    "cache": null,
+    "createdAt": "2026-08-16T02:10:08.765Z",
+    "payloadHash": "66d1b8ded261e85a9334544df140ec80375e9dbd14ea8e2acd8c30cff5a815b3"
+  }
+]
