@@ -38,7 +38,9 @@ artifactKinds: [requirements, product]
 ## 行为保持
 
 - `--intent` 保存当前有效用户请求原文；Alignment 的 `originalRequest` 必须与其一致，`重新对齐` 不得替换 initial originalRequest。
-- 重构/迁移/移植/重写/升级/优化默认保持未请求改变的可观察行为（`preserve-all-observable`）；明确参照旧实现时为 `reference-equivalent`，旧实现是行为基线而非代码模板；Bug Fix 与 Feature 为 `preserve-unrequested`。
+- 普通重构、优化、内部实现替换和升级默认仍为 `preserve-unrequested`，但必须主动识别与本次变更相关的 Protected Behavior，优先通过现有测试、调用方、规格和项目事实确认。
+- 只有用户明确要求全部可观察行为严格保持时，才使用 `preserve-all-observable`。
+- 只有用户明确指定旧实现/参考实现为行为基线时，才使用 `reference-equivalent`，旧实现是行为基线而非代码模板；Bug Fix 与 Feature 为 `preserve-unrequested`。
 - 行为保持型任务必须完整查看 Reference Root：所有 tracked Reference 文件必须归入 Reference Behavior 或 excludedFiles；每个 Reference Behavior 自动成为一条 Acceptance，并需要行为 Evidence 证明。
 - 未经用户批准的 `allowedDifferences` 默认是缺陷，且存在 allowedDifferences 时不得使用 direct Alignment。
 - 不确定旧行为先查代码、调用方、测试、规格/Contract、Reference 与项目事实；只有无法解决且会改变业务结果时才问用户，多个问题尽量一次确认；行为等价范围内的内部实现优化无需询问。

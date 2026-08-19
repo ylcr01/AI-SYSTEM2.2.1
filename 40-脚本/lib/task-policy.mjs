@@ -1,8 +1,9 @@
 const CONTROLLED_WORDS = /权限|安全|隐私|迁移|生产|发布|部署|不可逆|外部写入|authorization|security|migration|production|deploy|release/iu;
 const QUICK_WORDS = /文档|注释|错字|文案|README|说明|comment|typo|docs?/iu;
 const STRUCTURAL_WORDS = /架构|新模块|模块拆分|职责迁移|公共接口|数据模型|跨仓|重构体系|architecture|new module|public contract/iu;
-const REFERENCE_WORDS = /完全参照|按照之前实现|按照旧实现|照着旧实现|保持一致|不能遗漏已有功能|100% 保持原业务|复刻|reference implementation|same behavior|preserve behavior/iu;
-const PRESERVATION_WORDS = /重构|refactor|迁移|migration|移植|port|重写|rewrite|重新实现|reimplement|替换实现|升级|upgrade|优化|optimize/iu;
+const REFERENCE_EQUIVALENT_WORDS = /完全参照|完整复刻|逐项等价|以旧实现为行为基线|不能遗漏任何已有功能|100% 等价|reference implementation|exact behavioral equivalence/iu;
+const STRICT_PRESERVATION_WORDS = /保持全部可观察行为|所有现有行为都不能改变|所有已有功能行为保持不变|零行为变化|行为完全不变|preserve all observable behavior|no observable behavior changes/iu;
+const PRESERVATION_AWARE_WORDS = /重构|refactor|优化|optimize|升级|upgrade|替换实现|重新实现|reimplement|重写|rewrite|迁移|migration|移植|port/iu;
 
 const HARD_RISK_PATTERNS = [
   ['security', /(^|\/)(auth|authentication|authorization|security|permissions?|privacy)(\/|$)/iu],
@@ -29,8 +30,9 @@ function inferArtifactKinds(intent, acceptance) {
 }
 
 function inferPreservation(text) {
-  if (REFERENCE_WORDS.test(text)) return { mode: 'reference-equivalent', reasons: ['reference-request'] };
-  if (PRESERVATION_WORDS.test(text)) return { mode: 'preserve-all-observable', reasons: ['preservation-signal'] };
+  if (REFERENCE_EQUIVALENT_WORDS.test(text)) return { mode: 'reference-equivalent', reasons: ['reference-request'] };
+  if (STRICT_PRESERVATION_WORDS.test(text)) return { mode: 'preserve-all-observable', reasons: ['strict-preservation-request'] };
+  if (PRESERVATION_AWARE_WORDS.test(text)) return { mode: 'preserve-unrequested', reasons: ['preservation-aware'] };
   return { mode: 'preserve-unrequested', reasons: [] };
 }
 

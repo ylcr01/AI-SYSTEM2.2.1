@@ -15,11 +15,17 @@ import {
 } from '../../40-脚本/lib/behavior-preservation.mjs';
 import { gitRepo, tempDir } from '../helpers.mjs';
 
-test('Preservation 分类：重构/迁移/重写/优化与参照语义', () => {
-  assert.equal(classifyTask({ intent: '重构订单模块' }).preservationMode, 'preserve-all-observable');
-  assert.equal(classifyTask({ intent: '优化订单模块性能' }).preservationMode, 'preserve-all-observable');
-  assert.equal(classifyTask({ intent: '迁移订单模块到新框架' }).preservationMode, 'preserve-all-observable');
-  assert.equal(classifyTask({ intent: '重写结算逻辑' }).preservationMode, 'preserve-all-observable');
+test('Preservation 分类：普通重构/迁移/重写/优化只产生轻量感知信号', () => {
+  for (const intent of ['重构订单模块', '优化订单模块性能', '迁移订单模块到新框架', '重写结算逻辑']) {
+    const result = classifyTask({ intent });
+    assert.equal(result.preservationMode, 'preserve-unrequested');
+    assert.deepEqual(result.preservationReasons, ['preservation-aware']);
+  }
+});
+
+test('Preservation 分类：严格表达与参照语义', () => {
+  assert.equal(classifyTask({ intent: '保持全部可观察行为不变，重构内部实现' }).preservationMode, 'preserve-all-observable');
+  assert.equal(classifyTask({ intent: '行为完全不变，替换内部实现' }).preservationMode, 'preserve-all-observable');
   assert.equal(classifyTask({ intent: '完全参照旧订单模块实现，功能交互不能遗漏' }).preservationMode, 'reference-equivalent');
   assert.equal(classifyTask({ intent: '修复订单分页 Bug' }).preservationMode, 'preserve-unrequested');
   assert.equal(classifyTask({ intent: '新增 CSV 导出' }).preservationMode, 'preserve-unrequested');
@@ -27,7 +33,7 @@ test('Preservation 分类：重构/迁移/重写/优化与参照语义', () => {
 
 test('Preservation 分类独立于 Control Mode', () => {
   const migrated = classifyTask({ intent: '迁移订单模块到新框架' });
-  assert.equal(migrated.preservationMode, 'preserve-all-observable');
+  assert.equal(migrated.preservationMode, 'preserve-unrequested');
   assert.equal(migrated.controlMode, 'controlled');
   const bug = classifyTask({ intent: '修复订单分页 Bug' });
   assert.equal(bug.preservationMode, 'preserve-unrequested');

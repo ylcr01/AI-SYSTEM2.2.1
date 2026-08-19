@@ -268,9 +268,18 @@ test('权限说明文档无 Alignment 最终 Quick 不被缺 Alignment 阻塞', 
 test('strict Preservation 无 Alignment 时准备被拒绝', (t) => {
   const repo = gitRepo(t);
   assert.throws(
-    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '重构订单模块', scope: '.' }),
+    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '保持全部可观察行为不变，重构内部实现', scope: '.' }),
     /behavior-preservation-alignment-required/u
   );
+});
+
+test('普通优化无 Alignment 可正常准备且不进入严格保持', (t) => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '优化订单模块性能', scope: '.' });
+  assert.equal(prepared.task.status, 'prepared');
+  assert.equal(prepared.task.classification.preservationMode, 'preserve-unrequested');
+  assert.deepEqual(prepared.task.classification.preservationReasons, ['preservation-aware']);
 });
 
 test('allowedDifference 使用 confirmed Alignment 可正常准备', (t) => {
@@ -301,10 +310,14 @@ test('Alignment 不得把 Preservation Mode 向下降级', (t) => {
   const stateRoot = tempDir(t);
   const downgraded = {
     ...PRESERVATION_ALIGNMENT,
+    originalRequest: '保持全部可观察行为不变',
+    goal: '保持全部可观察行为不变',
+    expectedOutcomes: ['保持全部可观察行为不变'],
+    acceptance: ['保持全部可观察行为不变'],
     preservation: { mode: 'preserve-unrequested', behaviors: [], excludedFiles: [], allowedDifferences: [], constraints: [], referenceRoots: [] },
   };
   assert.throws(
-    () => prepareTask({ cwd: repo, stateRoot, intent: PRESERVATION_ALIGNMENT.originalRequest, alignmentFile: writeJson(t, downgraded, 'down.json'), scope: '.' }),
+    () => prepareTask({ cwd: repo, stateRoot, intent: '保持全部可观察行为不变', alignmentFile: writeJson(t, downgraded, 'down.json'), scope: '.' }),
     /preservation-mode-downgrade/u
   );
   const referenceDowngraded = {
