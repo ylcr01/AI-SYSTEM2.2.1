@@ -245,7 +245,7 @@ test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
     checks: [{
       name: 'target-A1',
       command: process.execPath,
-      args: ['-e', 'process.exit(0)'],
+      args: ['--test', 'tests/target.test.js'],
       covers: ['behavior'],
       acceptanceIds: ['A1'],
       testFiles: ['tests/target.test.js'],
@@ -300,7 +300,7 @@ test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
     checks: ['R1', 'R2', 'R3', 'R5'].map((id) => ({
       name: `check-${id}`,
       command: process.execPath,
-      args: ['-e', 'process.exit(0)'],
+      args: ['--test', 'tests/r.test.js'],
       covers: ['behavior'],
       acceptanceIds: [ids[id]],
       testFiles: ['tests/r.test.js'],
@@ -338,10 +338,26 @@ test('内部实现不同但行为全验证时 complete 且允许交付', (t) => 
   fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export function rewrittenCreate() { return 42; }\n');
   fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'export function rewrittenCancel() { return 0; }\n');
   const changeSet = computeChangeSet(prepared.task.baseline);
+  const ids = Object.fromEntries(prepared.task.acceptance.map((item) => [item.referenceBehaviorId, item.id]));
+  const taskCheckFile = writeJson(t, {
+    schemaVersion: 1,
+    checks: ['R1', 'R2', 'R3', 'R4', 'R5'].map((id) => ({
+      name: `bind-${id}`,
+      command: process.execPath,
+      args: ['--test', 'tests/r.test.js'],
+      covers: ['behavior'],
+      acceptanceIds: [ids[id]],
+      testFiles: ['tests/r.test.js'],
+      sideEffect: 'none',
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+    })),
+  }, 'task-checks.json');
   const delivered = deliverTask({
     stateRoot,
     taskId: prepared.task.taskId,
     rationaleFile: writeRationale(t, prepared.task, changeSet, ['src/a.js', 'src/b.js']),
+    taskCheckFile,
   });
   assert.equal(delivered.task.status, 'waiting_acceptance');
   assert.deepEqual(delivered.task.verification.preservationCoverage, {

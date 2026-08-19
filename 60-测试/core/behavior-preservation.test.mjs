@@ -7,6 +7,8 @@ import { classifyTask } from '../../40-脚本/lib/task-policy.mjs';
 import {
   normalizePreservation,
   isStrictPreservation,
+  preservationModeLevel,
+  validateReferenceAttribution,
   buildReferenceInventory,
   referenceBehaviorAcceptanceItems,
   preservationCoverageSummary,
@@ -35,6 +37,8 @@ test('Preservation 分类独立于 Control Mode', () => {
 test('normalizePreservation 校验 mode、category、id 唯一与 allowedDifference 引用', () => {
   assert.throws(() => normalizePreservation({ mode: 'unknown' }), /preservation\.mode 无效/u);
   assert.throws(() => normalizePreservation({ mode: 'preserve-all-observable', referenceRoots: [] }), /referenceRoots/u);
+  assert.throws(() => normalizePreservation({ mode: 'preserve-all-observable', referenceRoots: ['src'], behaviors: [] }), /preservation-behaviors-required/u);
+  assert.throws(() => normalizePreservation({ mode: 'reference-equivalent', referenceRoots: ['src'], behaviors: [] }), /preservation-behaviors-required/u);
   assert.throws(() => normalizePreservation({
     mode: 'preserve-all-observable',
     referenceRoots: ['src'],
@@ -68,6 +72,29 @@ test('normalizePreservation 校验 mode、category、id 唯一与 allowedDiffere
   assert.deepEqual(normalized.referenceRoots, ['src']);
   assert.equal(isStrictPreservation(normalized), true);
   assert.equal(isStrictPreservation({ mode: 'preserve-unrequested' }), false);
+});
+
+test('preserve-unrequested 不受空 behaviors 规则影响', () => {
+  const normalized = normalizePreservation({ mode: 'preserve-unrequested', behaviors: [] });
+  assert.equal(normalized.mode, 'preserve-unrequested');
+  assert.deepEqual(normalized.behaviors, []);
+  assert.deepEqual(preservationModeLevel('preserve-unrequested'), 0);
+  assert.deepEqual(preservationModeLevel('preserve-all-observable'), 1);
+  assert.deepEqual(preservationModeLevel('reference-equivalent'), 2);
+});
+
+test('validateReferenceAttribution 输出 unmapped 文件', () => {
+  const behaviors = [{ id: 'R1', category: 'business', description: 'a', sourceFiles: ['src/a.js'] }];
+  assert.deepEqual(validateReferenceAttribution({
+    referenceFiles: ['src/a.js', 'src/b.js'],
+    behaviors,
+    excludedFiles: [],
+  }), { ok: false, unmapped: ['src/b.js'] });
+  assert.deepEqual(validateReferenceAttribution({
+    referenceFiles: ['src/a.js', 'src/b.js'],
+    behaviors,
+    excludedFiles: [{ path: 'src/b.js', reason: '仅类型' }],
+  }), { ok: true, unmapped: [] });
 });
 
 test('Reference 文件未归因拒绝，excludedFiles 后通过', (t) => {

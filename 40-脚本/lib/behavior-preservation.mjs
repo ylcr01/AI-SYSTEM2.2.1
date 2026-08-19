@@ -3,6 +3,11 @@ import { spawnSync } from 'node:child_process';
 import { pathContains, normalizePath } from './registry.mjs';
 
 export const PRESERVATION_MODES = ['preserve-unrequested', 'preserve-all-observable', 'reference-equivalent'];
+export const PRESERVATION_LEVEL = Object.freeze({
+  'preserve-unrequested': 0,
+  'preserve-all-observable': 1,
+  'reference-equivalent': 2,
+});
 
 const REFERENCE_BEHAVIOR_CATEGORIES = new Set([
   'business', 'interaction', 'state', 'permission', 'data', 'error', 'contract', 'compatibility', 'other'
@@ -15,6 +20,10 @@ function uniqueStrings(value) {
 
 function normalizePathText(value) {
   return String(value ?? '').trim().replaceAll('\\', '/');
+}
+
+export function preservationModeLevel(mode) {
+  return PRESERVATION_LEVEL[String(mode ?? '')] ?? -1;
 }
 
 function normalizeBehavior(item) {
@@ -76,6 +85,9 @@ export function normalizePreservation(value = {}) {
   if (strict && !referenceRoots.length) {
     throw new Error(`${mode} 必须至少有一个 referenceRoots`);
   }
+  if (strict && !behaviors.length) {
+    throw new Error(`preservation-behaviors-required: ${mode} 至少需要一个 Reference Behavior`);
+  }
   return {
     mode,
     constraints,
@@ -89,6 +101,15 @@ export function normalizePreservation(value = {}) {
 export function isStrictPreservation(preservation) {
   return preservation?.mode === 'preserve-all-observable'
     || preservation?.mode === 'reference-equivalent';
+}
+
+export function validateReferenceAttribution({ referenceFiles = [], behaviors = [], excludedFiles = [] }) {
+  const attributed = new Set([
+    ...behaviors.flatMap((item) => item.sourceFiles),
+    ...excludedFiles.map((item) => item.path)
+  ]);
+  const unmapped = referenceFiles.filter((file) => !attributed.has(file));
+  return { ok: unmapped.length === 0, unmapped };
 }
 
 export function buildReferenceInventory({ gitRoot, baselineHead, referenceRoots = [], behaviors = [], excludedFiles = [] }) {
@@ -118,11 +139,7 @@ export function buildReferenceInventory({ gitRoot, baselineHead, referenceRoots 
     .filter(Boolean)
     .map(normalizePathText)
     .sort();
-  const attributed = new Set([
-    ...behaviors.flatMap((item) => item.sourceFiles),
-    ...excludedFiles.map((item) => item.path)
-  ]);
-  const unmapped = referenceFiles.filter((file) => !attributed.has(file));
+  const { unmapped } = validateReferenceAttribution({ referenceFiles, behaviors, excludedFiles });
   return { referenceCommit: baselineHead ?? null, referenceFiles, unmapped };
 }
 

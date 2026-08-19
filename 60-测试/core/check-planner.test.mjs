@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { loadTaskChecks } from '../../40-脚本/lib/check-planner.mjs';
+import { loadTaskChecks, acceptanceIdsForCheck } from '../../40-脚本/lib/check-planner.mjs';
 import { tempDir } from '../helpers.mjs';
 
 function writeTaskChecks(t, checks) {
@@ -61,10 +61,47 @@ test('Task Check 校验拒绝各类非法输入', (t) => {
     [{ ...VALID_CHECK, acceptanceIds: ['A2'] }, /requiredCovers 无关/u],
     [{ ...VALID_CHECK, name: 'project-behavior' }, /名称冲突/u],
     [{ ...VALID_CHECK, covers: [] }, /缺少 covers/u],
+    [{ ...VALID_CHECK, args: ['-e', 'process.exit(0)'] }, /task-check-testfile-not-executed/u],
   ];
   for (const [check, pattern] of cases) {
     assert.throws(() => loadTaskChecks(writeTaskChecks(t, [check]), ctx), pattern);
   }
+});
+
+test('testFiles 支持相对路径、./ 前缀与同文件绝对路径', (t) => {
+  const ctx = context(t);
+  const absolute = path.resolve(ctx.gitRoot, 'tests', 'target.test.js');
+  for (const args of [
+    ['--test', 'tests/target.test.js'],
+    ['--test', './tests/target.test.js'],
+    ['--test', absolute],
+  ]) {
+    const checks = loadTaskChecks(writeTaskChecks(t, [{ ...VALID_CHECK, args }]), ctx);
+    assert.equal(checks.length, 1);
+  }
+});
+
+test('acceptanceIdsForCheck 对 Reference Behavior 只允许显式绑定', () => {
+  const acceptance = [
+    { id: 'A1', source: 'requested-outcome', requiredCovers: ['behavior'] },
+    { id: 'A2', source: 'reference-behavior', referenceBehaviorId: 'R1', requiredCovers: ['behavior'] },
+  ];
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'matching-covers', covers: ['behavior'] }, acceptance),
+    ['A1']
+  );
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'all' }, acceptance),
+    ['A1']
+  );
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'explicit', acceptanceIds: ['A2'] }, acceptance),
+    ['A2']
+  );
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'none' }, acceptance),
+    []
+  );
 });
 
 test('同一 task-check-file 内重复名称被拒绝', (t) => {

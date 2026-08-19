@@ -296,6 +296,57 @@ test('allowedDifference 使用 confirmed Alignment 可正常准备', (t) => {
   assert.equal(r1.description, '按批准差异验证 R1：创建订单后由 pending 改为 queued');
 });
 
+test('Alignment 不得把 Preservation Mode 向下降级', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const downgraded = {
+    ...PRESERVATION_ALIGNMENT,
+    preservation: { mode: 'preserve-unrequested', behaviors: [], excludedFiles: [], allowedDifferences: [], constraints: [], referenceRoots: [] },
+  };
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot, intent: PRESERVATION_ALIGNMENT.originalRequest, alignmentFile: writeJson(t, downgraded, 'down.json'), scope: '.' }),
+    /preservation-mode-downgrade/u
+  );
+  const referenceDowngraded = {
+    ...PRESERVATION_ALIGNMENT,
+    originalRequest: '完全参照旧订单模块实现',
+    goal: '完全参照旧订单模块实现',
+    preservation: {
+      mode: 'preserve-all-observable',
+      constraints: [],
+      referenceRoots: ['src'],
+      behaviors: [{ id: 'R1', category: 'business', description: '创建订单', sourceFiles: ['src/a.js'] }],
+      excludedFiles: [{ path: 'src/types.js', reason: '仅类型定义' }],
+      allowedDifferences: [],
+    },
+  };
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot, intent: '完全参照旧订单模块实现', alignmentFile: writeJson(t, referenceDowngraded, 'ref-down.json'), scope: '.' }),
+    /preservation-mode-downgrade/u
+  );
+});
+
+test('更严格的 Preservation Mode 可覆盖较弱初始模式', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const upgraded = {
+    ...PRESERVATION_ALIGNMENT,
+    preservation: {
+      ...PRESERVATION_ALIGNMENT.preservation,
+      mode: 'reference-equivalent',
+    },
+  };
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, upgraded, 'up.json'),
+    scope: '.',
+  });
+  assert.equal(prepared.task.status, 'prepared');
+  assert.equal(prepared.task.goal.preservation.mode, 'reference-equivalent');
+});
+
 test('Reference Behavior 自动成为 Acceptance 且 Reference 清单进入 Goal', (t) => {
   const repo = preservationRepo(t);
   const stateRoot = tempDir(t);

@@ -35,6 +35,23 @@ function lexicalPathWithin(parent, child) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+function pathForms(value, gitRoot) {
+  const text = String(value ?? '');
+  const forms = new Set();
+  const push = (candidate) => {
+    let normalized = String(candidate ?? '').replaceAll('\\', '/');
+    while (normalized.startsWith('./')) normalized = normalized.slice(2);
+    if (normalized) forms.add(normalized);
+  };
+  push(text);
+  if (path.isAbsolute(text)) {
+    push(path.relative(gitRoot, text));
+  } else {
+    push(path.relative(gitRoot, path.resolve(gitRoot, text)));
+  }
+  return [...forms];
+}
+
 function packageChecks(root, fallback) {
   if (!fallback || fallback.mode === 'none') return [];
   const pkg = readJson(path.join(root, 'package.json'));
@@ -104,6 +121,13 @@ function validateTaskCheck(check, context) {
       throw new Error(`Task Check ${name} 的 testFiles 不存在或不是文件: ${testFile}`);
     }
   }
+  const argPaths = new Set((args ?? []).flatMap((arg) => pathForms(arg, context.gitRoot)));
+  for (const testFile of testFiles) {
+    const forms = pathForms(testFile, context.gitRoot);
+    if (!forms.some((form) => argPaths.has(form))) {
+      throw new Error(`task-check-testfile-not-executed: ${name} 的 testFiles 未出现在 command/args 中: ${testFile}`);
+    }
+  }
   if ((context.projectCheckNames ?? new Set()).has(name) || (context.seen ?? new Set()).has(name)) {
     throw new Error(`Task Check 名称冲突: ${name}`);
   }
@@ -141,10 +165,11 @@ export function loadTaskChecks(file, options = {}) {
 
 export function acceptanceIdsForCheck(check, acceptance = []) {
   if (check.acceptanceMode === 'none') return [];
-  if (check.acceptanceMode === 'all') return acceptance.map((item) => item.id);
+  const nonReference = acceptance.filter((item) => item.source !== 'reference-behavior');
+  if (check.acceptanceMode === 'all') return nonReference.map((item) => item.id);
   if (check.acceptanceIds?.length) return check.acceptanceIds.filter((id) => acceptance.some((item) => item.id === id));
   const covers = new Set(check.covers ?? []);
-  return acceptance
+  return nonReference
     .filter((item) => (item.requiredCovers ?? []).some((cover) => covers.has(cover)))
     .map((item) => item.id);
 }

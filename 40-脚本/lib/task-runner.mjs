@@ -33,9 +33,11 @@ import {
 } from './alignment.mjs';
 import {
   isStrictPreservation,
+  preservationModeLevel,
   buildReferenceInventory,
   referenceBehaviorAcceptanceItems,
   preservationCoverageSummary,
+  validateReferenceAttribution,
 } from './behavior-preservation.mjs';
 import { loadChangeRationale, validateChangeRationale, changeRationaleSummary } from './change-rationale.mjs';
 import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, reviewHasBlockingFindings } from './review.mjs';
@@ -203,6 +205,13 @@ export function prepareTask(options = {}) {
   }
   if (strictPreservation && providedAlignment && !providedAlignment.preservation) {
     throw new Error('behavior-preservation-alignment-required: 行为保持型任务的对齐文件必须包含 preservation 结构');
+  }
+  if (providedAlignment?.preservation) {
+    const providedLevel = preservationModeLevel(providedAlignment.preservation.mode);
+    const initialLevel = preservationModeLevel(initial.preservationMode);
+    if (providedLevel < initialLevel) {
+      throw new Error(`preservation-mode-downgrade: Alignment 声明 ${providedAlignment.preservation.mode} 低于初始识别 ${initial.preservationMode}`);
+    }
   }
   const referenceItems = referenceBehaviorAcceptanceItems(providedAlignment?.preservation);
   const acceptance = providedAlignment
@@ -679,6 +688,14 @@ export function realignTask(options = {}) {
         referenceCommit: currentPreservation.referenceCommit ?? null,
         referenceFiles: currentPreservation.referenceFiles ?? []
       };
+    }
+    const attribution = validateReferenceAttribution({
+      referenceFiles: nextAlignment.preservation.referenceFiles,
+      behaviors: nextAlignment.preservation.behaviors,
+      excludedFiles: nextAlignment.preservation.excludedFiles
+    });
+    if (!attribution.ok) {
+      throw new Error(`realignment-reference-files-unmapped: ${attribution.unmapped.join(', ')}`);
     }
   }
   const scope = task.authorization.scope[0];
