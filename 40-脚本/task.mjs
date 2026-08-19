@@ -44,12 +44,21 @@ function compactOutcomes(task) {
   const acceptance = task.acceptance ?? [];
   if (!acceptance.length) return [];
   const hasDelivery = Boolean(task.deliveryDecision || task.changeSet);
-  const missing = new Set(task.verification?.missingAcceptance ?? []);
+  const missingAcceptance = task.verification?.missingAcceptance;
+  const verificationResolved = Array.isArray(missingAcceptance);
+  const missing = new Set(missingAcceptance ?? []);
   return acceptance.map(item => ({
     id: item.id,
     description: item.description,
     source: item.source ?? null,
-    status: !hasDelivery ? 'pending' : missing.has(item.id) ? 'unverified' : 'verified',
+    status:
+      !hasDelivery
+        ? 'pending'
+        : !verificationResolved
+          ? 'unverified'
+          : missing.has(item.id)
+            ? 'unverified'
+            : 'verified',
   }));
 }
 

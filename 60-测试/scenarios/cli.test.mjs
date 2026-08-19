@@ -336,6 +336,34 @@ test('--goal-card-file 是 --alignment-file 的语义别名且二选一', t => {
   assert.match(both.stderr, /只能提供一个/u);
 });
 
+test('交付被隔离阻断时 outcomes 不得标记为已证明', t => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const target = path.join(repo, 'target.txt');
+  fs.writeFileSync(target, 'user-before\n');
+  const prepared = runNode(TASK, [
+    '准备',
+    '--cwd', repo,
+    '--state-root', stateRoot,
+    '--intent', '修复普通功能',
+    '--acceptance', '功能正确',
+    '--scope', '.',
+  ], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  fs.writeFileSync(target, 'task-after\n');
+  const delivered = runNode(TASK, [
+    '交付',
+    '--task-id', task.taskId,
+    '--state-root', stateRoot,
+  ], { cwd: ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  const receipt = JSON.parse(delivered.stdout);
+  assert.equal(receipt.status, 'blocked');
+  assert.ok(receipt.outcomes.length > 0);
+  assert.ok(receipt.outcomes.every(item => item.status === 'unverified'));
+});
+
 test('CLI 继续验证按原因追加有限预算', t => {
   const repo = gitRepo(t), stateRoot = tempDir(t);
   const prepared = runNode(TASK, ['准备', '--cwd', repo, '--intent', '验证普通功能', '--acceptance', '功能正确', '--scope', '.', '--budget-ms', '100', '--state-root', stateRoot], { cwd: ROOT });
