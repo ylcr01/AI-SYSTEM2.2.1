@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizePreservation } from './behavior-preservation.mjs';
 
 export const ALIGNMENT_MODES = ['direct', 'confirmed', 'delegated'];
 export const DIRECT_REASON_CODES = [
@@ -37,6 +38,10 @@ function stableJson(value) {
   return JSON.stringify(value ?? null);
 }
 
+export function normalizeUserText(value) {
+  return String(value ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+}
+
 export function loadAlignmentFile(file) {
   if (!file) return null;
   let raw;
@@ -59,9 +64,10 @@ export function normalizeAlignment(value = {}) {
     throw new Error('对齐内容必须是 JSON 对象');
   }
   const alignment = value.alignment ?? {};
+  const preservation = value.preservation ? normalizePreservation(value.preservation) : null;
   return {
     schemaVersion: 1,
-    originalRequest: String(value.originalRequest ?? '').trim(),
+    originalRequest: normalizeUserText(value.originalRequest),
     goal: String(value.goal ?? '').trim(),
     expectedOutcomes: uniqueValues(value.expectedOutcomes),
     protectedBehaviors: uniqueValues(value.protectedBehaviors),
@@ -77,6 +83,7 @@ export function normalizeAlignment(value = {}) {
         : String(alignment.decisionNote).trim(),
       delegatedTopics: uniqueValues(alignment.delegatedTopics),
     },
+    ...(preservation ? { preservation } : {}),
   };
 }
 
@@ -105,6 +112,9 @@ export function validateAlignmentForPreparation({ alignment, classification }) {
   if (mode === 'delegated' && !alignment.alignment.delegatedTopics?.length) {
     throw new Error('delegated 必须明确 delegatedTopics');
   }
+  if ((alignment.preservation?.allowedDifferences ?? []).length && mode === 'direct') {
+    throw new Error('存在 allowedDifferences 时不得使用 direct，必须 confirmed 或 delegated');
+  }
   return alignment;
 }
 
@@ -128,6 +138,11 @@ export function validateAlignmentForRealignment({ currentTask, nextAlignment }) 
   if (!nextAlignment.alignment.decisionNote) throw new Error('重新对齐必须记录 decisionNote');
   if (mode === 'delegated' && !nextAlignment.alignment.delegatedTopics?.length) {
     throw new Error('delegated 必须明确 delegatedTopics');
+  }
+  const initialOriginalRequest = normalizeUserText(currentTask?.goal?.originalRequest ?? currentTask?.goal?.summary ?? '');
+  const nextOriginalRequest = normalizeUserText(nextAlignment?.originalRequest);
+  if (nextOriginalRequest && nextOriginalRequest !== initialOriginalRequest) {
+    throw new Error('alignment-original-request-mismatch: 重新对齐不能改变 initial originalRequest');
   }
   return nextAlignment;
 }
@@ -162,8 +177,31 @@ export function computeAlignmentFingerprint({ goal, acceptance, scope }) {
     scope: scope?.path ?? null,
     mode: goal?.alignment?.mode ?? null,
     delegatedTopics: goal?.alignment?.delegatedTopics ?? [],
+    preservation: goal?.preservation
+      ? {
+        mode: goal.preservation.mode ?? null,
+        constraints: goal.preservation.constraints ?? [],
+        referenceRoots: goal.preservation.referenceRoots ?? [],
+        referenceCommit: goal.preservation.referenceCommit ?? null,
+        referenceFiles: goal.preservation.referenceFiles ?? [],
+        behaviors: goal.preservation.behaviors ?? [],
+        excludedFiles: goal.preservation.excludedFiles ?? [],
+        allowedDifferences: goal.preservation.allowedDifferences ?? [],
+      }
+      : null,
   };
   return crypto.createHash('sha256').update(stableJson(canonical)).digest('hex');
+}
+
+export function validateAlignmentFingerprint({ goal, acceptance, scope }) {
+  if (!goal?.alignment?.baselineFingerprint || !goal?.preservation) {
+    return { ok: true, reason: null };
+  }
+  const actual = computeAlignmentFingerprint({ goal, acceptance, scope });
+  if (actual !== goal.alignment.baselineFingerprint) {
+    return { ok: false, reason: 'alignment-fingerprint-mismatch' };
+  }
+  return { ok: true, reason: null };
 }
 
 export function buildAlignedGoal(alignment, acceptance, scope) {
@@ -186,6 +224,7 @@ export function buildAlignedGoal(alignment, acceptance, scope) {
     nonGoals: alignment.nonGoals,
     assumptions: alignment.assumptions,
     openQuestions: [],
+    ...(alignment.preservation ? { preservation: alignment.preservation } : {}),
   };
   const fingerprint = computeAlignmentFingerprint({
     goal: { ...base, alignment: { ...meta, baselineFingerprint: null } },

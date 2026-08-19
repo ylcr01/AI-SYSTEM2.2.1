@@ -24,7 +24,7 @@ const DIRECT_ALIGNMENT = {
 };
 
 const CONFIRMED_ALIGNMENT = {
-  originalRequest: '修订目标：改为新行为',
+  originalRequest: '修复普通功能',
   goal: '改为新行为',
   expectedOutcomes: ['新行为生效'],
   protectedBehaviors: [],
@@ -75,7 +75,7 @@ test('重新对齐增加修订、切换模式、清空旧验证产物并回到 i
   assert.equal(realigned.task.status, 'implementing');
   assert.equal(realigned.task.goal.alignment.mode, 'confirmed');
   assert.equal(realigned.task.goal.alignment.revision, 2);
-  assert.equal(realigned.task.goal.originalRequest, '修订目标：改为新行为');
+  assert.equal(realigned.task.goal.originalRequest, '修复普通功能');
   assert.equal(realigned.task.goal.alignment.events.length, 1);
   assert.equal(realigned.task.goal.alignment.events[0].type, 'realignment');
   assert.ok(realigned.task.goal.alignment.events[0].oldBaselineFingerprint);

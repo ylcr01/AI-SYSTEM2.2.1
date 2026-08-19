@@ -115,6 +115,9 @@ function compactTask(task, result) {
       };
     }
     if (task.verification.firstFailure) receipt.verification.firstFailure = task.verification.firstFailure;
+    if (task.verification.preservationCoverage) {
+      receipt.verification.preservationCoverage = task.verification.preservationCoverage;
+    }
     if ((task.verification.untrustedTechnicalEvidence ?? []).length > 0) {
       receipt.verification.untrustedTechnicalEvidence = task.verification.untrustedTechnicalEvidence;
     }
@@ -185,6 +188,7 @@ function help() {
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Standard/Controlled 对齐任务必填）]
+       [--task-check-file <json>（针对性检查显式绑定具体 Acceptance，由系统执行生成 system Evidence）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   重新对齐 --task-id <id> --alignment-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
@@ -238,6 +242,7 @@ try {
       stateRoot: args['state-root'],
       taskId: requiredArg(args, 'task-id'),
       evidenceFile: args['evidence-file'],
+      taskCheckFile: args['task-check-file'],
       reviewFile: args['review-file'],
       rationaleFile: args['rationale-file'],
       autoChecks: action === '审查' ? false : args['no-auto-checks'] !== true,

@@ -34,3 +34,12 @@ artifactKinds: [requirements, product]
 - 执行中只有 Goal、Outcome、Acceptance、Scope、已确认决定或风险发生实质变化时才暂停重新对齐；普通实现变化、假设被低风险推翻不触发。
 - 交付时 Standard/Controlled 对齐任务必须提供 Change Rationale，把所有 ChangeSet 文件映射到 Goal 或 Acceptance；未知文件、未知 Acceptance、空 reason 与旧指纹被机器拒绝，未映射文件不能进入等待验收。
 - `重新对齐` 命令允许在 Codex 进度中修订目标后继续同一 Task：仅 confirmed/delegated，必须记录 decisionNote 与原因；修订号加一，清空旧 Evidence/Review/Handoff/Change Rationale 并回到 implementing；不改变 Scope、外部授权、集成目标与用户已有改动授权；已 ready_to_integrate 或结束的任务应创建新 Task。
+
+## 行为保持
+
+- `--intent` 保存当前有效用户请求原文；Alignment 的 `originalRequest` 必须与其一致，`重新对齐` 不得替换 initial originalRequest。
+- 重构/迁移/移植/重写/升级/优化默认保持未请求改变的可观察行为（`preserve-all-observable`）；明确参照旧实现时为 `reference-equivalent`，旧实现是行为基线而非代码模板；Bug Fix 与 Feature 为 `preserve-unrequested`。
+- 行为保持型任务必须完整查看 Reference Root：所有 tracked Reference 文件必须归入 Reference Behavior 或 excludedFiles；每个 Reference Behavior 自动成为一条 Acceptance，并需要行为 Evidence 证明。
+- 未经用户批准的 `allowedDifferences` 默认是缺陷，且存在 allowedDifferences 时不得使用 direct Alignment。
+- 不确定旧行为先查代码、调用方、测试、规格/Contract、Reference 与项目事实；只有无法解决且会改变业务结果时才问用户，多个问题尽量一次确认；行为等价范围内的内部实现优化无需询问。
+- 具体 Acceptance 用系统执行的 `--task-check-file` 明确证明；宽泛全量 Check 不自动绑定多个 Acceptance。

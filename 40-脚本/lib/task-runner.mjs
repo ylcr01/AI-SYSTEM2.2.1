@@ -18,17 +18,25 @@ import {
 } from './git-state.mjs';
 import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, evaluateDeliveryEligibility, canRerunVerification } from './task-policy.mjs';
 import { createEvidence, evidenceSummary } from './evidence.mjs';
-import { planChecks, executeCheckPlan, loadChecks, acceptanceIdsForCheck } from './check-planner.mjs';
+import { planChecks, executeCheckPlan, loadChecks, loadTaskChecks, acceptanceIdsForCheck } from './check-planner.mjs';
 import { createBudget, extendBudget } from './verification-budget.mjs';
 import {
   loadAlignmentFile,
+  normalizeUserText,
   validateAlignmentForPreparation,
   validateAlignmentForRealignment,
   evaluateFinalAlignment,
+  validateAlignmentFingerprint,
   buildAlignedGoal,
   synthesizeQuickAlignment,
   recordAlignmentEvent,
 } from './alignment.mjs';
+import {
+  isStrictPreservation,
+  buildReferenceInventory,
+  referenceBehaviorAcceptanceItems,
+  preservationCoverageSummary,
+} from './behavior-preservation.mjs';
 import { loadChangeRationale, validateChangeRationale, changeRationaleSummary } from './change-rationale.mjs';
 import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, reviewHasBlockingFindings } from './review.mjs';
 import { createTask, readTask, findTask, updateTask, listTasks } from './state-manager.mjs';
@@ -55,6 +63,7 @@ function acceptanceItems(value, classification) {
       requiredCovers: item.requiredCovers ?? defaultAcceptanceCovers(classification),
       requiredCoversInferred: item.requiredCovers === undefined,
       ...(item.source !== undefined ? { source: String(item.source) } : {}),
+      ...(item.referenceBehaviorId !== undefined ? { referenceBehaviorId: String(item.referenceBehaviorId) } : {}),
       status: 'open',
     });
 }
@@ -132,7 +141,8 @@ function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task
     covers: check.covers ?? [],
     source: {
       type: 'command', actor: 'ai-system', session: null,
-      command: check.command, args: check.args, cwd: check.cwd, sideEffect: check.sideEffect
+      command: check.command, args: check.args, cwd: check.cwd, sideEffect: check.sideEffect,
+      testFiles: check.testFiles ?? []
     },
     result: {
       status: check.status === 0 && !check.error ? 'passed' : 'failed',
@@ -166,7 +176,9 @@ export function prepareTask(options = {}) {
   const intent = String(options.intent ?? '').trim();
   if (!intent) throw new Error('准备任务必须提供 Intent');
   const providedAlignment = loadAlignmentFile(options.alignmentFile);
-  if (providedAlignment && !providedAlignment.originalRequest) providedAlignment.originalRequest = intent;
+  if (providedAlignment && normalizeUserText(providedAlignment.originalRequest) !== normalizeUserText(intent)) {
+    throw new Error('alignment-original-request-mismatch: Alignment originalRequest 必须与 --intent 当前用户请求原文一致');
+  }
   const classificationText = providedAlignment
     ? [
       providedAlignment.originalRequest,
@@ -183,10 +195,21 @@ export function prepareTask(options = {}) {
     handoffRequired: options.handoffRequired === true
   });
   if (providedAlignment) validateAlignmentForPreparation({ alignment: providedAlignment, classification: initial });
+  const strictPreservation = isStrictPreservation(providedAlignment?.preservation)
+    || initial.preservationMode === 'preserve-all-observable'
+    || initial.preservationMode === 'reference-equivalent';
+  if (strictPreservation && !providedAlignment) {
+    throw new Error('behavior-preservation-alignment-required: 行为保持型任务必须提供 --alignment-file');
+  }
+  if (strictPreservation && providedAlignment && !providedAlignment.preservation) {
+    throw new Error('behavior-preservation-alignment-required: 行为保持型任务的对齐文件必须包含 preservation 结构');
+  }
+  const referenceItems = referenceBehaviorAcceptanceItems(providedAlignment?.preservation);
   const acceptance = providedAlignment
     ? acceptanceItems([
       ...providedAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
       ...providedAlignment.protectedBehaviors.map((description) => ({ description, source: 'protected-behavior' })),
+      ...referenceItems,
     ], initial)
     : acceptanceItems(options.acceptance, initial);
   const built = buildContext({
@@ -203,6 +226,23 @@ export function prepareTask(options = {}) {
   addIntentSpecificationHints(built, gitRoot, intent);
   const scope = normalizeScope(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
+  if (providedAlignment?.preservation?.referenceRoots?.length) {
+    const inventory = buildReferenceInventory({
+      gitRoot,
+      baselineHead: baseline.head,
+      referenceRoots: providedAlignment.preservation.referenceRoots,
+      behaviors: providedAlignment.preservation.behaviors,
+      excludedFiles: providedAlignment.preservation.excludedFiles
+    });
+    if (inventory.unmapped.length) {
+      throw new Error(`reference-files-unmapped: 以下 Reference 文件未归入 Behavior 或 excludedFiles: ${inventory.unmapped.join(', ')}`);
+    }
+    providedAlignment.preservation = {
+      ...providedAlignment.preservation,
+      referenceCommit: inventory.referenceCommit,
+      referenceFiles: inventory.referenceFiles
+    };
+  }
   const integrationRequired = integrationRequiredForBaseline(baseline, options.integrationTarget);
   if (integrationRequired && !options.integrationTarget) {
     throw new Error('linked 或 detached worktree 的写任务必须通过 --integration-target 声明目标分支');
@@ -236,6 +276,7 @@ export function prepareTask(options = {}) {
       lastFailureFingerprint: null,
       diagnosticRetryUsed: false,
       systemEvidenceHashes: [],
+      preservationCoverage: null,
       requiredCovers: [],
       missingCovers: [],
       stopReason: null
@@ -277,6 +318,7 @@ export function deliverTask(options = {}) {
   const finalAlignment = evaluateFinalAlignment({ goal: task.goal, classification });
   const alignmentEscalation = finalAlignment.required && finalAlignment.reason === 'alignment-risk-escalation';
   const alignmentMissing = finalAlignment.required && finalAlignment.reason === 'alignment-required';
+  const fingerprintCheck = validateAlignmentFingerprint({ goal: task.goal, acceptance: task.acceptance, scope });
   const acceptance = acceptanceForClassification(task.acceptance, classification);
   let inputCycle = Number(task.verification?.inputCycle ?? 0);
   const inputChanged = Boolean(options.inputChange);
@@ -313,8 +355,15 @@ export function deliverTask(options = {}) {
   let lastFailure = inputChanged ? null : task.verification?.lastFailureFingerprint ?? null;
   let diagnosticRetryUsed = inputChanged ? false : task.verification?.diagnosticRetryUsed === true;
 
-  if (finalAlignment.satisfied && options.autoChecks !== false && (summary.missingCovers.length > 0 || summary.missingAcceptance.length > 0)) {
-    const checks = loadChecks(changeSet.gitRoot, { templateRoot: task.context?.context?.template?.path ?? null });
+  if (finalAlignment.satisfied && fingerprintCheck.ok && options.autoChecks !== false && (summary.missingCovers.length > 0 || summary.missingAcceptance.length > 0)) {
+    const projectChecks = loadChecks(changeSet.gitRoot, { templateRoot: task.context?.context?.template?.path ?? null });
+    const taskChecks = loadTaskChecks(options.taskCheckFile, {
+      task,
+      acceptance,
+      gitRoot: changeSet.gitRoot,
+      projectCheckNames: new Set(projectChecks.map((check) => check.name))
+    });
+    const checks = [...projectChecks, ...taskChecks];
     const plan = planChecks({
       cwd: changeSet.gitRoot,
       profile: classification.controlMode,
@@ -378,6 +427,10 @@ export function deliverTask(options = {}) {
   const rationaleRequired = classification.controlMode !== 'quick'
     && (Boolean(task.goal?.alignment) || Boolean(rationale));
   const rationaleGate = !rationaleRequired || rationaleValidation.ok;
+  const preservationCoverage = preservationCoverageSummary({
+    acceptance,
+    acceptanceCoverage: summary.acceptanceCoverage
+  });
 
   const specState = buildSpecState(task, changeSet, options);
   const stableSpecState = stableSpecReviewState(specState);
@@ -467,6 +520,8 @@ export function deliverTask(options = {}) {
     decision = { decision: 'needs_rework', reasons: ['alignment-risk-escalation'] };
   } else if (alignmentMissing) {
     decision = { decision: 'needs_rework', reasons: ['alignment-required'] };
+  } else if (!fingerprintCheck.ok) {
+    decision = { decision: 'needs_rework', reasons: ['alignment-fingerprint-mismatch'] };
   } else if (!rationaleGate) {
     if (classification.controlMode === 'controlled') {
       decision = { decision: 'needs_rework', reasons: ['change-rationale-unmapped'] };
@@ -481,6 +536,8 @@ export function deliverTask(options = {}) {
     alignmentBlockers.push('实际 ChangeSet 风险高于 direct 准备判断，必须重新对齐或获得用户明确委托');
   } else if (alignmentMissing) {
     alignmentBlockers.push('最终分类为 Controlled/Structural 但缺少 confirmed/delegated Alignment，必须先重新对齐');
+  } else if (!fingerprintCheck.ok) {
+    alignmentBlockers.push('Alignment 结构指纹失效，Behaviors / Reference / allowedDifferences 可能已被修改，必须重新对齐');
   } else if (!rationaleGate && classification.controlMode === 'controlled') {
     alignmentBlockers.push(`Change Rationale 未映射或无效: ${[
       ...rationaleValidation.invalid,
@@ -534,10 +591,12 @@ export function deliverTask(options = {}) {
         missingAcceptance: summary.missingAcceptance,
         systemEvidenceHashes,
         untrustedTechnicalEvidence: summary.untrustedTechnicalEvidence ?? [],
+        preservationCoverage,
         firstFailure,
         stopReason: checkExecution?.stopReason
           ?? (alignmentEscalation ? 'alignment-risk-escalation'
             : alignmentMissing ? 'alignment-required'
+            : !fingerprintCheck.ok ? 'alignment-fingerprint-mismatch'
             : !rationaleGate && classification.controlMode === 'controlled' ? 'change-rationale-unmapped'
             : !rationaleGate ? 'change-rationale-required'
             : status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
@@ -605,10 +664,28 @@ export function realignTask(options = {}) {
     nextAlignment.originalRequest = task.goal?.originalRequest ?? task.goal?.summary ?? '';
   }
   validateAlignmentForRealignment({ currentTask: task, nextAlignment });
+  const currentPreservation = task.goal?.preservation;
+  if (currentPreservation) {
+    if (!nextAlignment.preservation) {
+      nextAlignment.preservation = structuredClone(currentPreservation);
+    } else {
+      const nextRoots = nextAlignment.preservation.referenceRoots ?? [];
+      if (nextRoots.length && JSON.stringify(nextRoots) !== JSON.stringify(currentPreservation.referenceRoots ?? [])) {
+        throw new Error('realignment-reference-immutable: 重新对齐不能改变 referenceRoots');
+      }
+      nextAlignment.preservation = {
+        ...nextAlignment.preservation,
+        referenceRoots: currentPreservation.referenceRoots ?? [],
+        referenceCommit: currentPreservation.referenceCommit ?? null,
+        referenceFiles: currentPreservation.referenceFiles ?? []
+      };
+    }
+  }
   const scope = task.authorization.scope[0];
   const acceptance = acceptanceItems([
     ...nextAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
     ...nextAlignment.protectedBehaviors.map((description) => ({ description, source: 'protected-behavior' })),
+    ...referenceBehaviorAcceptanceItems(nextAlignment.preservation),
   ], task.classification);
   const base = buildAlignedGoal(nextAlignment, acceptance, scope);
   const nextGoal = {
@@ -653,6 +730,7 @@ export function realignTask(options = {}) {
         missingAcceptance: [],
         systemEvidenceHashes: [],
         untrustedTechnicalEvidence: [],
+        preservationCoverage: null,
         firstFailure: null,
         lastFailureFingerprint: null,
         diagnosticRetryUsed: false,
@@ -810,6 +888,14 @@ function revalidateForAcceptance(task) {
   });
   if (!finalAlignment.satisfied) {
     throw new Error(`验收前目标对齐门禁已失效: ${finalAlignment.reason}`);
+  }
+  const fingerprintCheck = validateAlignmentFingerprint({
+    goal: task.goal,
+    acceptance: task.acceptance,
+    scope: task.authorization.scope[0]
+  });
+  if (!fingerprintCheck.ok) {
+    throw new Error(`验收前目标结构门禁已失效: ${fingerprintCheck.reason}`);
   }
   const requiredCovers = determineEvidenceRequirements({
     classification: task.classification,

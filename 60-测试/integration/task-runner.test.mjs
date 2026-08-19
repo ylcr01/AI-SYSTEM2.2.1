@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { prepareTask,deliverTask,acceptTask,saveTask,resumeTask,continueVerification,confirmIntegration,revalidateIntegration } from '../../40-脚本/lib/task-runner.mjs';import { updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { gitRepo,tempDir } from '../helpers.mjs';
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { prepareTask,deliverTask,acceptTask,saveTask,resumeTask,continueVerification,confirmIntegration,revalidateIntegration } from '../../40-脚本/lib/task-runner.mjs';import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';import { updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { gitRepo,tempDir } from '../helpers.mjs';
 test('Standard 任务完成自动验证、交付和用户验收',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.evidence.some(x=>x.covers.includes('behavior')));const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});assert.equal(accepted.task.status,'accepted');});
 test('自动检查生成的 Evidence 自动进入 systemEvidenceHashes',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');const behaviorEvidence=delivered.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(behaviorEvidence);assert.ok(delivered.task.verification.systemEvidenceHashes.includes(behaviorEvidence.payloadHash));assert.ok(delivered.task.evidence.filter(x=>x.covers.includes('scope')).every(x=>delivered.task.verification.systemEvidenceHashes.includes(x.payloadHash)));});
 test('纯文档任务自动进入 Quick 并由文档检查绑定 Acceptance',t=>{const repo=gitRepo(t,{checks:[{name:'docs',command:process.execPath,args:['-e','process.exit(0)'],profiles:['quick','standard'],covers:['documentation'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'更新入口规则',acceptance:['规则满足验收条件'],scope:'.'});fs.writeFileSync(path.join(repo,'README.md'),'# updated\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.equal(delivered.task.classification.controlMode,'quick');assert.deepEqual(delivered.task.acceptance[0].requiredCovers,['documentation']);assert.equal(delivered.task.verification.requiredCovers.includes('behavior'),false);assert.ok(delivered.task.evidence.some(x=>x.covers.includes('documentation')&&x.acceptanceIds.includes('A1')));});
@@ -153,4 +153,201 @@ test('detached worktree 成果必须提交，目标 HEAD 变化后重验才能�
   assert.notEqual(revalidated.task.integration.targetCommit,integrated.task.integration.targetCommit);
   const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});
   assert.equal(accepted.task.status,'accepted');
+});
+
+function preservationRepo(t, checks) {
+  const repo = gitRepo(t, checks === undefined ? {} : { checks });
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export const create = () => 1;\n');
+  fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'export const cancel = () => 1;\n');
+  fs.writeFileSync(path.join(repo, 'src', 'types.js'), 'export const T = 1;\n');
+  fs.writeFileSync(path.join(repo, 'tests', 'r.test.js'), '// targeted reference test\n');
+  for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'ref']]) {
+    const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(result.stderr);
+  }
+  return repo;
+}
+
+function preservationAlignment(mode = 'delegated', behaviors = null) {
+  const defaultBehaviors = ['R1', 'R2', 'R3', 'R4', 'R5'].map((id) => ({
+    id,
+    category: id === 'R5' ? 'interaction' : 'business',
+    description: `参考行为 ${id}`,
+    sourceFiles: id === 'R5' ? ['src/a.js'] : id === 'R4' ? ['src/b.js'] : ['src/a.js'],
+  }));
+  return {
+    originalRequest: '重构订单模块，原功能不能遗漏',
+    goal: '重构订单模块并保持全部行为',
+    expectedOutcomes: ['全部已有行为保持'],
+    protectedBehaviors: [],
+    acceptance: ['重构后行为保持'],
+    confirmedDecisions: [],
+    nonGoals: [],
+    assumptions: [],
+    preservation: {
+      mode: 'preserve-all-observable',
+      constraints: [],
+      referenceRoots: ['src'],
+      behaviors: behaviors ?? defaultBehaviors,
+      excludedFiles: [{ path: 'src/types.js', reason: '仅类型定义' }],
+      allowedDifferences: [],
+    },
+    alignment: {
+      mode,
+      reasonCodes: [],
+      decisionNote: mode === 'confirmed' ? '用户确认按原行为重构' : '用户委托按原行为重构',
+      delegatedTopics: mode === 'delegated' ? ['订单模块重构'] : [],
+    },
+  };
+}
+
+function writeJson(t, value, name) {
+  const file = path.join(tempDir(t), name);
+  fs.writeFileSync(file, JSON.stringify(value, null, 2));
+  return file;
+}
+
+function writeRationale(t, task, changeSet, files) {
+  return writeJson(t, {
+    schemaVersion: 1,
+    taskId: task.taskId,
+    changeFingerprint: changeSet.fingerprint,
+    items: files.map((file) => ({ files: [file], supports: ['GOAL'], reason: '行为保持重构' })),
+  }, 'rationale.json');
+}
+
+test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
+  const repo = preservationRepo(t, []);
+  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), '// targeted\n');
+  for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'test']]) {
+    const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(result.stderr);
+  }
+  const stateRoot = tempDir(t);
+  const alignment = {
+    originalRequest: '修复普通功能',
+    goal: '修复普通功能',
+    expectedOutcomes: ['功能正确'],
+    protectedBehaviors: [],
+    acceptance: ['功能正确', '另一功能正确'],
+    confirmedDecisions: [],
+    nonGoals: [],
+    assumptions: [],
+    alignment: { mode: 'delegated', reasonCodes: [], decisionNote: '用户委托', delegatedTopics: ['功能修复'] },
+  };
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: alignment.originalRequest, alignmentFile: writeJson(t, alignment, 'alignment.json'), scope: '.' });
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const changeSet = computeChangeSet(prepared.task.baseline);
+  const taskCheckFile = writeJson(t, {
+    schemaVersion: 1,
+    checks: [{
+      name: 'target-A1',
+      command: process.execPath,
+      args: ['-e', 'process.exit(0)'],
+      covers: ['behavior'],
+      acceptanceIds: ['A1'],
+      testFiles: ['tests/target.test.js'],
+      sideEffect: 'none',
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+    }],
+  }, 'task-checks.json');
+  const delivered = deliverTask({
+    stateRoot,
+    taskId: prepared.task.taskId,
+    rationaleFile: writeRationale(t, prepared.task, changeSet, ['target.txt']),
+    taskCheckFile,
+  });
+  assert.equal(delivered.task.status, 'verifying');
+  assert.ok(delivered.task.verification.missingAcceptance.includes('A2'));
+  assert.equal(delivered.task.verification.missingAcceptance.includes('A1'), false);
+  const checkEvidence = delivered.task.evidence.find((item) => item.source?.testFiles?.length);
+  assert.ok(checkEvidence);
+  assert.equal(checkEvidence.source.type, 'command');
+  assert.equal(checkEvidence.source.actor, 'ai-system');
+  assert.deepEqual(checkEvidence.source.testFiles, ['tests/target.test.js']);
+  assert.ok(delivered.task.verification.systemEvidenceHashes.includes(checkEvidence.payloadHash));
+});
+
+test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
+  const broad = [{
+    name: 'broad-green',
+    command: process.execPath,
+    args: ['-e', 'process.exit(0)'],
+    profiles: ['standard', 'controlled'],
+    covers: ['behavior'],
+    sideEffect: 'none',
+    estimatedCost: 'very-low',
+    timeoutMs: 5000,
+    acceptanceMode: 'none',
+  }];
+  const repo = preservationRepo(t, broad);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: '重构订单模块，原功能不能遗漏',
+    alignmentFile: writeJson(t, preservationAlignment(), 'alignment.json'),
+    scope: '.',
+  });
+  const ids = Object.fromEntries(prepared.task.acceptance.map((item) => [item.referenceBehaviorId, item.id]));
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export const rewritten = () => 42;\n');
+  const changeSet = computeChangeSet(prepared.task.baseline);
+  const taskCheckFile = writeJson(t, {
+    schemaVersion: 1,
+    checks: ['R1', 'R2', 'R3', 'R5'].map((id) => ({
+      name: `check-${id}`,
+      command: process.execPath,
+      args: ['-e', 'process.exit(0)'],
+      covers: ['behavior'],
+      acceptanceIds: [ids[id]],
+      testFiles: ['tests/r.test.js'],
+      sideEffect: 'none',
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+    })),
+  }, 'task-checks.json');
+  const delivered = deliverTask({
+    stateRoot,
+    taskId: prepared.task.taskId,
+    rationaleFile: writeRationale(t, prepared.task, changeSet, ['src/a.js']),
+    taskCheckFile,
+  });
+  assert.equal(delivered.task.status, 'verifying');
+  assert.ok(delivered.task.verification.missingAcceptance.includes(ids.R4));
+  assert.deepEqual(delivered.task.verification.preservationCoverage, {
+    behaviorCount: 5,
+    verifiedBehaviorCount: 4,
+    missingBehaviorIds: ['R4'],
+    complete: false,
+  });
+});
+
+test('内部实现不同但行为全验证时 complete 且允许交付', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: '重构订单模块，原功能不能遗漏',
+    alignmentFile: writeJson(t, preservationAlignment(), 'alignment.json'),
+    scope: '.',
+  });
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export function rewrittenCreate() { return 42; }\n');
+  fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'export function rewrittenCancel() { return 0; }\n');
+  const changeSet = computeChangeSet(prepared.task.baseline);
+  const delivered = deliverTask({
+    stateRoot,
+    taskId: prepared.task.taskId,
+    rationaleFile: writeRationale(t, prepared.task, changeSet, ['src/a.js', 'src/b.js']),
+  });
+  assert.equal(delivered.task.status, 'waiting_acceptance');
+  assert.deepEqual(delivered.task.verification.preservationCoverage, {
+    behaviorCount: 5,
+    verifiedBehaviorCount: 5,
+    missingBehaviorIds: [],
+    complete: true,
+  });
 });

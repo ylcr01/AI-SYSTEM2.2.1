@@ -30,6 +30,11 @@ function validateCheck(check, source) {
   };
 }
 
+function lexicalPathWithin(parent, child) {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 function packageChecks(root, fallback) {
   if (!fallback || fallback.mode === 'none') return [];
   const pkg = readJson(path.join(root, 'package.json'));
@@ -60,6 +65,78 @@ export function loadChecks(cwd, options = {}) {
     ...packageChecks(cwd, project?.packageFallback).filter((check) => !names.has(check.name)),
     ...declared
   ];
+}
+
+function validateTaskCheck(check, context) {
+  if (!check || typeof check !== 'object' || Array.isArray(check)) {
+    throw new Error('Task Check 必须是对象');
+  }
+  const name = String(check.name ?? '').trim();
+  const command = String(check.command ?? '').trim();
+  const args = Array.isArray(check.args) ? check.args.map((item) => String(item)) : null;
+  const covers = [...new Set(check.covers ?? [])].map((item) => String(item).trim()).filter(Boolean);
+  const acceptanceIds = [...new Set(check.acceptanceIds ?? [])].map((item) => String(item).trim()).filter(Boolean);
+  const testFiles = [...new Set(check.testFiles ?? [])].map((item) => String(item ?? '').trim()).filter(Boolean);
+  const sideEffect = String(check.sideEffect ?? 'none').trim() || 'none';
+  if (!name) throw new Error('Task Check 缺少 name');
+  if (!command) throw new Error(`Task Check ${name} 缺少 command`);
+  if (!args) throw new Error(`Task Check ${name} 的 args 必须是数组`);
+  if (!covers.length) throw new Error(`Task Check ${name} 缺少 covers`);
+  if (!acceptanceIds.length) throw new Error(`Task Check ${name} 必须显式绑定非空 acceptanceIds`);
+  if (!testFiles.length) throw new Error(`Task Check ${name} 必须提供非空 testFiles`);
+  if (!['none', 'workspace'].includes(sideEffect)) {
+    throw new Error(`Task Check ${name} 禁止 external sideEffect`);
+  }
+  for (const acceptanceId of acceptanceIds) {
+    const acceptance = (context.acceptance ?? []).find((item) => item.id === acceptanceId);
+    if (!acceptance) throw new Error(`Task Check ${name} 绑定未知 Acceptance: ${acceptanceId}`);
+    const intersects = covers.some((cover) => (acceptance.requiredCovers ?? []).includes(cover));
+    if (!intersects) {
+      throw new Error(`Task Check ${name} 的 covers 与 Acceptance ${acceptanceId} 的 requiredCovers 无关`);
+    }
+  }
+  for (const testFile of testFiles) {
+    const absolute = path.resolve(context.gitRoot, testFile);
+    if (!lexicalPathWithin(path.resolve(context.gitRoot), absolute)) {
+      throw new Error(`Task Check ${name} 的 testFiles 越出 Git Root: ${testFile}`);
+    }
+    if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+      throw new Error(`Task Check ${name} 的 testFiles 不存在或不是文件: ${testFile}`);
+    }
+  }
+  if ((context.projectCheckNames ?? new Set()).has(name) || (context.seen ?? new Set()).has(name)) {
+    throw new Error(`Task Check 名称冲突: ${name}`);
+  }
+  context.seen.add(name);
+  return {
+    name,
+    command,
+    args,
+    covers,
+    acceptanceIds,
+    testFiles,
+    sideEffect,
+    estimatedCost: String(check.estimatedCost ?? 'low').trim() || 'low',
+    timeoutMs: Number(check.timeoutMs ?? 600000),
+    acceptanceMode: 'explicit',
+    profiles: ['quick', 'standard', 'controlled', 'release'],
+    source: 'task-check-file'
+  };
+}
+
+export function loadTaskChecks(file, options = {}) {
+  if (!file) return [];
+  let value;
+  try {
+    value = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+  } catch (error) {
+    throw new Error(`无法读取 task-check-file: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.checks)) {
+    throw new Error('task-check-file 必须是包含 checks 数组的 JSON 对象');
+  }
+  const seen = new Set();
+  return value.checks.map((check) => validateTaskCheck(check, { ...options, seen }));
 }
 
 export function acceptanceIdsForCheck(check, acceptance = []) {
@@ -189,6 +266,7 @@ function executeOne(check, cwd, timeoutMs) {
     sideEffect: check.sideEffect,
     acceptanceMode: check.acceptanceMode,
     acceptanceIds: check.acceptanceIds ?? [],
+    testFiles: check.testFiles ?? [],
     artifacts: check.artifacts ?? []
   };
   output.resultFingerprint = crypto.createHash('sha256').update(JSON.stringify({

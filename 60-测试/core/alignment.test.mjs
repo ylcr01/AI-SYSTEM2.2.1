@@ -8,11 +8,12 @@ import {
   normalizeAlignment,
   validateAlignmentForPreparation,
   evaluateFinalAlignment,
+  validateAlignmentFingerprint,
   computeAlignmentFingerprint,
   buildAlignedGoal,
   synthesizeQuickAlignment,
 } from '../../40-脚本/lib/alignment.mjs';
-import { prepareTask } from '../../40-脚本/lib/task-runner.mjs';
+import { prepareTask, realignTask } from '../../40-脚本/lib/task-runner.mjs';
 import { gitRepo, tempDir, runNode } from '../helpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -176,6 +177,48 @@ test('Quick 合成对齐不依赖完整 reasonCodes', () => {
   const alignment = synthesizeQuickAlignment({ intent: '更新 README 说明', acceptance: ['文档准确'] });
   assert.equal(alignment.alignment.mode, 'direct');
   assert.deepEqual(alignment.expectedOutcomes, ['文档准确']);
+});
+
+test('intent 与 originalRequest 不一致时准备被拒绝', (t) => {
+  const repo = gitRepo(t);
+  const file = writeAlignment(t, { ...DIRECT_ALIGNMENT, originalRequest: '重构订单模块' });
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '重构订单模块，原功能不能遗漏', alignmentFile: file, scope: '.' }),
+    /alignment-original-request-mismatch/u
+  );
+});
+
+test('存在 allowedDifferences 时 direct 被拒绝', () => {
+  const alignment = {
+    ...DIRECT_ALIGNMENT,
+    preservation: {
+      mode: 'reference-equivalent',
+      referenceRoots: ['src'],
+      behaviors: [{ id: 'R1', category: 'error', description: '删除需二次确认', sourceFiles: ['src/a.js'] }],
+      allowedDifferences: [{ behaviorId: 'R1', description: '删除改为一次确认' }],
+    },
+  };
+  assert.throws(
+    () => validateAlignmentForPreparation({ alignment, classification: { controlMode: 'standard', structureImpact: 'local' } }),
+    /allowedDifferences.*不得使用 direct/u
+  );
+});
+
+test('Alignment 指纹校验对无 Preservation 任务保持通过', () => {
+  const goal = buildAlignedGoal(normalizeAlignment(DIRECT_ALIGNMENT), [], { base: 'git-root', path: '.' });
+  assert.deepEqual(validateAlignmentFingerprint({ goal, acceptance: [], scope: { base: 'git-root', path: '.' } }), { ok: true, reason: null });
+});
+
+test('重新对齐不能替换 initial originalRequest', (t) => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const file = writeAlignment(t, DIRECT_ALIGNMENT);
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: DIRECT_ALIGNMENT.originalRequest, alignmentFile: file, scope: '.' });
+  const changed = writeAlignment(t, { ...DIRECT_ALIGNMENT, originalRequest: '另一个用户请求', alignment: { ...DIRECT_ALIGNMENT.alignment, mode: 'confirmed', decisionNote: '确认修改', delegatedTopics: [] } }, 'changed.json');
+  assert.throws(
+    () => realignTask({ stateRoot, taskId: prepared.task.taskId, alignmentFile: changed, reason: '尝试改原话' }),
+    /alignment-original-request-mismatch/u
+  );
 });
 
 test('准备回执包含目标、对齐模式与基线指纹', (t) => {

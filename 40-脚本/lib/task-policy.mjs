@@ -1,6 +1,8 @@
 const CONTROLLED_WORDS = /权限|安全|隐私|迁移|生产|发布|部署|不可逆|外部写入|authorization|security|migration|production|deploy|release/iu;
 const QUICK_WORDS = /文档|注释|错字|文案|README|说明|comment|typo|docs?/iu;
 const STRUCTURAL_WORDS = /架构|新模块|模块拆分|职责迁移|公共接口|数据模型|跨仓|重构体系|architecture|new module|public contract/iu;
+const REFERENCE_WORDS = /完全参照|按照之前实现|按照旧实现|照着旧实现|保持一致|不能遗漏已有功能|100% 保持原业务|复刻|reference implementation|same behavior|preserve behavior/iu;
+const PRESERVATION_WORDS = /重构|refactor|迁移|migration|移植|port|重写|rewrite|重新实现|reimplement|替换实现|升级|upgrade|优化|optimize/iu;
 
 const HARD_RISK_PATTERNS = [
   ['security', /(^|\/)(auth|authentication|authorization|security|permissions?|privacy)(\/|$)/iu],
@@ -26,6 +28,12 @@ function inferArtifactKinds(intent, acceptance) {
   return [...new Set(kinds)];
 }
 
+function inferPreservation(text) {
+  if (REFERENCE_WORDS.test(text)) return { mode: 'reference-equivalent', reasons: ['reference-request'] };
+  if (PRESERVATION_WORDS.test(text)) return { mode: 'preserve-all-observable', reasons: ['preservation-signal'] };
+  return { mode: 'preserve-unrequested', reasons: [] };
+}
+
 export function classifyTask(input = {}) {
   const intent=String(input.intent??'');
   const text=[intent,input.acceptance].filter(Boolean).join(' ');
@@ -34,12 +42,15 @@ export function classifyTask(input = {}) {
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
   const structural=STRUCTURAL_WORDS.test(text);
   const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
+  const preservation=inferPreservation(text);
   return {
     controlMode,
     recommendedControlMode:controlMode,
     structureImpact:structural?'structural':controlMode==='quick'?'none':'local',
     continuity:input.handoffRequired?'handoff-required':input.tracked===false?'ephemeral':'tracked',
     artifactKinds,
+    preservationMode:preservation.mode,
+    preservationReasons:preservation.reasons,
     reasons:intentRisk?['intent-risk-signal']:[]
   };
 }

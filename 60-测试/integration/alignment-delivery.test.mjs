@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { prepareTask, deliverTask } from '../../40-脚本/lib/task-runner.mjs';
 import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';
 import { gitRepo, tempDir } from '../helpers.mjs';
@@ -20,6 +21,47 @@ const DIRECT_ALIGNMENT = {
     reasonCodes: ['single-observable-outcome', 'local-scope', 'acceptance-derivable', 'no-project-conflict'],
     decisionNote: null,
     delegatedTopics: [],
+  },
+};
+
+function preservationRepo(t) {
+  const repo = gitRepo(t);
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export const a = 1;\n');
+  fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'export const b = 1;\n');
+  fs.writeFileSync(path.join(repo, 'src', 'types.js'), 'export const t = 1;\n');
+  for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'ref']]) {
+    const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(result.stderr);
+  }
+  return repo;
+}
+
+const PRESERVATION_ALIGNMENT = {
+  originalRequest: '重构订单模块，原功能不能遗漏',
+  goal: '重构订单模块并保持全部行为',
+  expectedOutcomes: ['全部已有行为保持'],
+  protectedBehaviors: [],
+  acceptance: ['重构后行为保持'],
+  confirmedDecisions: [],
+  nonGoals: [],
+  assumptions: [],
+  preservation: {
+    mode: 'preserve-all-observable',
+    constraints: ['已有业务功能不能遗漏'],
+    referenceRoots: ['src'],
+    behaviors: [
+      { id: 'R1', category: 'business', description: '创建订单', sourceFiles: ['src/a.js'] },
+      { id: 'R2', category: 'data', description: '取消订单', sourceFiles: ['src/b.js'] },
+    ],
+    excludedFiles: [{ path: 'src/types.js', reason: '仅类型定义' }],
+    allowedDifferences: [],
+  },
+  alignment: {
+    mode: 'delegated',
+    reasonCodes: [],
+    decisionNote: '用户委托按原行为重构',
+    delegatedTopics: ['订单模块重构'],
   },
 };
 
@@ -93,7 +135,7 @@ test('高风险 Intent 无 Alignment 且普通 runtime 文件变化必须 needs_
 test('Structural 任务无 Alignment 时交付必须 needs_rework', (t) => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
-  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '重构体系职责迁移公共接口', scope: '.' });
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '新模块拆分公共接口数据模型', scope: '.' });
   assert.equal(prepared.task.classification.structureImpact, 'structural');
   assert.equal('alignment' in prepared.task.goal, false);
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
@@ -221,6 +263,76 @@ test('权限说明文档无 Alignment 最终 Quick 不被缺 Alignment 阻塞', 
   assert.equal(delivered.task.classification.controlMode, 'quick');
   assert.equal(delivered.task.status, 'waiting_acceptance');
   assert.notEqual(delivered.task.verification.stopReason, 'alignment-required');
+});
+
+test('strict Preservation 无 Alignment 时准备被拒绝', (t) => {
+  const repo = gitRepo(t);
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '重构订单模块', scope: '.' }),
+    /behavior-preservation-alignment-required/u
+  );
+});
+
+test('allowedDifference 使用 confirmed Alignment 可正常准备', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const alignment = {
+    ...PRESERVATION_ALIGNMENT,
+    alignment: { mode: 'confirmed', reasonCodes: [], decisionNote: '用户确认删除流程差异', delegatedTopics: [] },
+    preservation: {
+      ...PRESERVATION_ALIGNMENT.preservation,
+      allowedDifferences: [{ behaviorId: 'R1', description: '创建订单后由 pending 改为 queued' }],
+    },
+  };
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, alignment, 'alignment.json'),
+    scope: '.',
+  });
+  assert.equal(prepared.task.status, 'prepared');
+  const r1 = prepared.task.acceptance.find((item) => item.referenceBehaviorId === 'R1');
+  assert.equal(r1.description, '按批准差异验证 R1：创建订单后由 pending 改为 queued');
+});
+
+test('Reference Behavior 自动成为 Acceptance 且 Reference 清单进入 Goal', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, PRESERVATION_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  const referenceItems = prepared.task.acceptance.filter((item) => item.source === 'reference-behavior');
+  assert.equal(referenceItems.length, 2);
+  assert.deepEqual(referenceItems.map((item) => item.referenceBehaviorId), ['R1', 'R2']);
+  assert.ok(referenceItems.every((item) => item.requiredCovers.includes('behavior')));
+  assert.ok(prepared.task.goal.preservation.referenceCommit);
+  assert.deepEqual(prepared.task.goal.preservation.referenceFiles, ['src/a.js', 'src/b.js', 'src/types.js']);
+});
+
+test('Preservation 指纹被篡改后交付 needs_rework', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, PRESERVATION_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'changed\n');
+  const taskFile = path.join(stateRoot, '进行中', `${prepared.task.taskId}.json`);
+  const raw = JSON.parse(fs.readFileSync(taskFile, 'utf8'));
+  raw.goal.preservation.behaviors[0].description = 'tampered';
+  fs.writeFileSync(taskFile, JSON.stringify(raw, null, 2));
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  assert.equal(delivered.task.status, 'needs_rework');
+  assert.equal(delivered.task.verification.stopReason, 'alignment-fingerprint-mismatch');
+  assert.deepEqual(delivered.task.deliveryDecision, { decision: 'needs_rework', reasons: ['alignment-fingerprint-mismatch'] });
 });
 
 test('受控任务未映射文件进入 needs_rework', (t) => {
