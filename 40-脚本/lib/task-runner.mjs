@@ -436,8 +436,10 @@ export function deliverTask(options = {}) {
   });
   const rationale = loadChangeRationale(options.rationaleFile);
   const rationaleValidation = validateChangeRationale({ rationale, task, changeSet });
-  const rationaleRequired = classification.controlMode !== 'quick'
-    && (Boolean(task.goal?.alignment) || Boolean(rationale));
+  const rationaleRequired =
+    classification.controlMode === 'controlled'
+    || classification.structureImpact === 'structural'
+    || isStrictPreservation(task.goal?.preservation);
   const rationaleGate = !rationaleRequired || rationaleValidation.ok;
   const preservationCoverage = preservationCoverageSummary({
     acceptance,

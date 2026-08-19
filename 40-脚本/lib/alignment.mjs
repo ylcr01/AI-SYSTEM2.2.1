@@ -102,9 +102,8 @@ export function validateAlignmentForPreparation({ alignment, classification }) {
     throw new Error('Controlled/Structural 任务必须 confirmed 或 delegated');
   }
   if (mode === 'direct') {
-    const actual = new Set(alignment.alignment.reasonCodes ?? []);
-    const missing = DIRECT_REASON_CODES.filter((code) => !actual.has(code));
-    if (missing.length) throw new Error(`direct 缺少依据: ${missing.join(', ')}`);
+    const unknown = (alignment.alignment.reasonCodes ?? []).filter((code) => !DIRECT_REASON_CODES.includes(code));
+    if (unknown.length) throw new Error(`direct 包含未知 reason code: ${unknown.join(', ')}`);
   }
   if ((mode === 'confirmed' || mode === 'delegated') && !alignment.alignment.decisionNote) {
     throw new Error('confirmed/delegated 必须记录 decisionNote');

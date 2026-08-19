@@ -67,12 +67,17 @@ test('至少需要 Expected Outcome 和 Acceptance 或 Protected Behavior', () =
   assert.throws(() => validateAlignmentForPreparation({ alignment: { ...DIRECT_ALIGNMENT, acceptance: [], protectedBehaviors: [] }, classification: { controlMode: 'standard', structureImpact: 'local' } }), /Acceptance 或 Protected Behavior/u);
 });
 
-test('direct 缺少 reasonCodes 被拒绝', () => {
-  const alignment = {
+test('direct 空 reasonCodes 允许且未知 code 被拒绝', () => {
+  const empty = {
     ...DIRECT_ALIGNMENT,
-    alignment: { ...DIRECT_ALIGNMENT.alignment, reasonCodes: ['local-scope'] },
+    alignment: { ...DIRECT_ALIGNMENT.alignment, reasonCodes: [] },
   };
-  assert.throws(() => validateAlignmentForPreparation({ alignment, classification: { controlMode: 'standard', structureImpact: 'local' } }), /direct 缺少依据/u);
+  assert.doesNotThrow(() => validateAlignmentForPreparation({ alignment: empty, classification: { controlMode: 'standard', structureImpact: 'local' } }));
+  const unknown = {
+    ...DIRECT_ALIGNMENT,
+    alignment: { ...DIRECT_ALIGNMENT.alignment, reasonCodes: ['made-up-code'] },
+  };
+  assert.throws(() => validateAlignmentForPreparation({ alignment: unknown, classification: { controlMode: 'standard', structureImpact: 'local' } }), /未知 reason code/u);
 });
 
 test('Controlled/Structural 拒绝 direct', () => {

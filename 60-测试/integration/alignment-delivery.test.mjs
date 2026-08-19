@@ -90,17 +90,16 @@ test('对齐 Standard 任务带全量映射交付进入等待验收', (t) => {
   assert.equal(delivered.task.changeRationale.ok, true);
 });
 
-test('对齐 Standard 任务缺少 rationale 保持 verifying', (t) => {
+test('对齐 Standard 任务缺少 rationale 不再被阻止交付', (t) => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', alignmentFile: writeJson(t, DIRECT_ALIGNMENT, 'alignment.json'), scope: '.' });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
   const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
-  assert.equal(delivered.task.status, 'verifying');
-  assert.equal(delivered.task.verification.stopReason, 'change-rationale-required');
+  assert.equal(delivered.task.status, 'waiting_acceptance');
 });
 
-test('对齐 Standard 任务存在未映射文件保持 verifying', (t) => {
+test('对齐 Standard 任务的可选无效 rationale 不阻止交付', (t) => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', alignmentFile: writeJson(t, DIRECT_ALIGNMENT, 'alignment.json'), scope: '.' });
@@ -111,8 +110,8 @@ test('对齐 Standard 任务存在未映射文件保持 verifying', (t) => {
     taskId: prepared.task.taskId,
     rationaleFile: writeRationale(t, prepared.task, changeSet, [{ files: ['other.txt'], supports: ['A1'], reason: '错误映射' }]),
   });
-  assert.equal(delivered.task.status, 'verifying');
-  assert.equal(delivered.task.verification.stopReason, 'change-rationale-required');
+  assert.equal(delivered.task.status, 'waiting_acceptance');
+  assert.equal(delivered.task.changeRationale.ok, false);
   assert.deepEqual(delivered.task.changeRationale.unmappedFiles, ['target.txt']);
 });
 
@@ -271,6 +270,22 @@ test('strict Preservation 无 Alignment 时准备被拒绝', (t) => {
     () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '保持全部可观察行为不变，重构内部实现', scope: '.' }),
     /behavior-preservation-alignment-required/u
   );
+});
+
+test('严格行为保持任务缺少 rationale 不得交付', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, PRESERVATION_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'changed\n');
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  assert.equal(delivered.task.status, 'verifying');
+  assert.equal(delivered.task.verification.stopReason, 'change-rationale-required');
 });
 
 test('普通优化无 Alignment 可正常准备且不进入严格保持', (t) => {
