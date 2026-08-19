@@ -1,6 +1,35 @@
 import { parseArgs, listArg } from './lib/args.mjs';
 import { buildContext } from './lib/context-builder.mjs';
 
+function readPlanFor(result) {
+  const factByPath = new Map((result.facts ?? []).map(fact => [fact.path, fact]));
+  const qualityEntries = [
+    ...(result.quality?.contracts ?? []).map(item => ({
+      path: item.path,
+      reason: `质量契约: ${item.id}`,
+      authority: item.source ?? 'central',
+    })),
+    ...(result.quality?.exemplars ?? []).flatMap(item => (item.files ?? []).map(file => ({
+      path: file,
+      reason: `Canonical 样板: ${item.id}`,
+      authority: item.source ?? 'central',
+    }))),
+    ...(result.quality?.experiences ?? []).map(item => ({
+      path: item.path,
+      reason: '命中经验',
+      authority: item.source ?? 'central',
+    })),
+  ];
+  const qualityByPath = new Map(qualityEntries.map(item => [item.path, item]));
+  return (result.filesToRead ?? []).map(file => {
+    const fact = factByPath.get(file);
+    if (fact) return { path: file, reason: fact.reason, authority: fact.authority };
+    const quality = qualityByPath.get(file);
+    if (quality) return { path: file, reason: quality.reason, authority: quality.authority };
+    return { path: file, reason: '任务相关资料', authority: 'derived' };
+  });
+}
+
 function compactContext(result) {
   const context = result.context ?? {};
   const compactIdentity = {
@@ -40,6 +69,9 @@ function compactContext(result) {
     })),
     quality: {
       baseline: result.quality?.baseline ?? null,
+      pass: result.quality?.baseline
+        ? { timing: 'before-delivery', rerunAffectedChecks: true }
+        : null,
       contracts: (result.quality?.contracts ?? []).map(item => ({
         id: item.id,
         version: item.version,
@@ -49,9 +81,7 @@ function compactContext(result) {
     configuration: result.configuration ?? [],
     workstationRouting: result.workstationRouting ?? null,
     filesToRead: result.filesToRead ?? [],
-    readPlan: (result.facts ?? [])
-      .filter(fact => fact.readMode !== 'machine')
-      .map(fact => ({ path: fact.path, reason: fact.reason, authority: fact.authority })),
+    readPlan: readPlanFor(result),
     warnings: [...(result.warnings ?? [])],
   };
 

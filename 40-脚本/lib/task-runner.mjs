@@ -319,7 +319,15 @@ export function deliverTask(options = {}) {
       event: 'delivery',
       mutate(next) {
         next.changeSet = before;
-        next.verification = { ...next.verification, stopReason: 'isolation-failed' };
+        next.verification = {
+          ...next.verification,
+          stopReason: 'isolation-failed',
+          acceptanceGaps: (task.acceptance ?? []).map(item => ({
+            acceptanceId: item.id,
+            description: item.description,
+            missingCovers: item.requiredCovers ?? [],
+          })),
+        };
         next.deliveryDecision = { decision: 'blocked', reasons: ['user-changes'] };
         next.blockers = [...new Set([...persistentBlockers, existingChangesBlocker(isolation.overwritten)])];
         return next;
@@ -445,6 +453,14 @@ export function deliverTask(options = {}) {
     acceptance,
     acceptanceCoverage: summary.acceptanceCoverage
   });
+  const acceptanceGaps = acceptance
+    .filter(item => !summary.acceptanceCoverage[item.id]?.satisfied)
+    .map(item => ({
+      acceptanceId: item.id,
+      description: item.description,
+      missingCovers: (item.requiredCovers ?? [])
+        .filter(cover => !(summary.acceptanceCoverage[item.id]?.covers ?? []).includes(cover)),
+    }));
 
   const specState = buildSpecState(task, changeSet, options);
   const stableSpecState = stableSpecReviewState(specState);
@@ -603,6 +619,7 @@ export function deliverTask(options = {}) {
         requiredCovers,
         missingCovers: summary.missingCovers,
         missingAcceptance: summary.missingAcceptance,
+        acceptanceGaps,
         systemEvidenceHashes,
         untrustedTechnicalEvidence: summary.untrustedTechnicalEvidence ?? [],
         preservationCoverage,

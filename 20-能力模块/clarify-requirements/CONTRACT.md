@@ -41,6 +41,27 @@ Quick 或单一可观察结果的局部任务不需要 Goal Card 文件；小型
 7. Assumptions 只允许低风险、可逆、不改变业务语义的假设。
 8. 只有存在两种以上合理解释，且会改变最终业务结果、数据、权限、兼容、Scope 或外部影响时才问用户，其他情况模型自行处理。
 
+### Goal Card 的严格 Preservation 扩展
+
+基础 Goal Card 保持轻量，不放入 preservation；只有用户明确要求全部可观察行为保持（`preserve-all-observable`）或以旧实现为行为基线（`reference-equivalent`）时，才在 Goal Card 中追加：
+
+```json
+{
+  "preservation": {
+    "mode": "preserve-all-observable",
+    "constraints": ["已有业务功能不能遗漏"],
+    "referenceRoots": ["src"],
+    "behaviors": [
+      { "id": "R1", "category": "business", "description": "创建订单", "sourceFiles": ["src/a.js"] }
+    ],
+    "excludedFiles": [{ "path": "src/types.js", "reason": "仅类型定义" }],
+    "allowedDifferences": []
+  }
+}
+```
+
+所有 tracked Reference 文件必须归入 `behaviors` 或 `excludedFiles`；每个 Reference Behavior 自动成为一条 Acceptance；存在 `allowedDifferences` 时不得使用 direct Alignment。
+
 ## 验证
 核对 Goal、Non-goal、主流程、异常、权限、数据、依赖和 Acceptance 是否一致；普通内部实现细节不要求用户决定。
 

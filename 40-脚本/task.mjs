@@ -130,6 +130,9 @@ function compactTask(task, result) {
       missingCovers: task.verification.missingCovers ?? [],
       stopReason: task.verification.stopReason ?? null,
     };
+    if ((task.verification.acceptanceGaps?.length ?? 0) > 0) {
+      receipt.verification.acceptanceGaps = task.verification.acceptanceGaps;
+    }
     if (task.verification.budget) {
       receipt.verification.budget = {
         limitMs:task.verification.budget.limitMs,
@@ -163,11 +166,17 @@ function compactTask(task, result) {
 
   const stopReason = String(task.verification?.stopReason ?? '');
   const missingAcceptance = task.verification?.missingAcceptance ?? [];
-  const gapText = missingAcceptance.length
-    ? `验收项 ${missingAcceptance.map(id => {
-      const item = task.acceptance?.find(entry => entry.id === id);
-      return item ? `${id}（${item.description}）` : id;
-    }).join('、')} 尚未被可信证明；优先运行现有针对性测试，没有则补一个最小定点测试。`
+  const acceptanceGaps = task.verification?.acceptanceGaps ?? [];
+  const gapText = acceptanceGaps.length
+    ? `验收项 ${acceptanceGaps.map(gap => {
+      const coverNote = (gap.missingCovers ?? []).length ? `缺少 ${gap.missingCovers.join('、')} 证据` : '尚未被可信证明';
+      return `${gap.acceptanceId}（${gap.description}）${coverNote}`;
+    }).join('；')}；优先运行现有针对性测试，没有则补一个最小定点测试。`
+    : missingAcceptance.length
+      ? `验收项 ${missingAcceptance.map(id => {
+        const item = task.acceptance?.find(entry => entry.id === id);
+        return item ? `${id}（${item.description}）` : id;
+      }).join('、')} 尚未被可信证明；优先运行现有针对性测试，没有则补一个最小定点测试。`
     : null;
   const next = stopReason === 'alignment-required' || stopReason === 'alignment-risk-escalation'
     ? `运行“重新对齐 --task-id ${task.taskId} --alignment-file <json> --reason <原因>”，使用 confirmed/delegated Alignment 完成对齐后重新交付。`

@@ -48,9 +48,12 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.ok(compact.filesToRead.some(file => file.endsWith('AGENTS.md')));
   assert.ok(!compact.filesToRead.some(file => file.endsWith('package.json')));
   assert.ok(Array.isArray(compact.readPlan));
+  assert.equal(compact.readPlan.length, compact.filesToRead.length);
   assert.ok(compact.readPlan.some(item => item.path.endsWith('AGENTS.md') && item.reason && item.authority === 'project'));
   assert.ok(compact.readPlan.every(item => compact.filesToRead.includes(item.path)));
   assert.ok(!compact.readPlan.some(item => item.path.endsWith('package.json')));
+  assert.equal(compact.quality.pass?.timing, 'before-delivery');
+  assert.equal(compact.quality.pass?.rerunAffectedChecks, true);
   assert.equal(compact.manifests[0].name, 'sample-app');
   assert.deepEqual(compact.manifests[0].frameworks, ['vue']);
   assert.equal('facts' in compact, false);
@@ -100,6 +103,7 @@ test('系统入口已由宿主加载时不进入 filesToRead', () => {
   const compact = JSON.parse(compactResult.stdout);
   assert.ok(!compact.filesToRead.some(file => file === path.join(ROOT, 'AGENTS.md')));
   assert.ok(!compact.filesToRead.some(file => file === path.join(ROOT, 'package.json')));
+  assert.ok(!compact.readPlan.some(item => item.path === path.join(ROOT, 'AGENTS.md')));
   assert.equal(compact.manifests[0].name, 'personal-ai-rd-operating-system');
 
   const fullResult = runNode(BUILD_CONTEXT, [
@@ -111,6 +115,20 @@ test('系统入口已由宿主加载时不进入 filesToRead', () => {
   const full = JSON.parse(fullResult.stdout);
   assert.equal(full.facts.find(fact => fact.path === path.join(ROOT, 'AGENTS.md')).readMode, 'preloaded');
   assert.equal(full.facts.find(fact => fact.path === path.join(ROOT, 'package.json')).readMode, 'machine');
+});
+
+test('结构性任务 readPlan 解释质量契约来源', t => {
+  const repo = gitRepo(t);
+  const result = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '新增 Web 模块并调整架构职责',
+  ], { cwd: ROOT });
+  assert.equal(result.status, 0, result.stderr);
+  const compact = JSON.parse(result.stdout);
+  assert.equal(compact.readPlan.length, compact.filesToRead.length);
+  const contractEntry = compact.readPlan.find(item => item.path.endsWith('CONTRACT.md'));
+  assert.ok(contractEntry, JSON.stringify(compact.readPlan));
+  assert.match(contractEntry.reason, /质量契约/u);
 });
 
 test('Task CLI 默认轻量，--full 保留完整 Task', t => {
@@ -290,6 +308,10 @@ test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t 
   assert.equal(byId.A2.status, 'unverified');
   assert.equal(byId.A2.description, '部分退款只恢复对应数量');
   assert.match(receipt.next, /A2（部分退款只恢复对应数量）/u);
+  assert.match(receipt.next, /缺少 behavior 证据/u);
+  assert.deepEqual(receipt.verification.acceptanceGaps, [
+    { acceptanceId: 'A2', description: '部分退款只恢复对应数量', missingCovers: ['behavior'] },
+  ]);
 });
 
 test('--goal-card-file 是 --alignment-file 的语义别名且二选一', t => {
