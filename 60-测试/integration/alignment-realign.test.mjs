@@ -232,6 +232,76 @@ test('Realign 删除 Behavior 且补 excludedFiles 后允许并冻结 Reference 
   assert.deepEqual(realigned.task.goal.preservation.behaviors.map((item) => item.id), ['R1']);
 });
 
+test('Realign 不得把 Preservation Mode 向下降级', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, PRESERVATION_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  const next = {
+    ...realignAlignment([], []),
+    preservation: { mode: 'preserve-unrequested', constraints: [], referenceRoots: [], behaviors: [], excludedFiles: [], allowedDifferences: [] },
+  };
+  assert.throws(
+    () => realignTask({ stateRoot, taskId: prepared.task.taskId, alignmentFile: writeJson(t, next, 'realign.json'), reason: '尝试降级' }),
+    /preservation-mode-downgrade/u
+  );
+});
+
+test('Realign 的 sourceFiles 必须属于冻结 referenceFiles', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, PRESERVATION_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  const next = realignAlignment(
+    [
+      { id: 'R1', category: 'business', description: '创建订单', sourceFiles: ['src/a.js'] },
+      { id: 'R2', category: 'data', description: '取消订单', sourceFiles: ['src/b.js'] },
+      { id: 'R3', category: 'business', description: '幽灵行为', sourceFiles: ['src/ghost.js'] },
+    ],
+    [{ path: 'src/types.js', reason: '仅类型定义' }],
+  );
+  assert.throws(
+    () => realignTask({ stateRoot, taskId: prepared.task.taskId, alignmentFile: writeJson(t, next, 'realign.json'), reason: '引入幽灵文件' }),
+    /realignment-reference-files-foreign/u
+  );
+});
+
+test('Realign 的 excludedFiles 必须属于冻结 referenceFiles', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: PRESERVATION_ALIGNMENT.originalRequest,
+    alignmentFile: writeJson(t, PRESERVATION_ALIGNMENT, 'alignment.json'),
+    scope: '.',
+  });
+  const next = realignAlignment(
+    [
+      { id: 'R1', category: 'business', description: '创建订单', sourceFiles: ['src/a.js'] },
+      { id: 'R2', category: 'data', description: '取消订单', sourceFiles: ['src/b.js'] },
+    ],
+    [
+      { path: 'src/types.js', reason: '仅类型定义' },
+      { path: 'src/ghost.js', reason: '幽灵文件排除' },
+    ],
+  );
+  assert.throws(
+    () => realignTask({ stateRoot, taskId: prepared.task.taskId, alignmentFile: writeJson(t, next, 'realign.json'), reason: '排除幽灵文件' }),
+    /realignment-reference-files-foreign/u
+  );
+});
+
 test('无对齐文件的旧任务仍可交付，不受重新对齐影响', (t) => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);

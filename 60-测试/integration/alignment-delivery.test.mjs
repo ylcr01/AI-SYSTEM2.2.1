@@ -347,6 +347,44 @@ test('更严格的 Preservation Mode 可覆盖较弱初始模式', (t) => {
   assert.equal(prepared.task.goal.preservation.mode, 'reference-equivalent');
 });
 
+test('prepare 的 sourceFiles 必须属于 Reference 文件清单', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const alignment = {
+    ...PRESERVATION_ALIGNMENT,
+    preservation: {
+      ...PRESERVATION_ALIGNMENT.preservation,
+      behaviors: [
+        ...PRESERVATION_ALIGNMENT.preservation.behaviors,
+        { id: 'R3', category: 'business', description: '幽灵行为', sourceFiles: ['src/ghost.js'] },
+      ],
+    },
+  };
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot, intent: PRESERVATION_ALIGNMENT.originalRequest, alignmentFile: writeJson(t, alignment, 'alignment.json'), scope: '.' }),
+    /reference-files-foreign/u
+  );
+});
+
+test('prepare 的 excludedFiles 必须属于 Reference 文件清单', (t) => {
+  const repo = preservationRepo(t);
+  const stateRoot = tempDir(t);
+  const alignment = {
+    ...PRESERVATION_ALIGNMENT,
+    preservation: {
+      ...PRESERVATION_ALIGNMENT.preservation,
+      excludedFiles: [
+        ...PRESERVATION_ALIGNMENT.preservation.excludedFiles,
+        { path: 'src/ghost.js', reason: '幽灵文件排除' },
+      ],
+    },
+  };
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot, intent: PRESERVATION_ALIGNMENT.originalRequest, alignmentFile: writeJson(t, alignment, 'alignment.json'), scope: '.' }),
+    /reference-files-foreign/u
+  );
+});
+
 test('Reference Behavior 自动成为 Acceptance 且 Reference 清单进入 Goal', (t) => {
   const repo = preservationRepo(t);
   const stateRoot = tempDir(t);

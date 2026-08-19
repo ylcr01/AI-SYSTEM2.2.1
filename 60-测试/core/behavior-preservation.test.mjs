@@ -89,12 +89,17 @@ test('validateReferenceAttribution 输出 unmapped 文件', () => {
     referenceFiles: ['src/a.js', 'src/b.js'],
     behaviors,
     excludedFiles: [],
-  }), { ok: false, unmapped: ['src/b.js'] });
+  }), { ok: false, unmapped: ['src/b.js'], foreign: [] });
   assert.deepEqual(validateReferenceAttribution({
     referenceFiles: ['src/a.js', 'src/b.js'],
     behaviors,
     excludedFiles: [{ path: 'src/b.js', reason: '仅类型' }],
-  }), { ok: true, unmapped: [] });
+  }), { ok: true, unmapped: [], foreign: [] });
+  assert.deepEqual(validateReferenceAttribution({
+    referenceFiles: ['src/a.js', 'src/b.js'],
+    behaviors: [{ id: 'R1', category: 'business', description: 'a', sourceFiles: ['src/ghost.js'] }],
+    excludedFiles: [],
+  }), { ok: false, unmapped: ['src/a.js', 'src/b.js'], foreign: ['src/ghost.js'] });
 });
 
 test('Reference 文件未归因拒绝，excludedFiles 后通过', (t) => {

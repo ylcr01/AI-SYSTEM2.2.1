@@ -246,6 +246,9 @@ export function prepareTask(options = {}) {
     if (inventory.unmapped.length) {
       throw new Error(`reference-files-unmapped: 以下 Reference 文件未归入 Behavior 或 excludedFiles: ${inventory.unmapped.join(', ')}`);
     }
+    if (inventory.foreign.length) {
+      throw new Error(`reference-files-foreign: 以下 sourceFiles/excludedFiles 不属于 Reference 文件清单: ${inventory.foreign.join(', ')}`);
+    }
     providedAlignment.preservation = {
       ...providedAlignment.preservation,
       referenceCommit: inventory.referenceCommit,
@@ -694,8 +697,16 @@ export function realignTask(options = {}) {
       behaviors: nextAlignment.preservation.behaviors,
       excludedFiles: nextAlignment.preservation.excludedFiles
     });
-    if (!attribution.ok) {
+    const currentLevel = preservationModeLevel(currentPreservation.mode);
+    const nextLevel = preservationModeLevel(nextAlignment.preservation.mode);
+    if (nextLevel < currentLevel) {
+      throw new Error(`preservation-mode-downgrade: 重新对齐声明 ${nextAlignment.preservation.mode} 低于当前 ${currentPreservation.mode}`);
+    }
+    if (attribution.unmapped.length) {
       throw new Error(`realignment-reference-files-unmapped: ${attribution.unmapped.join(', ')}`);
+    }
+    if (attribution.foreign.length) {
+      throw new Error(`realignment-reference-files-foreign: ${attribution.foreign.join(', ')}`);
     }
   }
   const scope = task.authorization.scope[0];

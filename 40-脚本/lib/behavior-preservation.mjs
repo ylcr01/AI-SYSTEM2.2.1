@@ -104,12 +104,17 @@ export function isStrictPreservation(preservation) {
 }
 
 export function validateReferenceAttribution({ referenceFiles = [], behaviors = [], excludedFiles = [] }) {
+  const referenceSet = new Set(referenceFiles);
   const attributed = new Set([
     ...behaviors.flatMap((item) => item.sourceFiles),
     ...excludedFiles.map((item) => item.path)
   ]);
   const unmapped = referenceFiles.filter((file) => !attributed.has(file));
-  return { ok: unmapped.length === 0, unmapped };
+  const foreign = [
+    ...behaviors.flatMap((item) => item.sourceFiles),
+    ...excludedFiles.map((item) => item.path)
+  ].filter((file) => !referenceSet.has(file));
+  return { ok: unmapped.length === 0 && foreign.length === 0, unmapped, foreign };
 }
 
 export function buildReferenceInventory({ gitRoot, baselineHead, referenceRoots = [], behaviors = [], excludedFiles = [] }) {
@@ -139,8 +144,8 @@ export function buildReferenceInventory({ gitRoot, baselineHead, referenceRoots 
     .filter(Boolean)
     .map(normalizePathText)
     .sort();
-  const { unmapped } = validateReferenceAttribution({ referenceFiles, behaviors, excludedFiles });
-  return { referenceCommit: baselineHead ?? null, referenceFiles, unmapped };
+  const { unmapped, foreign } = validateReferenceAttribution({ referenceFiles, behaviors, excludedFiles });
+  return { referenceCommit: baselineHead ?? null, referenceFiles, unmapped, foreign };
 }
 
 export function referenceBehaviorAcceptanceItems(preservation) {
