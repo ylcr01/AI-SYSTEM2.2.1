@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, tempDir, runNode } from '../helpers.mjs';
@@ -206,6 +207,8 @@ test('CLI 准备→交付→验收完整闭环', t => {
   ], { cwd: ROOT });
   assert.equal(prepared.status, 0, prepared.stderr);
   const task = JSON.parse(prepared.stdout);
+  assert.equal(task.outcomes.length, 1);
+  assert.equal(task.outcomes[0].status, 'pending');
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
 
   const delivered = runNode(TASK, [
@@ -218,6 +221,9 @@ test('CLI 准备→交付→验收完整闭环', t => {
   assert.equal(deliveryReceipt.status, 'waiting_acceptance');
   assert.equal(deliveryReceipt.view, 'summary');
   assert.equal('evidence' in deliveryReceipt, false);
+  assert.equal(deliveryReceipt.outcomes.length, 1);
+  assert.equal(deliveryReceipt.outcomes[0].status, 'verified');
+  assert.equal(deliveryReceipt.outcomes[0].description, '功能正确');
 
   const accepted = runNode(TASK, [
     '验收',
@@ -227,6 +233,59 @@ test('CLI 准备→交付→验收完整闭环', t => {
   ], { cwd: ROOT });
   assert.equal(accepted.status, 0, accepted.stderr);
   assert.equal(JSON.parse(accepted.stdout).status, 'accepted');
+});
+
+test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t => {
+  const repo = gitRepo(t, { checks: [] });
+  fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), '// targeted\n');
+  for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'tests']]) {
+    const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(result.stderr);
+  }
+  const stateRoot = tempDir(t);
+  const prepared = runNode(TASK, [
+    '准备',
+    '--cwd', repo,
+    '--state-root', stateRoot,
+    '--intent', '修复退款后库存恢复',
+    '--acceptance', '退款后库存恢复',
+    '--acceptance', '部分退款只恢复对应数量',
+    '--scope', '.',
+  ], { cwd: ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  assert.ok(task.outcomes.every(item => item.status === 'pending'));
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const taskCheck = path.join(stateRoot, 'task-checks.json');
+  fs.writeFileSync(taskCheck, JSON.stringify({
+    schemaVersion: 1,
+    checks: [{
+      name: 'bind-A1',
+      command: process.execPath,
+      args: ['--test', 'tests/target.test.js'],
+      covers: ['behavior'],
+      acceptanceIds: ['A1'],
+      testFiles: ['tests/target.test.js'],
+      sideEffect: 'none',
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+    }],
+  }));
+  const delivered = runNode(TASK, [
+    '交付',
+    '--task-id', task.taskId,
+    '--state-root', stateRoot,
+    '--task-check-file', taskCheck,
+  ], { cwd: ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  const receipt = JSON.parse(delivered.stdout);
+  const byId = Object.fromEntries(receipt.outcomes.map(item => [item.id, item]));
+  assert.equal(byId.A1.status, 'verified');
+  assert.equal(byId.A1.description, '退款后库存恢复');
+  assert.equal(byId.A2.status, 'unverified');
+  assert.equal(byId.A2.description, '部分退款只恢复对应数量');
+  assert.match(receipt.next, /A2（部分退款只恢复对应数量）/u);
 });
 
 test('CLI 继续验证按原因追加有限预算', t => {

@@ -40,6 +40,19 @@ function nextAction(status) {
   }[status];
 }
 
+function compactOutcomes(task) {
+  const acceptance = task.acceptance ?? [];
+  if (!acceptance.length) return [];
+  const hasDelivery = Boolean(task.deliveryDecision || task.changeSet);
+  const missing = new Set(task.verification?.missingAcceptance ?? []);
+  return acceptance.map(item => ({
+    id: item.id,
+    description: item.description,
+    source: item.source ?? null,
+    status: !hasDelivery ? 'pending' : missing.has(item.id) ? 'unverified' : 'verified',
+  }));
+}
+
 function compactTask(task, result) {
   const receipt = {
     schemaVersion: 1,
@@ -73,6 +86,7 @@ function compactTask(task, result) {
     receipt.scope = task.authorization?.scope ?? [];
     receipt.filesToRead = task.context?.filesToRead ?? [];
   }
+  receipt.outcomes = compactOutcomes(task);
 
   if (task.changeSet) {
     receipt.changeSet = {
@@ -139,13 +153,20 @@ function compactTask(task, result) {
   if (result?.source) receipt.recordSource = result.source;
 
   const stopReason = String(task.verification?.stopReason ?? '');
+  const missingAcceptance = task.verification?.missingAcceptance ?? [];
+  const gapText = missingAcceptance.length
+    ? `验收项 ${missingAcceptance.map(id => {
+      const item = task.acceptance?.find(entry => entry.id === id);
+      return item ? `${id}（${item.description}）` : id;
+    }).join('、')} 尚未被可信证明；优先运行现有针对性测试，没有则补一个最小定点测试。`
+    : null;
   const next = stopReason === 'alignment-required' || stopReason === 'alignment-risk-escalation'
     ? `运行“重新对齐 --task-id ${task.taskId} --alignment-file <json> --reason <原因>”，使用 confirmed/delegated Alignment 完成对齐后重新交付。`
     : stopReason === 'budget'
       ? '由用户运行“继续验证 --additional-budget-ms <毫秒> --reason <原因>”有界追加预算。'
       : stopReason.startsWith('integration-')
         ? '修复目标分支或检查问题后，再次运行“重验集成”。'
-        : nextAction(task.status);
+        : gapText ?? nextAction(task.status);
   if (next) receipt.next = next;
 
   return receipt;
@@ -187,7 +208,7 @@ function help() {
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
-       [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Standard/Controlled 对齐任务必填）]
+       [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
        [--task-check-file <json>（针对性检查显式绑定具体 Acceptance，由系统执行生成 system Evidence）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   重新对齐 --task-id <id> --alignment-file <json> --reason <text>
