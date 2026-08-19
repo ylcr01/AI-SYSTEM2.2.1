@@ -169,9 +169,8 @@ export function acceptanceIdsForCheck(check, acceptance = []) {
   if (check.acceptanceMode === 'all') return nonReference.map((item) => item.id);
   if (check.acceptanceIds?.length) return check.acceptanceIds.filter((id) => acceptance.some((item) => item.id === id));
   const covers = new Set(check.covers ?? []);
-  return nonReference
-    .filter((item) => (item.requiredCovers ?? []).some((cover) => covers.has(cover)))
-    .map((item) => item.id);
+  const matching = nonReference.filter((item) => (item.requiredCovers ?? []).some((cover) => covers.has(cover)));
+  return matching.length === 1 ? [matching[0].id] : [];
 }
 
 function acceptanceRequirements(acceptance, existingCoverage = {}) {
@@ -222,6 +221,16 @@ export function planChecks(input = {}) {
   const missingCovers = [...required].filter((cover) => !covered.has(cover));
   const missingAcceptanceCovers = [...pairRequired.values()].filter((item) => !pairCovered.has(`${item.acceptanceId}\u0000${item.cover}`));
   const missingAcceptance = [...new Set(missingAcceptanceCovers.map((item) => item.acceptanceId))];
+  const gapsByAcceptance = new Map();
+  for (const item of missingAcceptanceCovers) {
+    const entry = gapsByAcceptance.get(item.acceptanceId) ?? { acceptanceId: item.acceptanceId, missingCovers: [] };
+    entry.missingCovers.push(item.cover);
+    gapsByAcceptance.set(item.acceptanceId, entry);
+  }
+  const gaps = [...gapsByAcceptance.values()].map((item) => {
+    const found = acceptance.find((entry) => entry.id === item.acceptanceId);
+    return { acceptanceId: item.acceptanceId, description: found?.description ?? null, missingCovers: item.missingCovers };
+  });
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
     selected: selected.map((check) => ({
       name: check.name,
@@ -242,6 +251,7 @@ export function planChecks(input = {}) {
     missingCovers,
     missingAcceptance,
     missingAcceptanceCovers,
+    gaps,
     fingerprint
   };
 }

@@ -104,6 +104,39 @@ test('acceptanceIdsForCheck 对 Reference Behavior 只允许显式绑定', () =>
   );
 });
 
+test('宽泛 matching-covers 命中多条验收时不自动绑定任何一条', () => {
+  const acceptance = [
+    { id: 'A1', source: 'requested-outcome', requiredCovers: ['behavior'] },
+    { id: 'A2', source: 'requested-outcome', requiredCovers: ['behavior'] },
+  ];
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'matching-covers', covers: ['behavior'] }, acceptance),
+    []
+  );
+});
+
+test('宽泛 matching-covers 唯一命中时允许自动绑定', () => {
+  const acceptance = [
+    { id: 'A1', source: 'requested-outcome', requiredCovers: ['behavior'] },
+    { id: 'A2', source: 'requested-outcome', requiredCovers: ['documentation'] },
+  ];
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'matching-covers', covers: ['behavior'] }, acceptance),
+    ['A1']
+  );
+});
+
+test('显式绑定的针对性检查仍可证明多条验收', () => {
+  const acceptance = [
+    { id: 'A1', source: 'requested-outcome', requiredCovers: ['behavior'] },
+    { id: 'A2', source: 'requested-outcome', requiredCovers: ['behavior'] },
+  ];
+  assert.deepEqual(
+    acceptanceIdsForCheck({ acceptanceMode: 'explicit', acceptanceIds: ['A1', 'A2'], covers: ['behavior'] }, acceptance),
+    ['A1', 'A2']
+  );
+});
+
 test('同一 task-check-file 内重复名称被拒绝', (t) => {
   const ctx = context(t);
   const checks = [
