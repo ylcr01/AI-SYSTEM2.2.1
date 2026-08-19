@@ -10,6 +10,27 @@ const INTENT_SKILLS=[
  ['operate-environments',/环境|发布|部署|容器|网关|deploy|runtime/iu],['write-documentation',/文档|README|架构说明|documentation/iu],
  ['curate-knowledge',/经验|知识|复盘|knowledge/iu]
 ];
+const IMPLEMENTATION_QUALITY_KINDS=new Set(['code','api','data','integration','ui']);
+
+export function implementationQualityBaseline(artifactKinds=[]){
+ const kinds=Array.isArray(artifactKinds)?artifactKinds:[];
+ if(!kinds.some(kind=>IMPLEMENTATION_QUALITY_KINDS.has(kind)))return null;
+ return {
+  schemaVersion:1,
+  id:'implementation-quality-baseline',
+  rules:[
+   {id:'goal-fit',text:'实现必须直接服务 Goal / Acceptance，不解决无关邻近问题'},
+   {id:'simplicity',text:'同等正确方案优先最低必要复杂度，避免重复逻辑和无职责抽象'},
+   {id:'structure-naming',text:'职责、数据流和命名必须清晰，并遵循项目已有术语与结构'},
+   {id:'architecture-fit',text:'优先复用现有模块边界和依赖方向，不按模型偏好重塑项目'},
+   {id:'scope-behavior',text:'ChangeSet 保持最小充分，并保护未请求改变的已有行为'},
+   {id:'boundary',text:'只处理与当前目标相关的必要失败、权限、并发、兼容等边界'}
+  ],
+  conditionalRules:[
+   {id:'performance',when:'hot-path-or-io-changed',text:'热路径、查询、I/O、网络或批处理发生变化时检查明显性能退化'}
+  ]
+ };
+}
 
 function existing(file){return file&&fs.existsSync(file)&&fs.statSync(file).isFile()?path.resolve(file):null;}
 function existingPath(file){return file&&fs.existsSync(file)?path.resolve(file):null;}
@@ -59,7 +80,8 @@ function selectExperience(intent,projectRoot){
 export function loadQualityContext(input={}){
  const skills=selectSkills(input.role,input.intent??'',input.explicitSkills??[]);const methods=skills.map(skill=>({name:skill,path:existing(path.join(SYSTEM_ROOT,'20-能力模块',skill,'SKILL.md')),source:'central'})).filter(x=>x.path);
  const methodFiles=(input.explicitSkills??[]).length?methods.map(x=>x.path):[];
- if(input.structureImpact!=='structural')return{skills,methods,contracts:[],exemplars:[],experiences:selectExperience(input.intent??'',input.projectRoot),files:methodFiles};
+ const baseline=implementationQualityBaseline(input.artifactKinds??[]);
+ if(input.structureImpact!=='structural')return{baseline,skills,methods,contracts:[],exemplars:[],experiences:selectExperience(input.intent??'',input.projectRoot),files:methodFiles};
  const matchInput={skills,role:input.role,artifactKinds:input.artifactKinds??['code'],intent:input.intent??''};
  const project=qualityManifest(input.projectRoot,'project');const template=qualityManifest(input.templateRoot,'template');
  let contract=contractFromManifest(project,matchInput)??contractFromManifest(template,matchInput);
@@ -68,5 +90,5 @@ export function loadQualityContext(input={}){
  let exemplar=exemplarFromManifest(project,matchInput)??exemplarFromManifest(template,matchInput);
  if(!exemplar){for(const skill of skills){if(project?.disabledDefaults.has(skill)||template?.disabledDefaults.has(skill))continue;exemplar=centralExemplar(skill,input.intent??'');if(exemplar)break;}}
  const experiences=selectExperience(input.intent??'',input.projectRoot);const files=[...methodFiles,contract?.path,...(exemplar?.files??[]),...experiences.map(x=>x.path)].filter(Boolean);
- return{skills,methods,contracts:contract?[contract]:[],exemplars:exemplar?[exemplar]:[],experiences,files:[...new Set(files)],authority:{project:project?.file??null,template:template?.file??null}};
+ return{baseline,skills,methods,contracts:contract?[contract]:[],exemplars:exemplar?[exemplar]:[],experiences,files:[...new Set(files)],authority:{project:project?.file??null,template:template?.file??null}};
 }

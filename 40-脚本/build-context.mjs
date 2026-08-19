@@ -38,6 +38,14 @@ function compactContext(result) {
       frameworks: manifest.frameworks ?? [],
       checksHints: manifest.checksHints ?? [],
     })),
+    quality: {
+      baseline: result.quality?.baseline ?? null,
+      contracts: (result.quality?.contracts ?? []).map(item => ({
+        id: item.id,
+        version: item.version,
+        source: item.source,
+      })),
+    },
     configuration: result.configuration ?? [],
     workstationRouting: result.workstationRouting ?? null,
     filesToRead: result.filesToRead ?? [],

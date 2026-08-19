@@ -196,6 +196,7 @@ export function buildContext(options = {}) {
       classification.structureImpact === 'structural'
         ? '读取一个主要 Contract 和最多一个 Active Canonical'
         : '保持局部，不默认加载 Contract/Canonical',
+      '代码实现完成后按 lightweight quality baseline 检查简洁、命名、职责、架构适配、改动范围和必要性能风险；该检查是模型自检，不替代 Evidence 或独立 Review',
       '机器配置使用已解析摘要；仅在路由或依赖诊断时读取原文',
       '项目事实冲突时不机械套用中央默认',
       '模型自行选择验证方式和是否使用额外 Agent',

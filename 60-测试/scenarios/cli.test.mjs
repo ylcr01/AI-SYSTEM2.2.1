@@ -49,7 +49,9 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(compact.manifests[0].name, 'sample-app');
   assert.deepEqual(compact.manifests[0].frameworks, ['vue']);
   assert.equal('facts' in compact, false);
-  assert.equal('quality' in compact, false);
+  assert.equal('quality' in compact, true);
+  assert.equal(compact.quality.baseline?.id, 'implementation-quality-baseline');
+  assert.ok(compact.quality.contracts.every(item => !('path' in item) && !('files' in item)));
 
   const fullResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
