@@ -128,7 +128,7 @@ export function buildReferenceInventory({ gitRoot, baselineHead, referenceRoots 
       throw new Error(`Reference Root 越出 Git Root: ${relative}`);
     }
   }
-  const result = spawnSync('git', ['-C', root, 'ls-files', ...referenceRoots], {
+  const result = spawnSync('git', ['-C', root, '-c', 'core.quotepath=false', 'ls-files', ...referenceRoots], {
     encoding: 'utf8',
     windowsHide: true,
     shell: false,
