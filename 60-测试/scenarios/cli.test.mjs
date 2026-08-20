@@ -284,12 +284,10 @@ test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t 
     schemaVersion: 1,
     checks: [{
       name: 'bind-A1',
-      command: process.execPath,
-      args: ['--test', 'tests/target.test.js'],
+      runner: 'node-test',
       covers: ['behavior'],
       acceptanceIds: ['A1'],
       testFiles: ['tests/target.test.js'],
-      sideEffect: 'none',
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     }],

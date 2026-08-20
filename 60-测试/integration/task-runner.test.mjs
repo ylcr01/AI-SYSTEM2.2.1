@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { prepareTask,deliverTask,acceptTask,saveTask,resumeTask,continueVerification,confirmIntegration,revalidateIntegration } from '../../40-脚本/lib/task-runner.mjs';import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';import { updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { gitRepo,tempDir } from '../helpers.mjs';
 test('Standard 任务完成自动验证、交付和用户验收',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.evidence.some(x=>x.covers.includes('behavior')));const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});assert.equal(accepted.task.status,'accepted');});
 test('自动检查生成的 Evidence 自动进入 systemEvidenceHashes',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');const behaviorEvidence=delivered.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(behaviorEvidence);assert.ok(delivered.task.verification.systemEvidenceHashes.includes(behaviorEvidence.payloadHash));assert.ok(delivered.task.evidence.filter(x=>x.covers.includes('scope')).every(x=>delivered.task.verification.systemEvidenceHashes.includes(x.payloadHash)));});
-test('纯文档任务自动进入 Quick 并由文档检查绑定 Acceptance',t=>{const repo=gitRepo(t,{checks:[{name:'docs',command:process.execPath,args:['-e','process.exit(0)'],profiles:['quick','standard'],covers:['documentation'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'更新入口规则',acceptance:['规则满足验收条件'],scope:'.'});fs.writeFileSync(path.join(repo,'README.md'),'# updated\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.equal(delivered.task.classification.controlMode,'quick');assert.deepEqual(delivered.task.acceptance[0].requiredCovers,['documentation']);assert.equal(delivered.task.verification.requiredCovers.includes('behavior'),false);assert.ok(delivered.task.evidence.some(x=>x.covers.includes('documentation')&&x.acceptanceIds.includes('A1')));});
+test('纯文档任务进入 Quick，但通用文档检查不能自动证明 Acceptance',t=>{const repo=gitRepo(t,{checks:[{name:'docs',command:process.execPath,args:['-e','process.exit(0)'],profiles:['quick','standard'],covers:['documentation'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'更新入口规则',acceptance:['规则满足验收条件'],scope:'.'});fs.writeFileSync(path.join(repo,'README.md'),'# updated\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.classification.controlMode,'quick');assert.deepEqual(delivered.task.acceptance[0].requiredCovers,['documentation']);assert.equal(delivered.task.verification.requiredCovers.includes('behavior'),false);assert.ok(delivered.task.verification.missingAcceptance.includes('A1'));});
 test('没有语义 Evidence 时不能进入等待验收',t=>{const repo=gitRepo(t,{checks:[]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,autoChecks:false});assert.equal(delivered.task.status,'verifying');});
 test('显式 Independent Review 必须 passed 且无 Blocking Finding',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',explicitReviewRequirement:{kind:'independent-agent',minimumDecision:'passed'}});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(first.task.status,'reviewing');const pack=first.task.reviewPackage;const review=createReviewRecord({kind:'independent-agent',taskId:first.task.taskId,changeFingerprint:first.task.changeSet.fingerprint,packageFingerprint:pack.packageFingerprint,implementer:{actor:'a',session:'s1'},reviewer:{actor:'b',session:'s2',provenance:{provider:'test'}},decision:'passed',createdAt:new Date(Date.parse(pack.createdAt)+1000).toISOString()});const file=path.join(stateRoot,'review.json');fs.writeFileSync(file,JSON.stringify(review));const second=deliverTask({stateRoot,taskId:first.task.taskId,reviewFile:file});assert.equal(second.task.status,'waiting_acceptance');});
 test('Handoff-required 交付生成新鲜 Handoff，保存后可恢复',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',handoffRequired:true});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.handoff);const root2=tempDir(t);const p2=prepareTask({cwd:repo,stateRoot:root2,intent:'修复另一个普通功能',acceptance:['功能正确'],scope:'.'});const saved=saveTask({stateRoot:root2,taskId:p2.task.taskId});assert.equal(saved.task.status,'saved');const resumed=resumeTask({stateRoot:root2,taskId:p2.task.taskId});assert.ok(['implementing','verifying'].includes(resumed.task.status));});
@@ -46,7 +46,7 @@ test('预算耗尽的 Task 只能按原因有界续期',t=>{
   assert.equal(continued.task.verification.budget.extensions.length,1);
 });
 test('检查被剩余预算截断后可有界续期并完成交付',t=>{
-  const repo=gitRepo(t,{checks:[{name:'slow',command:process.execPath,args:['-e','setTimeout(()=>{},60)'],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);
+  const repo=gitRepo(t,{checks:[{name:'slow',command:process.execPath,args:['-e','setTimeout(()=>{},60)'],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t);
   const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通功能',acceptance:['功能正确'],scope:'.',budgetMs:20});
   fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');
   const exhausted=deliverTask({stateRoot,taskId:prepared.task.taskId});
@@ -57,8 +57,8 @@ test('检查被剩余预算截断后可有界续期并完成交付',t=>{
   const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
   assert.equal(delivered.task.status,'waiting_acceptance');
 });
-test('相同输入失败保存限长诊断并禁止机械重跑，输入变化后可继续',t=>{const repo=gitRepo(t,{checks:[{name:'environment',command:process.execPath,args:['-e',"if(process.env.READY !== '1'){process.stderr.write('START-'+ 'x'.repeat(6000));process.exit(1)}"],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通服务功能',acceptance:['服务正常'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const old=process.env.READY;process.env.READY='0';try{const failed=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(failed.task.status,'needs_rework');assert.equal(failed.task.verification.firstFailure.name,'environment');assert.equal(failed.task.verification.firstFailure.command,process.execPath);assert.equal(failed.task.verification.firstFailure.exitCode,1);assert.ok(failed.task.verification.firstFailure.output.length<=5000);assert.equal(failed.task.verification.firstFailure.output.includes('START-'),false);assert.equal(failed.task.verification.firstFailure.truncated,true);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId}),/禁止机械重复/);process.env.READY='1';const passed=deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'服务已启动'});assert.equal(passed.task.status,'waiting_acceptance');assert.equal(passed.task.verification.firstFailure,null);}finally{if(old===undefined)delete process.env.READY;else process.env.READY=old;}});
-test('inputCycle 变化后旧 system hash 与旧 Evidence 失效',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(first.task.status,'waiting_acceptance');const oldBehavior=first.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(oldBehavior);const second=deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'输入已变化',autoChecks:false});assert.equal(second.task.status,'verifying');assert.equal(second.task.evidence.some(x=>x.payloadHash===oldBehavior.payloadHash),false);assert.equal(second.task.verification.systemEvidenceHashes.includes(oldBehavior.payloadHash),false);assert.ok(second.task.verification.missingAcceptance.includes('A1'));});
+test('相同输入失败禁止机械重跑，只有真实 ChangeSet 变化后可继续',t=>{const repo=gitRepo(t,{checks:[{name:'environment',command:process.execPath,args:['-e',"if(process.env.READY !== '1'){process.stderr.write('START-'+ 'x'.repeat(6000));process.exit(1)}"],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通服务功能',acceptance:['服务正常'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'changed\n');const old=process.env.READY;process.env.READY='0';try{const failed=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(failed.task.status,'needs_rework');assert.equal(failed.task.verification.firstFailure.name,'environment');assert.equal(failed.task.verification.firstFailure.command,process.execPath);assert.equal(failed.task.verification.firstFailure.exitCode,1);assert.ok(failed.task.verification.firstFailure.output.length<=5000);assert.equal(failed.task.verification.firstFailure.output.includes('START-'),false);assert.equal(failed.task.verification.firstFailure.truncated,true);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId}),/禁止机械重复/);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'服务已启动'}),/禁止手工声明/u);process.env.READY='1';fs.writeFileSync(target,'changed again\n');const passed=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(passed.task.status,'waiting_acceptance');assert.equal(passed.task.verification.firstFailure,null);}finally{if(old===undefined)delete process.env.READY;else process.env.READY=old;}});
+test('真实 ChangeSet 变化后旧 system hash 与旧 Evidence 失效',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(first.task.status,'waiting_acceptance');const oldBehavior=first.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(oldBehavior);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'输入已变化'}),/禁止手工声明/u);fs.writeFileSync(target,'changed again\n');const second=deliverTask({stateRoot,taskId:prepared.task.taskId,autoChecks:false});assert.equal(second.task.status,'verifying');assert.equal(second.task.evidence.some(x=>x.payloadHash===oldBehavior.payloadHash),false);assert.equal(second.task.verification.systemEvidenceHashes.includes(oldBehavior.payloadHash),false);assert.ok(second.task.verification.missingAcceptance.includes('A1'));});
 test('Check 修改输入后清理失效 system hashes',t=>{const repo=gitRepo(t,{checks:[{name:'mutator',command:process.execPath,args:['-e',"require('node:fs').writeFileSync('target.txt','mutated')"],profiles:['standard','controlled'],covers:['behavior'],sideEffect:'workspace',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.verification.stopReason,'check-mutated-input');assert.equal(delivered.task.evidence.some(x=>x.covers.includes('behavior')),false);assert.deepEqual(delivered.task.verification.systemEvidenceHashes,[]);});
 
 test('隔离失败立即阻断且不执行检查、规格或 Review',t=>{
@@ -74,7 +74,7 @@ test('隔离失败立即阻断且不执行检查、规格或 Review',t=>{
   assert.equal(fs.existsSync(marker),false);
   assert.equal(delivered.task.specTraceability,null);
   assert.equal(delivered.task.specConsistency,null);
-  assert.equal(delivered.task.reviewPackage,null);
+  assert.equal(delivered.task.reviewPackage,undefined);
   assert.deepEqual(delivered.task.deliveryDecision,{decision:'blocked',reasons:['user-changes']});
   assert.match(delivered.task.blockers[0],/--allow-existing-change "target\.txt"/u);
 });
@@ -107,7 +107,7 @@ test('同一工作树拒绝并行 Task，不同 worktree 允许准备',t=>{
 });
 
 test('detached worktree 成果必须提交，目标 HEAD 变化后重验才能验收',t=>{
-  const repo=gitRepo(t,{checks:[{name:'target-behavior',command:process.execPath,args:['-e',"const fs=require('node:fs');if(fs.readFileSync('target.txt','utf8')!=='integrated\\n')process.exit(1)"],profiles:['standard','controlled','release'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'worktree');
+  const repo=gitRepo(t,{checks:[{name:'target-behavior',command:process.execPath,args:['-e',"const fs=require('node:fs');if(fs.readFileSync('target.txt','utf8').trim()!=='integrated')process.exit(1)"],profiles:['standard','controlled','release'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'worktree');
   const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
   const added=spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'});
   assert.equal(added.status,0,added.stderr);
@@ -244,12 +244,10 @@ test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
     schemaVersion: 1,
     checks: [{
       name: 'target-A1',
-      command: process.execPath,
-      args: ['--test', 'tests/target.test.js'],
+      runner: 'node-test',
       covers: ['behavior'],
       acceptanceIds: ['A1'],
       testFiles: ['tests/target.test.js'],
-      sideEffect: 'none',
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     }],
@@ -299,12 +297,10 @@ test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
     schemaVersion: 1,
     checks: ['R1', 'R2', 'R3', 'R5'].map((id) => ({
       name: `check-${id}`,
-      command: process.execPath,
-      args: ['--test', 'tests/r.test.js'],
+      runner: 'node-test',
       covers: ['behavior'],
       acceptanceIds: [ids[id]],
       testFiles: ['tests/r.test.js'],
-      sideEffect: 'none',
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     })),
@@ -343,12 +339,10 @@ test('内部实现不同但行为全验证时 complete 且允许交付', (t) => 
     schemaVersion: 1,
     checks: ['R1', 'R2', 'R3', 'R4', 'R5'].map((id) => ({
       name: `bind-${id}`,
-      command: process.execPath,
-      args: ['--test', 'tests/r.test.js'],
+      runner: 'node-test',
       covers: ['behavior'],
       acceptanceIds: [ids[id]],
       testFiles: ['tests/r.test.js'],
-      sideEffect: 'none',
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     })),

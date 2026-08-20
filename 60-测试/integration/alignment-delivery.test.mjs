@@ -240,7 +240,7 @@ for (const mode of ['confirmed', 'delegated']) {
   });
 }
 
-test('权限说明文档无 Alignment 最终 Quick 不被缺 Alignment 阻塞', (t) => {
+test('权限说明文档无 Alignment 最终 Quick，但通用检查仍不自动证明验收', (t) => {
   const repo = gitRepo(t, {
     checks: [{
       name: 'docs',
@@ -260,8 +260,9 @@ test('权限说明文档无 Alignment 最终 Quick 不被缺 Alignment 阻塞', 
   fs.writeFileSync(path.join(repo, 'README.md'), '# updated\n');
   const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
   assert.equal(delivered.task.classification.controlMode, 'quick');
-  assert.equal(delivered.task.status, 'waiting_acceptance');
+  assert.equal(delivered.task.status, 'verifying');
   assert.notEqual(delivered.task.verification.stopReason, 'alignment-required');
+  assert.ok(delivered.task.verification.missingAcceptance.includes('A1'));
 });
 
 test('strict Preservation 无 Alignment 时准备被拒绝', (t) => {

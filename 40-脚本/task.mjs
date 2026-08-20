@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import { parseArgs, listArg, requiredArg } from './lib/args.mjs';
 import {
   prepareTask,
@@ -17,6 +18,9 @@ import {
 } from './lib/task-runner.mjs';
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
 import { findGitRoot } from './lib/registry.mjs';
+import { diagnoseState } from './lib/state-manager.mjs';
+
+const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
@@ -26,6 +30,7 @@ const aliases = new Map([
   ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'], ['integrate', '集成'],
   ['continue-verification', '继续验证'],
   ['revalidate-integration', '重验集成'],
+  ['diagnose-state', '诊断状态'],
 ]);
 const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
 
@@ -218,7 +223,7 @@ function output(result) {
 }
 
 function help() {
-  console.log(`AI 研发操作系统 V2.2.1：
+  console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--alignment-file <json>（目标对齐文件，含 goal/expectedOutcomes/protectedBehaviors/acceptance/alignment.mode）]
        [--goal-card-file <json>（--alignment-file 的语义别名，二选一）]
@@ -228,7 +233,7 @@ function help() {
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
-       [--task-check-file <json>（针对性检查显式绑定具体 Acceptance，由系统执行生成 system Evidence）]
+       [--task-check-file <json>（仅声明受控 runner/testFiles/config，并显式绑定具体 Acceptance）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   重新对齐 --task-id <id> --alignment-file <json>|--goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
@@ -243,6 +248,7 @@ function help() {
   恢复 --task-id <id>（重新竞争原工作树写权限）
   交接|查看|取消
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
+  诊断状态 [--state-root <path>]（只读，不修复、不迁移）
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
@@ -289,8 +295,6 @@ try {
       reviewFile: args['review-file'],
       rationaleFile: args['rationale-file'],
       autoChecks: action === '审查' ? false : args['no-auto-checks'] !== true,
-      inputChange: args['input-change'],
-      inputChangeReason: args['input-change-reason'],
       diagnosticRetry: args['diagnostic-retry'] === true,
       observableBrowserBehavior: args['observable-browser-behavior'] === true,
       residualRisks: listArg(args.risk),
@@ -362,6 +366,8 @@ try {
     output(saveExperienceCandidate(projectRoot, candidate));
   } else if (action === '查看') {
     output(findTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
+  } else if (action === '诊断状态') {
+    output(diagnoseState({ stateRoot: args['state-root'] }));
   } else if (action === '列表') {
     const allProjects = args['all-projects'] === true;
     const gitRoot = allProjects ? null : findGitRoot(args.cwd ?? process.cwd());

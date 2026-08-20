@@ -5,7 +5,7 @@ import { atomicWriteJson, appendJsonLineLocked, withFileLock } from './atomic-fi
 import { SYSTEM_ROOT, normalizePath } from './registry.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 
-const CURRENT_SCHEMA = 7;
+const CURRENT_SCHEMA = 8;
 const TERMINAL = new Set(['accepted','cancelled']);
 const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
 const TRANSITIONS = {
@@ -16,15 +16,16 @@ const TRANSITIONS = {
   blocked: new Set(['implementing','verifying','saved','cancelled']),
   saved: new Set(['implementing','verifying','cancelled']),
   needs_rework: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','blocked','saved','cancelled']),
-  ready_to_integrate: new Set(['waiting_acceptance','needs_rework','cancelled']),
+  ready_to_integrate: new Set(['verifying','waiting_acceptance','needs_rework','cancelled']),
   waiting_acceptance: new Set(['implementing','verifying','accepted','needs_rework','saved','cancelled'])
 };
 
 function paths(stateRoot) {
-  const root = path.resolve(stateRoot ?? path.join(SYSTEM_ROOT, '80-运行记录'));
+  const root = path.resolve(stateRoot ?? process.env.AI_RD_OS_STATE_ROOT ?? path.join(SYSTEM_ROOT, '80-运行记录'));
   return {
     root,
     active: path.join(root, '进行中'),
+    waiting: path.join(root, '待验收'),
     pending: path.join(root, '.pending'),
     locks: path.join(root, '.locks'),
     history: path.join(root, '历史.jsonl'),
@@ -32,9 +33,17 @@ function paths(stateRoot) {
   };
 }
 
-function taskFile(value, id) {
+function taskFile(value, id, bucket = 'active') {
   if (!/^task-[A-Za-z0-9._-]+$/u.test(id ?? '')) throw new Error('任务编号无效');
-  return path.join(value.active, `${id}.json`);
+  return path.join(value[bucket], `${id}.json`);
+}
+
+function locateTaskFile(value, id) {
+  const active = taskFile(value, id, 'active');
+  const waiting = taskFile(value, id, 'waiting');
+  if (fs.existsSync(active)) return { file: active, source: 'active' };
+  if (fs.existsSync(waiting)) return { file: waiting, source: 'waiting' };
+  return null;
 }
 
 function lockFile(value, id) {
@@ -51,6 +60,13 @@ function activeTasks(value) {
   return fs.readdirSync(value.active)
     .filter((name) => name.endsWith('.json'))
     .map((name) => currentTask(readRaw(path.join(value.active, name))));
+}
+
+function nonTerminalTasks(value) {
+  const files = [value.active, value.waiting].flatMap((dir) => fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((name) => name.endsWith('.json')).map((name) => path.join(dir, name))
+    : []);
+  return files.map((file) => currentTask(readRaw(file)));
 }
 
 function assertWorkspaceAvailable(value, gitRoot, taskId = null) {
@@ -72,7 +88,7 @@ function readRaw(file) {
 }
 
 function currentTask(raw) {
-  if (raw.schemaVersion === 6) return { ...raw, schemaVersion:CURRENT_SCHEMA, integration:raw.integration ?? null };
+  if ([6, 7].includes(raw.schemaVersion)) return { ...raw, schemaVersion:CURRENT_SCHEMA, integration:raw.integration ?? null };
   if (raw.schemaVersion !== CURRENT_SCHEMA) {
     throw new Error(`不支持的 Task Schema: ${raw.schemaVersion ?? 'unknown'}；历史版本请使用对应系统读取`);
   }
@@ -89,6 +105,7 @@ function validateTransition(from, to, event) {
 export function createTask(input = {}) {
   const value = paths(input.stateRoot);
   fs.mkdirSync(value.active, { recursive: true });
+  fs.mkdirSync(value.waiting, { recursive: true });
   fs.mkdirSync(value.locks, { recursive: true });
   const now = new Date().toISOString();
   const taskId = input.taskId ?? createId();
@@ -105,15 +122,12 @@ export function createTask(input = {}) {
     baseline: input.baseline ?? null,
     changeSet: null,
     evidence: [],
-    reviews: [],
-    reviewPackage: null,
     verification: input.verification,
     blockers: [],
     residualRisks: [],
     specImpact: createSpecImpact(input.specImpact ?? {}),
     specTraceability: input.specTraceability ?? null,
     specConsistency: input.specConsistency ?? null,
-    experienceCandidates: [],
     handoff: null,
     integration: input.integration?.required ? {
       schemaVersion:1,
@@ -147,11 +161,12 @@ export function createTask(input = {}) {
 
 export function readTask(input = {}) {
   const value = paths(input.stateRoot);
-  const file = taskFile(value, input.taskId);
-  if (!fs.existsSync(file)) throw new Error(`未找到进行中的任务: ${input.taskId}`);
+  const located = locateTaskFile(value, input.taskId);
+  if (!located) throw new Error(`未找到未结束的任务: ${input.taskId}`);
+  const { file, source } = located;
   const raw = readRaw(file);
   if (TERMINAL.has(raw.status)) throw new Error('任务已经结束');
-  return { task: currentTask(raw), filePath: file, stateRoot: value.root, source: 'active' };
+  return { task: currentTask(raw), filePath: file, stateRoot: value.root, source };
 }
 
 export function readHistory(input = {}) {
@@ -162,8 +177,8 @@ export function readHistory(input = {}) {
 
 export function findTask(input = {}) {
   const value = paths(input.stateRoot);
-  const file = taskFile(value, input.taskId);
-  if (fs.existsSync(file)) return { task: currentTask(readRaw(file)), filePath: file, stateRoot: value.root, source: 'active' };
+  const located = locateTaskFile(value, input.taskId);
+  if (located) return { task: currentTask(readRaw(located.file)), filePath: located.file, stateRoot: value.root, source: located.source };
   const history = readHistory({ stateRoot: value.root });
   const task = [...history].reverse().find((item) => item.taskId === input.taskId);
   if (!task) throw new Error(`未找到任务: ${input.taskId}`);
@@ -173,8 +188,9 @@ export function findTask(input = {}) {
 export function updateTask(input = {}) {
   const value = paths(input.stateRoot);
   return withFileLock(lockFile(value, input.taskId), () => {
-    const file = taskFile(value, input.taskId);
-    if (!fs.existsSync(file)) throw new Error(`未找到进行中的任务: ${input.taskId}`);
+    const located = locateTaskFile(value, input.taskId);
+    if (!located) throw new Error(`未找到未结束的任务: ${input.taskId}`);
+    const file = located.file;
     const current = currentTask(readRaw(file));
     if (input.expectedRevision !== undefined && Number(input.expectedRevision) !== current.stateRevision) {
       throw new Error(`任务状态版本冲突: 期望 ${input.expectedRevision}，当前 ${current.stateRevision}`);
@@ -199,8 +215,12 @@ export function updateTask(input = {}) {
         fs.rmSync(file, { force: true });
         return { task: next, filePath: null, stateRoot: value.root };
       }
-      atomicWriteJson(file, next, value.pending);
-      return { task: next, filePath: file, stateRoot: value.root };
+      const bucket = target === 'waiting_acceptance' ? 'waiting' : 'active';
+      fs.mkdirSync(value[bucket], { recursive: true });
+      const destination = taskFile(value, next.taskId, bucket);
+      atomicWriteJson(destination, next, value.pending);
+      if (destination !== file) fs.rmSync(file, { force: true });
+      return { task: next, filePath: destination, stateRoot: value.root };
     };
     return !WRITING.has(current.status) && WRITING.has(target) && current.baseline?.gitRoot
       ? withFileLock(workspaceLockFile(value, current.baseline.gitRoot), write, { timeoutMs: 10000, staleMs: 60000 })
@@ -210,13 +230,39 @@ export function updateTask(input = {}) {
 
 export function listTasks(input = {}) {
   const value = paths(input.stateRoot);
-  let tasks = activeTasks(value)
+  let tasks = nonTerminalTasks(value)
     .sort((left, right) => (right.updatedAt ?? right.createdAt).localeCompare(left.updatedAt ?? left.createdAt));
   if (input.gitRoot) {
     tasks = tasks.filter((task) => normalizePath(task.baseline?.gitRoot) === normalizePath(input.gitRoot));
   }
   if (input.limit > 0) tasks = tasks.slice(0, input.limit);
   return { tasks, stateRoot: value.root };
+}
+
+export function diagnoseState(input = {}) {
+  const value = paths(input.stateRoot);
+  const diagnostics = [];
+  const seen = new Map();
+  const counts = { active: 0, waiting: 0, history: 0, invalid: 0 };
+  for (const [source, dir] of [['active', value.active], ['waiting', value.waiting]]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir).filter((item) => item.endsWith('.json'))) {
+      try {
+        const task = currentTask(readRaw(path.join(dir, name)));
+        counts[source] += 1;
+        if (seen.has(task.taskId)) diagnostics.push({ code: 'duplicate-task', taskId: task.taskId, locations: [seen.get(task.taskId), source] });
+        else seen.set(task.taskId, source);
+        if (source === 'active' && task.status === 'waiting_acceptance') diagnostics.push({ code: 'legacy-waiting-in-active', taskId: task.taskId });
+        if (source === 'waiting' && task.status !== 'waiting_acceptance') diagnostics.push({ code: 'non-waiting-in-waiting-dir', taskId: task.taskId, status: task.status });
+      } catch (error) {
+        counts.invalid += 1;
+        diagnostics.push({ code: 'invalid-task-record', file: name, source, diagnostic: error.message });
+      }
+    }
+  }
+  try { counts.history = readHistory({ stateRoot: value.root }).length; }
+  catch (error) { diagnostics.push({ code: 'invalid-history', diagnostic: error.message }); }
+  return { schemaVersion: 1, stateRoot: value.root, readOnly: true, ok: diagnostics.length === 0, counts, diagnostics };
 }
 
 export const allowedTransitions = TRANSITIONS;

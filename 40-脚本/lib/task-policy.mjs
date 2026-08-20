@@ -75,8 +75,8 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
   else if(controlMode==='quick'&&runtimeChanged) controlMode='standard';
   if(input.forcedMode){
     const order={quick:0,standard:1,controlled:2};
-    if(order[input.forcedMode]<order[controlMode]&&!input.forceReason) throw new Error('向下降级 Control Mode 必须说明原因');
-    if(unique.length&&input.forcedMode==='quick') throw new Error('真实高风险 ChangeSet 不得降到 Quick');
+    if(!(input.forcedMode in order)) throw new Error(`无效 forcedMode: ${input.forcedMode}`);
+    if(order[input.forcedMode]<order[controlMode]) throw new Error('forcedMode 只能向上加强，不能降低真实 Control Mode');
     controlMode=input.forcedMode;
   }
   return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,reclassificationReasons:unique,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
@@ -123,7 +123,6 @@ export function evaluateExternalAction(input = {}) {
 
 export function canRerunVerification(input = {}) {
   if(!input.previousFailure)return{allowed:true,reason:'no-previous-failure'};
-  if(input.inputChanged)return{allowed:true,reason:'input-changed'};
   if(input.diagnosticRetry&&!input.diagnosticRetryUsed)return{allowed:true,reason:'diagnostic-retry'};
   return{allowed:false,reason:input.diagnosticRetryUsed?'diagnostic-retry-already-used':'same-input-failure'};
 }

@@ -17,8 +17,10 @@ function readJson(relative) {
 }
 
 const pkg = readJson('package.json');
-if (pkg?.version !== '2.2.1') errors.push('package.json: 版本必须为 2.2.1');
+if (!/^\d+\.\d+\.\d+$/u.test(pkg?.version ?? '')) errors.push('package.json: 版本必须是有效 SemVer');
 if (pkg?.name !== 'personal-ai-rd-operating-system') errors.push('package.json: 产品名称无效');
+const releaseManifest = readJson('release-manifest.json');
+if (releaseManifest?.version !== pkg?.version) errors.push('release-manifest.json: version 必须与 package.json 一致');
 const checkRegistry = readJson('.ai/checks.json');
 for (const check of checkRegistry?.checks ?? []) {
   if (['npm', 'npx'].includes(check.command)) errors.push(`.ai/checks.json: ${check.name} 必须使用纯 Node 入口`);
@@ -81,7 +83,7 @@ const workstationPlanExample = readJson('.ai/templates/workstations/plan.example
 if (workstationPlanExample?.schemaVersion !== 1 || !Array.isArray(workstationPlanExample.workstations) || workstationPlanExample.workstations.length === 0) errors.push('workstations/plan.example.json: Schema 无效');
 
 const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
-if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 7/u.test(state) || !/ready_to_integrate/u.test(state)) errors.push('State Manager 缺少 V7 集成转换或并发锁');
+if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 8/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V8 状态分层、集成转换或并发锁');
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');

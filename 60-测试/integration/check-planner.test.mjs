@@ -51,8 +51,8 @@ test('计划按 Acceptance ID 与 Cover 选择显式绑定检查', () => {
     ],
     acceptanceCoverage: {},
     checks: [
-      { name: 'a1', command: 'node', args: [], profiles: ['standard'], covers: ['behavior'], acceptanceIds: ['A1'], sideEffect: 'none', estimatedCost: 'low' },
-      { name: 'a2', command: 'node', args: [], profiles: ['standard'], covers: ['behavior'], acceptanceIds: ['A2'], sideEffect: 'none', estimatedCost: 'low' }
+      { name: 'a1', command: 'node', args: [], profiles: ['standard'], covers: ['behavior'], acceptanceMode: 'explicit', acceptanceIds: ['A1'], sideEffect: 'none', estimatedCost: 'low' },
+      { name: 'a2', command: 'node', args: [], profiles: ['standard'], covers: ['behavior'], acceptanceMode: 'explicit', acceptanceIds: ['A2'], sideEffect: 'none', estimatedCost: 'low' }
     ]
   });
   assert.deepEqual(plan.checks.map((item) => item.name), ['a1', 'a2']);

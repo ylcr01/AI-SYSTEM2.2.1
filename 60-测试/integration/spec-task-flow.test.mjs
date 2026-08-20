@@ -20,7 +20,7 @@ test('无规格映射且 specImpact=none 时详细规格与 Review 退出主路�
   assert.equal(delivered.task.status, 'waiting_acceptance');
   assert.equal(delivered.task.specTraceability, null);
   assert.equal(delivered.task.specConsistency, null);
-  assert.equal(delivered.task.reviewPackage, null);
+  assert.equal(delivered.task.reviewPackage, undefined);
 });
 
 test('交付自动保存 changed-file 到规格 ID 的追踪结果', (t) => {

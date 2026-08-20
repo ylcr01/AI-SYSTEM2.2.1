@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createBudget, budgetDecision, consumeBudget, remainingBudget } from './verification-budget.mjs';
+import { buildAdapterCheck } from './check-adapters.mjs';
 
 const COST = { 'very-low': 0, low: 1, medium: 2, high: 3 };
 
@@ -22,7 +23,7 @@ function validateCheck(check, source) {
     covers: ['behavior'],
     estimatedCost: 'medium',
     timeoutMs: 600000,
-    acceptanceMode: 'matching-covers',
+    acceptanceMode: 'none',
     ...check,
     acceptanceIds: [...new Set(check.acceptanceIds ?? [])],
     sideEffect,
@@ -33,23 +34,6 @@ function validateCheck(check, source) {
 function lexicalPathWithin(parent, child) {
   const relative = path.relative(parent, child);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function pathForms(value, gitRoot) {
-  const text = String(value ?? '');
-  const forms = new Set();
-  const push = (candidate) => {
-    let normalized = String(candidate ?? '').replaceAll('\\', '/');
-    while (normalized.startsWith('./')) normalized = normalized.slice(2);
-    if (normalized) forms.add(normalized);
-  };
-  push(text);
-  if (path.isAbsolute(text)) {
-    push(path.relative(gitRoot, text));
-  } else {
-    push(path.relative(gitRoot, path.resolve(gitRoot, text)));
-  }
-  return [...forms];
 }
 
 function packageChecks(root, fallback) {
@@ -89,21 +73,13 @@ function validateTaskCheck(check, context) {
     throw new Error('Task Check 必须是对象');
   }
   const name = String(check.name ?? '').trim();
-  const command = String(check.command ?? '').trim();
-  const args = Array.isArray(check.args) ? check.args.map((item) => String(item)) : null;
   const covers = [...new Set(check.covers ?? [])].map((item) => String(item).trim()).filter(Boolean);
   const acceptanceIds = [...new Set(check.acceptanceIds ?? [])].map((item) => String(item).trim()).filter(Boolean);
   const testFiles = [...new Set(check.testFiles ?? [])].map((item) => String(item ?? '').trim()).filter(Boolean);
-  const sideEffect = String(check.sideEffect ?? 'none').trim() || 'none';
   if (!name) throw new Error('Task Check 缺少 name');
-  if (!command) throw new Error(`Task Check ${name} 缺少 command`);
-  if (!args) throw new Error(`Task Check ${name} 的 args 必须是数组`);
   if (!covers.length) throw new Error(`Task Check ${name} 缺少 covers`);
   if (!acceptanceIds.length) throw new Error(`Task Check ${name} 必须显式绑定非空 acceptanceIds`);
   if (!testFiles.length) throw new Error(`Task Check ${name} 必须提供非空 testFiles`);
-  if (!['none', 'workspace'].includes(sideEffect)) {
-    throw new Error(`Task Check ${name} 禁止 external sideEffect`);
-  }
   for (const acceptanceId of acceptanceIds) {
     const acceptance = (context.acceptance ?? []).find((item) => item.id === acceptanceId);
     if (!acceptance) throw new Error(`Task Check ${name} 绑定未知 Acceptance: ${acceptanceId}`);
@@ -121,25 +97,22 @@ function validateTaskCheck(check, context) {
       throw new Error(`Task Check ${name} 的 testFiles 不存在或不是文件: ${testFile}`);
     }
   }
-  const argPaths = new Set((args ?? []).flatMap((arg) => pathForms(arg, context.gitRoot)));
-  for (const testFile of testFiles) {
-    const forms = pathForms(testFile, context.gitRoot);
-    if (!forms.some((form) => argPaths.has(form))) {
-      throw new Error(`task-check-testfile-not-executed: ${name} 的 testFiles 未出现在 command/args 中: ${testFile}`);
-    }
-  }
   if ((context.projectCheckNames ?? new Set()).has(name) || (context.seen ?? new Set()).has(name)) {
     throw new Error(`Task Check 名称冲突: ${name}`);
   }
   context.seen.add(name);
+  const adapter = buildAdapterCheck({ ...check, name, testFiles });
   return {
     name,
-    command,
-    args,
+    runner: adapter.runner,
+    adapterVersion: adapter.adapterVersion,
+    command: adapter.command,
+    args: adapter.args,
     covers,
     acceptanceIds,
     testFiles,
-    sideEffect,
+    config: check.config ?? {},
+    sideEffect: adapter.sideEffect,
     estimatedCost: String(check.estimatedCost ?? 'low').trim() || 'low',
     timeoutMs: Number(check.timeoutMs ?? 600000),
     acceptanceMode: 'explicit',
@@ -163,14 +136,71 @@ export function loadTaskChecks(file, options = {}) {
   return value.checks.map((check) => validateTaskCheck(check, { ...options, seen }));
 }
 
+function fileHash(gitRoot, file) {
+  const absolute = path.resolve(gitRoot, file);
+  return crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex');
+}
+
+export function createCheckManifest(plan, options = {}) {
+  const gitRoot = path.resolve(options.gitRoot ?? options.cwd ?? '.');
+  const checks = (plan.checks ?? []).map((check) => ({
+    name: check.name,
+    runner: check.runner ?? null,
+    adapterVersion: check.adapterVersion ?? null,
+    config: check.config ?? null,
+    command: check.runner ? null : check.command,
+    args: check.runner ? null : check.args,
+    profiles: check.profiles ?? [],
+    covers: check.covers ?? [],
+    acceptanceMode: check.acceptanceMode ?? 'none',
+    acceptanceIds: check.acceptanceIds ?? [],
+    testFiles: check.testFiles ?? [],
+    testFileHashes: Object.fromEntries((check.testFiles ?? []).map((file) => [file, fileHash(gitRoot, file)])),
+    sideEffect: check.sideEffect ?? 'workspace',
+    estimatedCost: check.estimatedCost ?? 'medium',
+    timeoutMs: check.timeoutMs ?? 600000,
+    source: check.source ?? 'manifest',
+  }));
+  return {
+    schemaVersion: 1,
+    planFingerprint: plan.fingerprint,
+    checks,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function checksFromManifest(manifest, options = {}) {
+  if (!manifest || manifest.schemaVersion !== 1 || !Array.isArray(manifest.checks)) {
+    throw new Error('Check Manifest 无效或版本不受支持');
+  }
+  const gitRoot = path.resolve(options.gitRoot ?? options.cwd ?? '.');
+  return manifest.checks.map((stored) => {
+    for (const file of stored.testFiles ?? []) {
+      if (!fs.existsSync(path.resolve(gitRoot, file)) || fileHash(gitRoot, file) !== stored.testFileHashes?.[file]) {
+        throw new Error(`Check Manifest 测试输入已变化: ${file}`);
+      }
+    }
+    if (stored.runner) {
+      const adapter = buildAdapterCheck({
+        name: stored.name,
+        runner: stored.runner,
+        testFiles: stored.testFiles ?? [],
+        config: stored.config ?? {},
+      });
+      if (adapter.adapterVersion !== stored.adapterVersion) {
+        throw new Error(`Check Manifest Runner 版本已变化: ${stored.name}`);
+      }
+      return { ...stored, ...adapter, source: 'check-manifest' };
+    }
+    if (!stored.command || !Array.isArray(stored.args)) throw new Error(`Check Manifest 检查定义无效: ${stored.name}`);
+    return { ...stored, source: 'check-manifest' };
+  });
+}
+
 export function acceptanceIdsForCheck(check, acceptance = []) {
   if (check.acceptanceMode === 'none') return [];
-  const nonReference = acceptance.filter((item) => item.source !== 'reference-behavior');
-  if (check.acceptanceMode === 'all') return nonReference.map((item) => item.id);
-  if (check.acceptanceIds?.length) return check.acceptanceIds.filter((id) => acceptance.some((item) => item.id === id));
-  const covers = new Set(check.covers ?? []);
-  const matching = nonReference.filter((item) => (item.requiredCovers ?? []).some((cover) => covers.has(cover)));
-  return matching.length === 1 ? [matching[0].id] : [];
+  if (check.acceptanceMode !== 'explicit') return [];
+  return (check.acceptanceIds ?? []).filter((id) => acceptance.some((item) => item.id === id));
 }
 
 function acceptanceRequirements(acceptance, existingCoverage = {}) {

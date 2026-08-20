@@ -141,10 +141,11 @@ test('重新对齐增加修订、切换模式、清空旧验证产物并回到 i
   assert.notEqual(realigned.task.goal.alignment.events[0].newBaselineFingerprint, realigned.task.goal.alignment.events[0].oldBaselineFingerprint);
   assert.deepEqual(realigned.task.authorization.scope, beforeScope);
   assert.deepEqual(realigned.task.evidence, []);
-  assert.equal(realigned.task.reviewPackage, null);
+  assert.equal(realigned.task.reviewPackage, undefined);
   assert.equal(realigned.task.changeRationale, null);
   assert.equal(realigned.task.handoff, null);
   assert.equal(realigned.task.verification.inputCycle, 1);
+  assert.equal(realigned.task.verification.checkManifest, null);
   assert.deepEqual(realigned.task.acceptance.map((item) => item.description), ['新行为正确']);
 });
 

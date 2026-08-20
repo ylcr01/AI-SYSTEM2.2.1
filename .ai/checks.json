@@ -25,7 +25,7 @@
       "sideEffect": "none",
       "estimatedCost": "very-low",
       "timeoutMs": 30000,
-      "acceptanceMode": "matching-covers"
+      "acceptanceMode": "none"
     },
     {
       "name": "core-tests",

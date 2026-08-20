@@ -18,7 +18,7 @@ import {
 } from './git-state.mjs';
 import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, evaluateDeliveryEligibility, canRerunVerification } from './task-policy.mjs';
 import { createEvidence, evidenceSummary } from './evidence.mjs';
-import { planChecks, executeCheckPlan, loadChecks, loadTaskChecks, acceptanceIdsForCheck } from './check-planner.mjs';
+import { planChecks, executeCheckPlan, loadChecks, loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest } from './check-planner.mjs';
 import { createBudget, extendBudget } from './verification-budget.mjs';
 import {
   loadAlignmentFile,
@@ -303,6 +303,9 @@ export function prepareTask(options = {}) {
 }
 
 export function deliverTask(options = {}) {
+  if (options.inputChange || options.inputChangeReason) {
+    throw new Error('禁止手工声明验证输入变化；只有真实 ChangeSet 或正式重新对齐可以开启新的验证周期');
+  }
   const current = readTask({ stateRoot: options.stateRoot, taskId: options.taskId });
   const task = current.task;
   const scope = task.authorization.scope[0];
@@ -340,12 +343,7 @@ export function deliverTask(options = {}) {
   const alignmentMissing = finalAlignment.required && finalAlignment.reason === 'alignment-required';
   const fingerprintCheck = validateAlignmentFingerprint({ goal: task.goal, acceptance: task.acceptance, scope });
   const acceptance = acceptanceForClassification(task.acceptance, classification);
-  let inputCycle = Number(task.verification?.inputCycle ?? 0);
-  const inputChanged = Boolean(options.inputChange);
-  if (inputChanged) {
-    if (!options.inputChangeReason) throw new Error('声明验证输入变化时必须说明原因');
-    inputCycle += 1;
-  }
+  const inputCycle = Number(task.verification?.inputCycle ?? 0);
 
   const scopeDiffEvidence = scopeAndDiffEvidence(task, before, inputCycle);
   const systemCreatedHashes = new Set([scopeDiffEvidence.payloadHash]);
@@ -372,18 +370,24 @@ export function deliverTask(options = {}) {
     context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle, gitRoot: changeSet.gitRoot }
   });
   let checkExecution = null;
-  let lastFailure = inputChanged ? null : task.verification?.lastFailureFingerprint ?? null;
-  let diagnosticRetryUsed = inputChanged ? false : task.verification?.diagnosticRetryUsed === true;
+  let lastFailure = task.verification?.lastFailureFingerprint ?? null;
+  let diagnosticRetryUsed = task.verification?.diagnosticRetryUsed === true;
+  let checkManifest = task.verification?.checkManifest ?? null;
 
   if (finalAlignment.satisfied && fingerprintCheck.ok && options.autoChecks !== false && (summary.missingCovers.length > 0 || summary.missingAcceptance.length > 0)) {
     const projectChecks = loadChecks(changeSet.gitRoot, { templateRoot: task.context?.context?.template?.path ?? null });
-    const taskChecks = loadTaskChecks(options.taskCheckFile, {
-      task,
-      acceptance,
-      gitRoot: changeSet.gitRoot,
-      projectCheckNames: new Set(projectChecks.map((check) => check.name))
-    });
-    const checks = [...projectChecks, ...taskChecks];
+    const taskChecks = options.taskCheckFile
+      ? loadTaskChecks(options.taskCheckFile, {
+        task,
+        acceptance,
+        gitRoot: changeSet.gitRoot,
+        projectCheckNames: new Set(projectChecks.map((check) => check.name))
+      })
+      : [];
+    const replayChecks = !options.taskCheckFile && checkManifest
+      ? checksFromManifest(checkManifest, { gitRoot: changeSet.gitRoot })
+      : [];
+    const checks = replayChecks.length ? replayChecks : [...projectChecks, ...taskChecks];
     const plan = planChecks({
       cwd: changeSet.gitRoot,
       profile: classification.controlMode,
@@ -394,9 +398,9 @@ export function deliverTask(options = {}) {
       checks
     });
     const failureFingerprint = stableFailureFingerprint(changeSet.fingerprint, plan.fingerprint, inputCycle);
+    checkManifest = createCheckManifest(plan, { gitRoot: changeSet.gitRoot });
     const rerun = canRerunVerification({
       previousFailure: lastFailure === failureFingerprint,
-      inputChanged,
       diagnosticRetry: options.diagnosticRetry === true,
       diagnosticRetryUsed
     });
@@ -591,8 +595,13 @@ export function deliverTask(options = {}) {
       next.acceptance = acceptance;
       next.changeSet = changeSet;
       next.evidence = evidence;
-      next.reviews = validReviews;
-      next.reviewPackage = reviewPackage;
+      if (reviewRequested) {
+        next.reviews = validReviews;
+        next.reviewPackage = reviewPackage;
+      } else {
+        delete next.reviews;
+        delete next.reviewPackage;
+      }
       next.residualRisks = options.residualRisks ?? next.residualRisks;
       if (rationale || rationaleRequired) {
         next.changeRationale = rationale
@@ -631,7 +640,8 @@ export function deliverTask(options = {}) {
             : !rationaleGate && classification.controlMode === 'controlled' ? 'change-rationale-unmapped'
             : !rationaleGate ? 'change-rationale-required'
             : status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
-        lastInputChange: inputChanged ? { type: options.inputChange, reason: options.inputChangeReason } : null
+        checkManifest,
+        lastInputChange: null
       };
       next.deliveryDecision = decision;
       if (next.integration?.required) {
@@ -682,6 +692,29 @@ function compactIntegrationEvidence(task, targetHead, plan, execution) {
     })),
     createdAt:new Date().toISOString(),
   };
+}
+
+function integrationCheckPlan(task, gitRoot) {
+  if (task.verification?.checkManifest) {
+    return {
+      schemaVersion: 4,
+      profile: task.classification.controlMode,
+      checks: checksFromManifest(task.verification.checkManifest, { gitRoot }),
+      missingCovers: [],
+      missingAcceptance: [],
+      fingerprint: task.verification.checkManifest.planFingerprint,
+    };
+  }
+  const checks = loadChecks(gitRoot, { templateRoot:task.context?.context?.template?.path ?? null });
+  return planChecks({
+    cwd:gitRoot,
+    profile:task.classification.controlMode,
+    requiredCovers:task.verification?.requiredCovers ?? [],
+    existingCovers:['scope','diff'],
+    acceptance:task.acceptance,
+    acceptanceCoverage:{},
+    checks,
+  });
 }
 
 export function realignTask(options = {}) {
@@ -763,8 +796,8 @@ export function realignTask(options = {}) {
       next.goal = nextGoal;
       next.acceptance = acceptance;
       next.evidence = [];
-      next.reviews = [];
-      next.reviewPackage = null;
+      delete next.reviews;
+      delete next.reviewPackage;
       next.handoff = null;
       next.changeRationale = null;
       next.changeSet = null;
@@ -782,6 +815,7 @@ export function realignTask(options = {}) {
         lastFailureFingerprint: null,
         diagnosticRetryUsed: false,
         stopReason: null,
+        checkManifest: null,
       };
       return next;
     },
@@ -809,16 +843,7 @@ export function revalidateIntegration(options = {}) {
   if (before.head !== integrated.targetCommit) throw new Error('目标工作区 HEAD 与集成目标分支不一致，拒绝生成重验 Evidence');
   if (before.files.length > 0) throw new Error('目标工作区存在未提交改动，拒绝生成绑定目标 HEAD 的重验 Evidence');
 
-  const checks = loadChecks(targetGitRoot, { templateRoot:task.context?.context?.template?.path ?? null });
-  const plan = planChecks({
-    cwd:targetGitRoot,
-    profile:task.classification.controlMode,
-    requiredCovers:task.verification?.requiredCovers ?? [],
-    existingCovers:['scope','diff'],
-    acceptance:task.acceptance,
-    acceptanceCoverage:{},
-    checks,
-  });
+  const plan = integrationCheckPlan(task, targetGitRoot);
   if (plan.missingCovers.length || plan.missingAcceptance.length) {
     throw new Error(`集成重验缺少检查覆盖: ${[...plan.missingCovers, ...plan.missingAcceptance].join(', ')}`);
   }
@@ -897,6 +922,33 @@ export function confirmIntegration(options = {}) {
       : '';
     throw new Error(`尚未确认集成: ${result.reason}${hint}`);
   }
+  const before = captureBaseline(targetGitRoot);
+  if (before.head !== result.targetCommit) throw new Error('目标工作区 HEAD 与集成目标分支不一致，拒绝确认集成');
+  if (before.files.length > 0) throw new Error('目标工作区存在未提交改动，拒绝确认集成');
+  const plan = integrationCheckPlan(task, targetGitRoot);
+  if (plan.missingCovers.length || plan.missingAcceptance.length) {
+    throw new Error(`集成确认缺少可重放检查覆盖: ${[...plan.missingCovers, ...plan.missingAcceptance].join(', ')}`);
+  }
+  const execution = executeCheckPlan(plan, { cwd:targetGitRoot, budget:task.verification.budget });
+  const after = captureBaseline(targetGitRoot);
+  const mutated = after.head !== before.head || after.fingerprint !== before.fingerprint;
+  if (!execution.ok || mutated) {
+    const stopReason = mutated ? 'integration-check-mutated-target' : `integration-check-${execution.stopReason ?? execution.status ?? 'failed'}`;
+    return updateTask({
+      stateRoot: options.stateRoot,
+      taskId: task.taskId,
+      expectedRevision: task.stateRevision,
+      transitionTo: 'verifying',
+      event: 'integration',
+      mutate(next) {
+        next.integration = { ...next.integration, status:'revalidation_failed', targetGitRoot, targetCommit:result.targetCommit };
+        next.verification = { ...next.verification, budget:execution.budget, stopReason, firstFailure:firstFailureDiagnostic(execution) };
+        next.deliveryDecision = { decision:'verifying', reasons:[stopReason] };
+        return next;
+      }
+    });
+  }
+  const integrationEvidence = compactIntegrationEvidence(task, result.targetCommit, plan, execution);
   deletePendingIntegrationRef(targetGitRoot, task.integration.pendingRef, task.integration.resultCommit);
   return updateTask({
     stateRoot: options.stateRoot,
@@ -911,10 +963,12 @@ export function confirmIntegration(options = {}) {
         targetGitRoot,
         targetCommit:result.targetCommit,
         method:result.method,
-        integratedAt:new Date().toISOString()
+        integratedAt:new Date().toISOString(),
+        integrationEvidence,
+        revalidatedAt:integrationEvidence.createdAt,
       };
       next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
-      next.verification = { ...next.verification, stopReason:'evidence-sufficient' };
+      next.verification = { ...next.verification, budget:execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
       if (next.classification.continuity === 'handoff-required') {
         next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
       }

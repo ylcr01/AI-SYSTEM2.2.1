@@ -16,14 +16,14 @@
   },
   "requirements": {
     "node": ">=20",
-    "externalDependencies": []
+    "externalDependencies": ["git"]
   },
   "status": "runnable-baseline",
   "stabilityNote": "自动测试和技术验收通过；长期 stable 仍需 20～30 个真实项目任务验证。",
   "verification": {
     "baselineCommand": "node ./40-脚本/verify-system.mjs --profile baseline",
     "fullCommand": "node ./40-脚本/verify-system.mjs --profile release",
-    "technicalGate": "passed",
+    "technicalGate": "runtime-verification-required",
     "userAcceptance": "pending"
   },
   "sourceInventory": "运行 release 验证时生成到 80-运行记录/release/release-inventory.json，不作为源码维护"
