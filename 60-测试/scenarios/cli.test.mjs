@@ -22,6 +22,7 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   const full = runNode(TASK, ['--help', '--full'], { cwd:ROOT });
   assert.equal(full.status, 0, full.stderr);
   assert.match(full.stdout, /--task-check-file/u);
+  assert.match(full.stdout, /--goal-card-file/u);
   assert.match(full.stdout, /--reason-category/u);
   assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
   assert.match(full.stdout, /重验集成/u);
@@ -330,7 +331,7 @@ test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t 
   ]);
 });
 
-test('--goal-card-file 是 --alignment-file 的语义别名且二选一', t => {
+test('--goal-card-file 是公开入口且 --alignment-file 保持兼容', t => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
   const card = {

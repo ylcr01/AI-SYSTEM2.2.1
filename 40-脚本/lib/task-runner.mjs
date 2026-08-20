@@ -202,7 +202,7 @@ export function prepareTask(options = {}) {
     || initial.preservationMode === 'preserve-all-observable'
     || initial.preservationMode === 'reference-equivalent';
   if (strictPreservation && !providedAlignment) {
-    throw new Error('behavior-preservation-alignment-required: 行为保持型任务必须提供 --alignment-file');
+    throw new Error('behavior-preservation-alignment-required: 行为保持型任务必须提供 --goal-card-file');
   }
   if (strictPreservation && providedAlignment && !providedAlignment.preservation) {
     throw new Error('behavior-preservation-alignment-required: 行为保持型任务的对齐文件必须包含 preservation 结构');
@@ -727,7 +727,7 @@ export function realignTask(options = {}) {
   const reason = String(options.reason ?? '').trim();
   if (!reason) throw new Error('重新对齐必须说明原因');
   const nextAlignment = loadAlignmentFile(options.alignmentFile);
-  if (!nextAlignment) throw new Error('重新对齐必须提供 --alignment-file');
+  if (!nextAlignment) throw new Error('重新对齐必须提供 --goal-card-file');
   if (!nextAlignment.originalRequest) {
     nextAlignment.originalRequest = task.goal?.originalRequest ?? task.goal?.summary ?? '';
   }

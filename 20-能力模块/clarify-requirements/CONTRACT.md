@@ -97,7 +97,7 @@ AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Contex
 - `confirmed`：用户确认了 Goal、最终效果或关键方案，必须记录 `decisionNote`；`delegated`：用户明确委托，必须记录 `delegatedTopics` 与边界，不能绕过现有 Scope、外部写入与不可逆动作门禁。
 - 执行中只有 Goal、Outcome、Acceptance、Scope、已确认决定或风险发生实质变化时才暂停重新对齐；普通实现变化、假设被低风险推翻不触发。
 - 交付时 Controlled/Structural 或严格行为保持任务必须提供 Change Rationale，把所有 ChangeSet 文件映射到 Goal 或 Acceptance；未知文件、未知 Acceptance、空 reason 与旧指纹被机器拒绝，未映射文件不能进入等待验收。普通 Standard 任务可选提供，提供时校验，缺失不阻止交付。
-- `alignment-file` / `rationale-file` / `task-check-file` 是系统与宿主模型之间的机器交换产物：由模型自动生成，存放于 OS 临时目录或明确忽略的临时目录，不要求用户手工填写，不提交到业务仓库。
+- `goal-card-file` / `rationale-file` / `task-check-file` 是系统与宿主模型之间的机器交换产物：由模型自动生成，存放于 OS 临时目录或明确忽略的临时目录，不要求用户手工填写，不提交到业务仓库；旧 `alignment-file` 仅作兼容别名。
 - `重新对齐` 命令允许在 Codex 进度中修订目标后继续同一 Task：仅 confirmed/delegated，必须记录 decisionNote 与原因；修订号加一，清空旧 Evidence/Review/Handoff/Change Rationale 并回到 implementing；不改变 Scope、外部授权、集成目标与用户已有改动授权；已 ready_to_integrate 或结束的任务应创建新 Task。
 
 ## 行为保持

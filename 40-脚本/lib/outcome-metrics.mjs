@@ -217,5 +217,3 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
     warnings,
   };
 }
-
-export const returnReasonCategories = [...RETURN_REASON_CATEGORIES];

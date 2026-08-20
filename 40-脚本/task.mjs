@@ -84,7 +84,7 @@ function compactOutcomes(task) {
   }));
 }
 
-function compactTask(task, result) {
+function compactTask(task) {
   const publicState = publicTaskState(task.status);
   const receipt = {
     schemaVersion: 2,
@@ -214,7 +214,7 @@ function compactTaskList(result) {
 function output(result) {
   let value;
   if (args.full === true) value = result?.task ?? result;
-  else if (result?.task) value = compactTask(result.task, result);
+  else if (result?.task) value = compactTask(result.task);
   else if (Array.isArray(result?.tasks)) value = compactTaskList(result);
   else value = result;
   console.log(JSON.stringify(value, null, 2));
@@ -233,13 +233,12 @@ function help() {
   评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
 
-默认只返回四种用户状态和结果信息。Alignment、Rationale、Task Check 等机器交换产物由宿主自动处理；运行“帮助 --full”查看宿主协议，运行具体命令时追加 --full 查看完整 Task。`);
+默认只返回四种用户状态和结果信息。Goal Card、Rationale、Task Check 等机器交换产物由宿主自动处理；运行“帮助 --full”查看宿主协议，运行具体命令时追加 --full 查看完整 Task。`);
     return;
   }
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
-       [--alignment-file <json>（目标对齐文件，含 goal/expectedOutcomes/protectedBehaviors/acceptance/alignment.mode）]
-       [--goal-card-file <json>（--alignment-file 的语义别名，二选一）]
+       [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
        [--workstation <业务领域工作站 id>]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
@@ -248,7 +247,7 @@ function help() {
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
        [--task-check-file <json>（仅声明受控 runner/testFiles/config，并显式绑定具体 Acceptance）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
-  重新对齐 --task-id <id> --alignment-file <json>|--goal-card-file <json> --reason <text>
+  重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
   集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
@@ -270,17 +269,21 @@ function help() {
 普通问答不建 Task；只读分析走 build-context；仓库写任务必须先准备、后交付，最终验收只能由用户执行。`);
 }
 
+function goalCardFileArg({ required = false } = {}) {
+  const canonical = args['goal-card-file'];
+  const legacy = args['alignment-file'];
+  if (canonical && legacy) throw new Error('--goal-card-file 与兼容参数 --alignment-file 只能提供一个');
+  return canonical ?? legacy ?? (required ? requiredArg(args, 'goal-card-file') : undefined);
+}
+
 try {
   if (action === '准备') {
-    if (args['alignment-file'] && args['goal-card-file']) {
-      throw new Error('--alignment-file 与 --goal-card-file 只能提供一个');
-    }
     output(prepareTask({
       stateRoot: args['state-root'],
       cwd: args.cwd ?? process.cwd(),
       intent: requiredArg(args, 'intent'),
       acceptance: listArg(args.acceptance),
-      alignmentFile: args['alignment-file'] ?? args['goal-card-file'],
+      alignmentFile: goalCardFileArg(),
       scope: args.scope ?? '.',
       projectId: args.project,
       skills: listArg(args.skill),
@@ -321,13 +324,10 @@ try {
       affectedSpecificationIdsProvided: args['spec-id'] !== undefined,
     }));
   } else if (action === '重新对齐') {
-    if (args['alignment-file'] && args['goal-card-file']) {
-      throw new Error('--alignment-file 与 --goal-card-file 只能提供一个');
-    }
     output(realignTask({
       stateRoot: args['state-root'],
       taskId: requiredArg(args, 'task-id'),
-      alignmentFile: args['alignment-file'] ?? args['goal-card-file'] ?? requiredArg(args, 'alignment-file'),
+      alignmentFile: goalCardFileArg({ required:true }),
       reason: args.reason,
     }));
   } else if (action === '验收') {

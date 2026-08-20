@@ -37,31 +37,14 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 
 ## 当前可信边界
 
-### 显式证明
+- Acceptance 只有被定点检查显式绑定时才算被证明；通用检查和外部导入结果不能自动冒充验收证据。
+- Task Check 只接受受控 Runner 和测试文件，Check Manifest 绑定 Runner 版本与输入哈希。
+- Task 写作态、待验收和历史记录分层保存；默认回执只展示四种用户状态，最终验收只能由用户产生。
+- 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
+- 并行任务独占 Worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
 
-- 通用项目检查可以补充全局 Covers，但不能根据 Covers 猜测并自动证明某条 Acceptance。
-- Acceptance 只有被检查显式列出时才算被证明。
-- Task Check 只能声明受控 Runner、测试文件和显式 Acceptance ID；不能携带任意命令、参数或副作用。
-- 当前 Task Check Runner 为 `node-test`。执行计划会保存为 Check Manifest，并绑定 Runner 版本和测试文件哈希。
-- 外部导入的技术 Evidence 不能冒充系统亲自执行产生的 Gate Evidence。
-- Alignment、Rationale 和 Task Check 是宿主自动生成的临时机器交换产物；用户不创建、不编辑，也不把它们提交到业务仓库。维护者可运行 `task.mjs --help --full` 查看完整协议。
-
-### 状态真实
-
-- Task Schema V9 将写作态、待验收和历史记录分别保存在 `进行中/`、`待验收/` 和 `历史.jsonl`，并记录最小结果指标。
-- 默认回执只显示 `working`、`needs_decision`、`ready_for_acceptance`、`done` 四种用户状态；内部状态、指纹和机器协议仅在 `--full` 或诊断路径显示。
-- `task.mjs 诊断状态` 只读报告重复、错位和无效记录，不自动修复账本。
-- 测试入口使用独立临时 `stateRoot`，不会把测试 Task 写入中央运行记录。
-- `forcedMode` 只能向上加强；文本参数不能声明“输入已变化”来清除失败事实。
-- 相同输入失败不能机械重跑；只有真实 ChangeSet 变化、正式重新对齐或一次受限诊断重试会改变后续路径。
-
-### Worktree 集成真实
-
-- 每个并行写任务独占一个 Worktree；工作站是业务身份，不是 Worktree。
-- Worktree 成果必须形成 `resultCommit`，系统使用 `refs/ai/pending/<taskId>` 保活待集成提交。
-- 首次确认集成和目标分支后续变化都在干净的真实目标 HEAD 上重放交付时的 Check Manifest。
-- 检查失败时保留 pending ref 并退回验证；只有重验通过后才能进入 `waiting_acceptance`。
-- `accepted` 只能由用户验收事件产生。
+详细规则以 [`AGENTS.md`](AGENTS.md)、[`20-能力模块/clarify-requirements/CONTRACT.md`](20-能力模块/clarify-requirements/CONTRACT.md) 和 [`70-文档/20-可信门禁.md`](70-文档/20-可信门禁.md) 为准；维护者可运行 `task.mjs --help --full` 查看机器协议。
 
 ## 快速开始
 
