@@ -37,7 +37,7 @@ for (const relative of [
   '30-知识库/索引.json',
   '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs', '40-脚本/workstations.mjs',
   '40-脚本/build-release-inventory.mjs', '40-脚本/verify-system.mjs',
-  '40-脚本/lib/state-manager.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs', '40-脚本/lib/alignment.mjs', '40-脚本/lib/change-rationale.mjs',
+  '40-脚本/lib/state-manager.mjs', '40-脚本/lib/outcome-metrics.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs', '40-脚本/lib/alignment.mjs', '40-脚本/lib/change-rationale.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
   '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs', '40-脚本/lib/workstations.mjs',
   '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-PROJECT-WORKSTATIONS-001.md',
@@ -83,7 +83,7 @@ const workstationPlanExample = readJson('.ai/templates/workstations/plan.example
 if (workstationPlanExample?.schemaVersion !== 1 || !Array.isArray(workstationPlanExample.workstations) || workstationPlanExample.workstations.length === 0) errors.push('workstations/plan.example.json: Schema 无效');
 
 const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
-if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 8/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V8 状态分层、集成转换或并发锁');
+if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 9/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V9 状态分层、结果指标、集成转换或并发锁');
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');

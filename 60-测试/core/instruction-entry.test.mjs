@@ -8,12 +8,12 @@ import { runNode, tempDir } from '../helpers.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = path.join(ROOT, '40-脚本', 'configure-model-entry.mjs');
 
-test('大模型入口检查确认 V2.2.1 关键文件', () => {
+test('大模型入口检查确认 V2.2.2 关键文件', () => {
   const result = runNode(SCRIPT, ['检查', '--root', ROOT], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, true);
-  assert.equal(output.version, '2.2.1');
+  assert.equal(output.version, '2.2.2');
 });
 
 test('生成的自定义指令仅保留入口导航和不可绕过边界', () => {

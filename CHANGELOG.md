@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## V2.2.2
+
+### Friction Reduction
+
+- 默认 Task 回执和列表只展示四种用户状态、目标结果、变更、缺口和下一步；内部状态、指纹、Alignment、Rationale 与 Verification 仅在 `--full` 中返回。
+- Task Schema 升级到 V9，自动记录首次交付、交付次数、验证耗时、用户决定、返工、首轮验收和退回原因；V6/V7/V8 保守兼容且旧指标不参与统计。
+- 新增只读 `评估摘要`，报告样本量、首轮验收率、返工、用户决定、验证耗时和退回原因，并对小样本、旧记录和缺少可比基线明确告警。
+- 快速开始不再要求用户操作 Goal Card、Change Rationale 或 Task Check 文件；完整宿主协议移动到 `帮助 --full`。
+- 产品定位统一为面向个人开发者和强 Coding Agent 的轻量 AI 研发增强层。
+
 ### 可信闭环修复
 
 - Git Baseline、ChangeSet 和集成关键路径改为 fail closed，Git 状态无法确认时不再返回空结果。

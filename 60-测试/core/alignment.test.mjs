@@ -226,19 +226,19 @@ test('重新对齐不能替换 initial originalRequest', (t) => {
   );
 });
 
-test('准备回执包含目标、对齐模式与基线指纹', (t) => {
+test('完整准备回执保留目标、对齐模式与基线指纹', (t) => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
   const file = writeAlignment(t, DIRECT_ALIGNMENT);
   const result = runNode(
     path.join(ROOT, '40-脚本', 'task.mjs'),
-    ['准备', '--cwd', repo, '--state-root', stateRoot, '--intent', DIRECT_ALIGNMENT.originalRequest, '--alignment-file', file, '--scope', '.'],
+    ['准备', '--cwd', repo, '--state-root', stateRoot, '--intent', DIRECT_ALIGNMENT.originalRequest, '--alignment-file', file, '--scope', '.', '--full'],
     { cwd: ROOT },
   );
   assert.equal(result.status, 0, result.stderr);
   const receipt = JSON.parse(result.stdout);
-  assert.equal(receipt.goal, DIRECT_ALIGNMENT.goal);
-  assert.equal(receipt.alignment.mode, 'direct');
-  assert.ok(receipt.alignment.baselineFingerprint);
-  assert.deepEqual(receipt.expectedOutcomes, DIRECT_ALIGNMENT.expectedOutcomes);
+  assert.equal(receipt.goal.summary, DIRECT_ALIGNMENT.goal);
+  assert.equal(receipt.goal.alignment.mode, 'direct');
+  assert.ok(receipt.goal.alignment.baselineFingerprint);
+  assert.deepEqual(receipt.goal.expectedOutcomes, DIRECT_ALIGNMENT.expectedOutcomes);
 });

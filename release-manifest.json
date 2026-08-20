@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "name": "AI研发操作系统",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "packageType": "complete-source-code",
   "entrypoints": {
     "modelEntry": "40-脚本/configure-model-entry.mjs",

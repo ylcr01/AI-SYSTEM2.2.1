@@ -4,8 +4,9 @@ import path from 'node:path';
 import { atomicWriteJson, appendJsonLineLocked, withFileLock } from './atomic-file.mjs';
 import { SYSTEM_ROOT, normalizePath } from './registry.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
+import { applyOutcomeMetricEvent, createOutcomeMetrics, normalizeOutcomeMetrics } from './outcome-metrics.mjs';
 
-const CURRENT_SCHEMA = 8;
+const CURRENT_SCHEMA = 9;
 const TERMINAL = new Set(['accepted','cancelled']);
 const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
 const TRANSITIONS = {
@@ -88,11 +89,16 @@ function readRaw(file) {
 }
 
 function currentTask(raw) {
-  if ([6, 7].includes(raw.schemaVersion)) return { ...raw, schemaVersion:CURRENT_SCHEMA, integration:raw.integration ?? null };
-  if (raw.schemaVersion !== CURRENT_SCHEMA) {
+  const upgraded = [6, 7, 8].includes(raw.schemaVersion)
+    ? { ...raw, schemaVersion:CURRENT_SCHEMA, integration:raw.integration ?? null }
+    : raw;
+  if (upgraded.schemaVersion !== CURRENT_SCHEMA) {
     throw new Error(`不支持的 Task Schema: ${raw.schemaVersion ?? 'unknown'}；历史版本请使用对应系统读取`);
   }
-  return raw;
+  return {
+    ...upgraded,
+    outcomeMetrics: normalizeOutcomeMetrics(upgraded.outcomeMetrics, { createdAt:upgraded.createdAt }),
+  };
 }
 
 function validateTransition(from, to, event) {
@@ -109,6 +115,7 @@ export function createTask(input = {}) {
   fs.mkdirSync(value.locks, { recursive: true });
   const now = new Date().toISOString();
   const taskId = input.taskId ?? createId();
+  const alignmentMode = input.goal?.alignment?.mode;
   const task = {
     schemaVersion: CURRENT_SCHEMA,
     taskId,
@@ -145,6 +152,10 @@ export function createTask(input = {}) {
       integrationEvidence:null,
       revalidatedAt:null,
     } : null,
+    outcomeMetrics: createOutcomeMetrics({
+      at: now,
+      initialUserDecisionCount: ['confirmed', 'delegated'].includes(alignmentMode) ? 1 : 0,
+    }),
     createdAt: now,
     updatedAt: now,
     acceptedAt: null
@@ -209,6 +220,16 @@ export function updateTask(input = {}) {
       next.schemaVersion = CURRENT_SCHEMA;
       next.stateRevision = current.stateRevision + 1;
       next.updatedAt = new Date().toISOString();
+      next.outcomeMetrics = applyOutcomeMetricEvent(next.outcomeMetrics, {
+        event: input.event,
+        from: current.status,
+        to: target,
+        at: next.updatedAt,
+        createdAt: current.createdAt,
+        durationMs: input.metricDurationMs,
+        reasonCategory: input.metricReasonCategory,
+        note: input.metricNote,
+      });
       if (TERMINAL.has(target)) {
         if (target === 'accepted') next.acceptedAt = next.acceptedAt ?? next.updatedAt;
         appendJsonLineLocked(value.history, next, value.historyLock);

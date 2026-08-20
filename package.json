@@ -1,9 +1,9 @@
 {
   "name": "personal-ai-rd-operating-system",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "private": true,
   "type": "module",
-  "description": "面向强推理模型的轻量可信软件生产内核",
+  "description": "面向个人开发者和强 Coding Agent 的轻量 AI 研发增强层",
   "scripts": {
     "check": "node ./40-脚本/check-system.mjs",
     "entry": "node ./40-脚本/configure-model-entry.mjs",

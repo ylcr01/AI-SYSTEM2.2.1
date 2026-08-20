@@ -17,8 +17,9 @@ import {
   listTasks,
 } from './lib/task-runner.mjs';
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
-import { findGitRoot } from './lib/registry.mjs';
-import { diagnoseState } from './lib/state-manager.mjs';
+import { findGitRoot, normalizePath } from './lib/registry.mjs';
+import { diagnoseState, readHistory } from './lib/state-manager.mjs';
+import { publicTaskState, summarizeOutcomeMetrics } from './lib/outcome-metrics.mjs';
 
 const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -31,18 +32,34 @@ const aliases = new Map([
   ['continue-verification', '继续验证'],
   ['revalidate-integration', '重验集成'],
   ['diagnose-state', '诊断状态'],
+  ['metrics', '评估摘要'], ['outcome-metrics', '评估摘要'],
 ]);
 const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
 
 function nextAction(status) {
   return {
-    prepared: '读取 filesToRead，并在授权 Scope 内实施。',
-    needs_rework: '修复验证或规格问题后重新交付；若暂不继续，运行“保存”显式释放当前工作树。',
-    ready_to_integrate: '由中央工作区将 resultCommit 集成到目标分支，然后运行“集成”。',
-    waiting_acceptance: '等待用户验收。',
-    verifying: '运行“交付”继续验证。',
-    saved: '需要继续时恢复 Task；恢复会重新竞争原工作树写权限。',
+    prepared: '已完成准备，接下来读取相关文件并在授权范围内实现。',
+    implementing: '正在实现目标结果。',
+    reviewing: '正在检查实现质量。',
+    needs_rework: '当前结果仍需修正；修正后重新验证。',
+    ready_to_integrate: '代码已准备好集成；完成目标分支集成和重验后再交给你验收。',
+    waiting_acceptance: '结果已具备验收条件，请检查并决定通过或退回。',
+    verifying: '仍有结果缺少验证，补齐后继续。',
+    saved: '任务已暂停，需要你决定是否继续。',
+    blocked: '任务被阻止，需要先处理上面的阻塞原因。',
   }[status];
+}
+
+function evidenceLabel(cover) {
+  return {
+    behavior: '行为验证',
+    documentation: '文档检查',
+    'negative-path': '失败路径验证',
+    'target-environment': '目标环境验证',
+    browser: '浏览器验证',
+    build: '构建验证',
+    integration: '集成验证',
+  }[cover] ?? String(cover);
 }
 
 function compactOutcomes(task) {
@@ -68,96 +85,75 @@ function compactOutcomes(task) {
 }
 
 function compactTask(task, result) {
+  const publicState = publicTaskState(task.status);
   const receipt = {
-    schemaVersion: 1,
-    view: 'summary',
-    taskSchemaVersion: task.schemaVersion,
+    schemaVersion: 2,
+    view: 'outcome',
     taskId: task.taskId,
-    status: task.status,
-    stateRevision: task.stateRevision,
+    state: publicState.id,
+    stateLabel: publicState.label,
   };
 
   if (task.goal?.summary) receipt.goal = task.goal.summary;
   if (task.goal?.expectedOutcomes) receipt.expectedOutcomes = task.goal.expectedOutcomes;
   if (task.goal?.protectedBehaviors) receipt.protectedBehaviors = task.goal.protectedBehaviors;
-  if (task.goal?.alignment) {
-    receipt.alignment = {
-      mode: task.goal.alignment.mode,
-      revision: task.goal.alignment.revision,
-      baselineFingerprint: task.goal.alignment.baselineFingerprint,
-      reasonCodes: task.goal.alignment.reasonCodes ?? [],
-      decisionNote: task.goal.alignment.decisionNote ?? null,
-      delegatedTopics: task.goal.alignment.delegatedTopics ?? [],
-    };
-  }
 
   if (action === '准备' || action === '查看') {
-    receipt.acceptance = (task.acceptance ?? []).map(({ id, description, requiredCovers }) => ({
+    receipt.acceptance = (task.acceptance ?? []).map(({ id, description }) => ({
       id,
       description,
-      requiredCovers,
     }));
-    receipt.scope = task.authorization?.scope ?? [];
+    receipt.scope = (task.authorization?.scope ?? []).map(item => item.path);
     receipt.filesToRead = task.context?.filesToRead ?? [];
   }
   receipt.outcomes = compactOutcomes(task);
+  const verifiedCount = receipt.outcomes.filter(item => item.status === 'verified').length;
+  receipt.result = {
+    verifiedOutcomes: verifiedCount,
+    totalOutcomes: receipt.outcomes.length,
+    allOutcomesVerified: receipt.outcomes.length > 0 && verifiedCount === receipt.outcomes.length,
+  };
 
   if (task.changeSet) {
-    receipt.changeSet = {
-      fingerprint: task.changeSet.fingerprint,
-      files: (task.changeSet.files ?? []).map(({ path, status }) => ({ path, status })),
-    };
-  }
-  if (task.changeRationale) {
-    receipt.changeRationale = {
-      provided: task.changeRationale.provided,
-      ok: task.changeRationale.ok,
-      invalid: task.changeRationale.invalid ?? [],
-      unmappedFiles: task.changeRationale.unmappedFiles ?? [],
-    };
+    receipt.changes = (task.changeSet.files ?? []).map(({ path, status }) => ({ path, status }));
   }
 
   if (task.integration) {
     receipt.integration = {
-      status: task.integration.status,
       target: task.integration.target,
-      baseCommit: task.integration.baseCommit,
-      resultCommit: task.integration.resultCommit,
-      pendingRef: task.integration.pendingRef,
-      targetCommit: task.integration.targetCommit,
-      revalidatedAt: task.integration.revalidatedAt ?? null,
+      ready: ['ready', 'integrated'].includes(task.integration.status),
+      integrated: task.integration.status === 'integrated',
     };
   }
 
   if (task.verification) {
-    receipt.verification = {
-      missingAcceptance: task.verification.missingAcceptance ?? [],
-      missingCovers: task.verification.missingCovers ?? [],
-      stopReason: task.verification.stopReason ?? null,
-    };
     if ((task.verification.acceptanceGaps?.length ?? 0) > 0) {
-      receipt.verification.acceptanceGaps = task.verification.acceptanceGaps;
+      receipt.gaps = task.verification.acceptanceGaps.map(gap => ({
+        outcomeId: gap.acceptanceId,
+        description: gap.description,
+        missingEvidence: (gap.missingCovers ?? []).map(evidenceLabel),
+      }));
     }
-    if (task.verification.budget) {
-      receipt.verification.budget = {
-        limitMs:task.verification.budget.limitMs,
-        spentMs:task.verification.budget.spentMs,
-        extensionCount:task.verification.budget.extensions?.length ?? 0,
+    if (task.verification.firstFailure) {
+      receipt.issue = {
+        kind: 'check-failed',
+        check: task.verification.firstFailure.name,
+        exitCode: task.verification.firstFailure.exitCode,
+        output: task.verification.firstFailure.output,
+        truncated: task.verification.firstFailure.truncated,
       };
     }
-    if (task.verification.firstFailure) receipt.verification.firstFailure = task.verification.firstFailure;
-    if (task.verification.preservationCoverage) {
-      receipt.verification.preservationCoverage = task.verification.preservationCoverage;
-    }
     if ((task.verification.untrustedTechnicalEvidence ?? []).length > 0) {
-      receipt.verification.untrustedTechnicalEvidence = task.verification.untrustedTechnicalEvidence;
+      receipt.warnings = [
+        ...(receipt.warnings ?? []),
+        `${task.verification.untrustedTechnicalEvidence.length} 条外部技术结果未被作为验收证明`,
+      ];
     }
   }
 
-  if (task.specImpact) {
-    receipt.specImpact = {
-      level: task.specImpact.level,
-      declared: task.specImpact.declared,
+  if (task.specImpact && task.specImpact.level !== 'none') {
+    receipt.specification = {
+      impact: task.specImpact.level,
       reason: task.specImpact.reason,
       affectedSpecificationIds: task.specImpact.affectedSpecificationIds ?? [],
     };
@@ -165,16 +161,15 @@ function compactTask(task, result) {
 
   if ((task.blockers?.length ?? 0) > 0) receipt.blockers = task.blockers;
   if ((task.residualRisks?.length ?? 0) > 0) receipt.residualRisks = task.residualRisks;
-  if (task.deliveryDecision) receipt.deliveryDecision = task.deliveryDecision;
-  if (result?.filePath) receipt.recordPath = result.filePath;
-  if (result?.source) receipt.recordSource = result.source;
 
   const stopReason = String(task.verification?.stopReason ?? '');
   const missingAcceptance = task.verification?.missingAcceptance ?? [];
   const acceptanceGaps = task.verification?.acceptanceGaps ?? [];
   const gapText = acceptanceGaps.length
     ? `验收项 ${acceptanceGaps.map(gap => {
-      const coverNote = (gap.missingCovers ?? []).length ? `缺少 ${gap.missingCovers.join('、')} 证据` : '尚未被可信证明';
+      const coverNote = (gap.missingCovers ?? []).length
+        ? `还缺少${(gap.missingCovers ?? []).map(evidenceLabel).join('、')}`
+        : '尚未被可信证明';
       return `${gap.acceptanceId}（${gap.description}）${coverNote}`;
     }).join('；')}；优先运行现有针对性测试，没有则补一个最小定点测试。`
     : missingAcceptance.length
@@ -184,11 +179,11 @@ function compactTask(task, result) {
       }).join('、')} 尚未被可信证明；优先运行现有针对性测试，没有则补一个最小定点测试。`
     : null;
   const next = stopReason === 'alignment-required' || stopReason === 'alignment-risk-escalation'
-    ? `运行“重新对齐 --task-id ${task.taskId} --alignment-file <json> --reason <原因>”，使用 confirmed/delegated Alignment 完成对齐后重新交付。`
+    ? '需要重新对齐目标或授权边界；确认后宿主会自动更新内部结构并继续。'
     : stopReason === 'budget'
-      ? '由用户运行“继续验证 --additional-budget-ms <毫秒> --reason <原因>”有界追加预算。'
+      ? '验证预算已用完，需要你明确决定是否追加有限预算。'
       : stopReason.startsWith('integration-')
-        ? '修复目标分支或检查问题后，再次运行“重验集成”。'
+        ? '目标分支集成或重验尚未完成；处理首个问题后再继续。'
         : gapText ?? nextAction(task.status);
   if (next) receipt.next = next;
 
@@ -196,20 +191,23 @@ function compactTask(task, result) {
 }
 
 function compactTaskList(result) {
-  const counts = {};
-  for (const task of result.tasks ?? []) counts[task.status] = (counts[task.status] ?? 0) + 1;
+  const counts = { working: 0, needs_decision: 0, ready_for_acceptance: 0, done: 0 };
+  for (const task of result.tasks ?? []) {
+    const state = publicTaskState(task.status).id;
+    counts[state] += 1;
+  }
   return {
-    schemaVersion: 1,
-    view: 'summary',
+    schemaVersion: 2,
+    view: 'outcome-list',
     counts,
     tasks: (result.tasks ?? []).map(task => ({
       taskId: task.taskId,
-      status: task.status,
+      state: publicTaskState(task.status).id,
+      stateLabel: publicTaskState(task.status).label,
       goal: task.goal?.summary,
       updatedAt: task.updatedAt,
       blockerCount: task.blockers?.length ?? 0,
     })),
-    stateRoot: result.stateRoot,
   };
 }
 
@@ -223,7 +221,22 @@ function output(result) {
 }
 
 function help() {
-  console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
+  if (args.full !== true) {
+    console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
+  准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+       [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
+  交付 --task-id <id>
+  验收 --task-id <id> --decision 通过|退回 [--note <原因>]
+  继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
+  保存|恢复|交接|查看|取消 --task-id <id>
+  列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
+  评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
+  诊断状态 [--state-root <path>]（只读，不修复、不迁移）
+
+默认只返回四种用户状态和结果信息。Alignment、Rationale、Task Check 等机器交换产物由宿主自动处理；运行“帮助 --full”查看宿主协议，运行具体命令时追加 --full 查看完整 Task。`);
+    return;
+  }
+  console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--alignment-file <json>（目标对齐文件，含 goal/expectedOutcomes/protectedBehaviors/acceptance/alignment.mode）]
        [--goal-card-file <json>（--alignment-file 的语义别名，二选一）]
@@ -241,13 +254,15 @@ function help() {
   集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
   重验集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
   继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
-  验收 --task-id <id> --decision 通过|退回
+  验收 --task-id <id> --decision 通过|退回 [--note <原因>]
+       [--reason-category goal-mismatch|scope|verification-gap|code-quality|regression|unnecessary-change|other]
   整理经验 --task-id <accepted-id> --root-cause <text> --action <text> --boundary <text>
        [--keyword <text>] [--verification <text>]
   保存 --task-id <id>（暂停并释放工作树写占用）
   恢复 --task-id <id>（重新竞争原工作树写权限）
   交接|查看|取消
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
+  评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
@@ -321,6 +336,7 @@ try {
       taskId: requiredArg(args, 'task-id'),
       decision: requiredArg(args, 'decision'),
       note: args.note,
+      reasonCategory: args['reason-category'],
     }));
   } else if (action === '集成') {
     output(confirmIntegration({
@@ -368,6 +384,16 @@ try {
     output(findTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
   } else if (action === '诊断状态') {
     output(diagnoseState({ stateRoot: args['state-root'] }));
+  } else if (action === '评估摘要') {
+    const allProjects = args['all-projects'] === true;
+    const gitRoot = allProjects ? null : findGitRoot(args.cwd ?? process.cwd());
+    if (!allProjects && !gitRoot) {
+      throw new Error('评估摘要默认按当前 Git 项目过滤；请在 Git 工作树中运行，或显式使用 --all-projects');
+    }
+    const active = listTasks({ stateRoot: args['state-root'], gitRoot, limit: 0 }).tasks;
+    const history = readHistory({ stateRoot: args['state-root'] })
+      .filter(task => !gitRoot || normalizePath(task.baseline?.gitRoot) === normalizePath(gitRoot));
+    output(summarizeOutcomeMetrics([...active, ...history], { from: args.from, to: args.to }));
   } else if (action === '列表') {
     const allProjects = args['all-projects'] === true;
     const gitRoot = allProjects ? null : findGitRoot(args.cwd ?? process.cwd());

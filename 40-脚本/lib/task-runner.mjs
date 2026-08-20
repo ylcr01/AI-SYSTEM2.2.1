@@ -45,6 +45,7 @@ import { createTask, readTask, findTask, updateTask, listTasks } from './state-m
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 import { addIntentSpecificationHints, buildSpecState, revalidateSpecState, stableSpecReviewState } from './spec-service.mjs';
+import { normalizeReturnReasonCategory } from './outcome-metrics.mjs';
 
 function defaultAcceptanceCovers(classification) {
   const kinds = new Set(classification.artifactKinds ?? []);
@@ -303,6 +304,7 @@ export function prepareTask(options = {}) {
 }
 
 export function deliverTask(options = {}) {
+  const deliveryStartedAt = Date.now();
   if (options.inputChange || options.inputChangeReason) {
     throw new Error('禁止手工声明验证输入变化；只有真实 ChangeSet 或正式重新对齐可以开启新的验证周期');
   }
@@ -320,6 +322,7 @@ export function deliverTask(options = {}) {
       expectedRevision: task.stateRevision,
       transitionTo: 'blocked',
       event: 'delivery',
+      metricDurationMs: Date.now() - deliveryStartedAt,
       mutate(next) {
         next.changeSet = before;
         next.verification = {
@@ -590,6 +593,7 @@ export function deliverTask(options = {}) {
     expectedRevision: task.stateRevision,
     transitionTo: status,
     event: 'delivery',
+    metricDurationMs: Date.now() - deliveryStartedAt,
     mutate(next) {
       next.classification = classification;
       next.acceptance = acceptance;
@@ -1043,20 +1047,24 @@ export function acceptTask(options = {}) {
   const task = current.task;
   const decision = options.decision === '通过' ? 'passed' : options.decision === '退回' ? 'rejected' : options.decision;
   if (!['passed','rejected'].includes(decision)) throw new Error('验收决定只能是通过或退回');
+  if (task.status !== 'waiting_acceptance') throw new Error(`任务当前不能验收: ${task.status}`);
+  if (decision === 'passed' && options.reasonCategory) throw new Error('退回原因分类只用于退回决定');
   if (decision === 'rejected') {
+    const reasonCategory = normalizeReturnReasonCategory(options.reasonCategory);
     return updateTask({
       stateRoot: options.stateRoot,
       taskId: task.taskId,
       expectedRevision: task.stateRevision,
       transitionTo: 'needs_rework',
       event: 'user-reject',
+      metricReasonCategory: reasonCategory,
+      metricNote: options.note,
       mutate(next) {
         next.userAcceptance = { decision: 'rejected', note: options.note ?? null, decidedAt: new Date().toISOString() };
         return next;
       }
     });
   }
-  if (task.status !== 'waiting_acceptance') throw new Error(`任务当前不能验收通过: ${task.status}`);
   const validation = revalidateForAcceptance(task);
   return updateTask({
     stateRoot: options.stateRoot,

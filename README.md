@@ -2,6 +2,8 @@
 
 **面向个人开发者和强 Coding Agent 的轻量 AI 研发增强层。**
 
+当前版本：`V2.2.2`。
+
 AI-SYSTEM 不替代 Codex、Claude Code 等 Coding Agent，也不试图成为 IDE、Agent Runtime、工作流平台或企业治理系统。它通过宿主自定义指令、项目 `AGENTS.md` 和本地 Node.js 工具，为真实软件任务补上少量但关键的纠偏能力：
 
 > **理解用户目标 → 获取正确上下文 → 在授权范围内实现 → 用定点检查证明结果 → 保持集成状态真实 → 交给用户验收。**
@@ -26,8 +28,8 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → build-context → 读取最小相关事实
-主工作区写任务  → 准备 → AI 实现 → 交付验证 → waiting_acceptance → 用户验收
-并行 Worktree   → 准备 → 提交 → ready_to_integrate → 目标 HEAD 重验 → 用户验收
+主工作区写任务  → 正在处理 → 等待你验收 → 已结束
+并行 Worktree   → 正在处理（含集成与目标 HEAD 重验）→ 等待你验收 → 已结束
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
@@ -42,28 +44,12 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 - Task Check 只能声明受控 Runner、测试文件和显式 Acceptance ID；不能携带任意命令、参数或副作用。
 - 当前 Task Check Runner 为 `node-test`。执行计划会保存为 Check Manifest，并绑定 Runner 版本和测试文件哈希。
 - 外部导入的技术 Evidence 不能冒充系统亲自执行产生的 Gate Evidence。
-
-Task Check 示例：
-
-```json
-{
-  "schemaVersion": 1,
-  "checks": [
-    {
-      "name": "order-create-A1",
-      "runner": "node-test",
-      "testFiles": ["tests/order-create.test.mjs"],
-      "covers": ["behavior"],
-      "acceptanceIds": ["A1"],
-      "timeoutMs": 30000
-    }
-  ]
-}
-```
+- Alignment、Rationale 和 Task Check 是宿主自动生成的临时机器交换产物；用户不创建、不编辑，也不把它们提交到业务仓库。维护者可运行 `task.mjs --help --full` 查看完整协议。
 
 ### 状态真实
 
-- Task Schema V8 将写作态、待验收和历史记录分别保存在 `进行中/`、`待验收/` 和 `历史.jsonl`。
+- Task Schema V9 将写作态、待验收和历史记录分别保存在 `进行中/`、`待验收/` 和 `历史.jsonl`，并记录最小结果指标。
+- 默认回执只显示 `working`、`needs_decision`、`ready_for_acceptance`、`done` 四种用户状态；内部状态、指纹和机器协议仅在 `--full` 或诊断路径显示。
 - `task.mjs 诊断状态` 只读报告重复、错位和无效记录，不自动修复账本。
 - 测试入口使用独立临时 `stateRoot`，不会把测试 Task 写入中央运行记录。
 - `forcedMode` 只能向上加强；文本参数不能声明“输入已变化”来清除失败事实。
@@ -103,14 +89,12 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>"
 ```powershell
 node ./40-脚本/task.mjs 准备 --cwd <项目路径> --intent "<目标>" --acceptance "<验收>" --scope "."
 
-node ./40-脚本/task.mjs 交付 --task-id <编号> `
-  --task-check-file <检查.json> `
-  --spec-impact none|updated|decision-required
+node ./40-脚本/task.mjs 交付 --task-id <编号>
 
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
-Controlled、Structural 或严格行为保持任务还需要 Change Rationale，将真实 ChangeSet 文件映射到 Goal 或 Acceptance。
+宿主会在需要时自动生成 Goal Card、Change Rationale 和定点检查。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。
 
 ### 并行 Worktree
 
@@ -143,7 +127,10 @@ node ./40-脚本/task.mjs 保存 --task-id <编号>
 node ./40-脚本/task.mjs 恢复 --task-id <编号>
 node ./40-脚本/task.mjs 继续验证 --task-id <编号> `
   --additional-budget-ms 120000 --reason "用户批准继续"
+node ./40-脚本/task.mjs 评估摘要 --from 2026-08-01 --to 2026-08-31
 ```
+
+新 Task 自动记录首次交付、交付次数、验证耗时、用户决定、返工和首轮验收结果。用户退回时，宿主可按目标误解、Scope、验证缺口、代码质量、回归或非必要改动记录原因。`评估摘要` 只读汇总这些事实；少于 10 个样本只能观察方向，形成稳定结论仍需 20～30 个可比真实任务和明确基线。
 
 ## 按需能力
 
