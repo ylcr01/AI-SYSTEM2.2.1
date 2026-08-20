@@ -4,7 +4,6 @@ import { SYSTEM_ROOT } from './registry.mjs';
 
 const ROLE_SKILL={web:'develop-web',app:'develop-app',server:'develop-server',docs:'write-documentation',ops:'operate-environments'};
 const INTENT_SKILLS=[
- ['project-workstations',/业务工作站|领域工作站|成员工作站|project workstations?/iu],
  ['clarify-requirements',/需求|范围|验收|requirement/iu],['design-product',/产品|规划|product/iu],
  ['design-ui',/界面|交互|视觉|\bui\b|\bux\b/iu],['integrate-systems',/联调|跨仓|第三方|集成|integration/iu],
  ['operate-environments',/环境|发布|部署|容器|网关|deploy|runtime/iu],['write-documentation',/文档|README|架构说明|documentation/iu],

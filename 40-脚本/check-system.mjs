@@ -29,18 +29,16 @@ for (const check of checkRegistry?.checks ?? []) {
 for (const relative of [
   'README.md', 'AGENTS.md', '.ai/checks.json', '.github/workflows/ci.yml',
   '.ai/templates/module-spec-template.md', '.ai/templates/decision-template.md', '.ai/templates/spec-map.example.json', '.ai/templates/spec-policy.example.json',
-  '.ai/templates/workstations/plan.example.json', '.ai/templates/workstations/profile-template.md', '.ai/templates/workstations/runbook-template.md', '.ai/templates/workstations/shared-template.md',
   '00-大模型接入/接入说明.md',
-  '00-大模型接入/codex-skills/project-workstations/SKILL.md', '00-大模型接入/codex-skills/project-workstations/agents/openai.yaml',
   '10-注册表/projects.json', '10-注册表/templates.json',
   '20-能力模块/10-通用工程契约.md', '20-能力模块/manifest.json',
   '30-知识库/索引.json',
-  '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs', '40-脚本/workstations.mjs',
+  '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs',
   '40-脚本/build-release-inventory.mjs', '40-脚本/verify-system.mjs',
   '40-脚本/lib/state-manager.mjs', '40-脚本/lib/outcome-metrics.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs', '40-脚本/lib/alignment.mjs', '40-脚本/lib/change-rationale.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
-  '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs', '40-脚本/lib/workstations.mjs',
-  '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-PROJECT-WORKSTATIONS-001.md',
+  '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs',
+  '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-REMOVE-PROJECT-WORKSTATIONS-002.md',
   '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '80-运行记录/README.md'
 ]) requireFile(relative);
 
@@ -79,9 +77,6 @@ const specMapExample = readJson('.ai/templates/spec-map.example.json');
 if (specMapExample?.schemaVersion !== 1 || !Array.isArray(specMapExample.mappings)) errors.push('spec-map.example.json: Schema 无效');
 const specPolicyExample = readJson('.ai/templates/spec-policy.example.json');
 if (specPolicyExample?.schemaVersion !== 1 || !['advisory','balanced','strict'].includes(specPolicyExample.mode)) errors.push('spec-policy.example.json: Schema 无效');
-const workstationPlanExample = readJson('.ai/templates/workstations/plan.example.json');
-if (workstationPlanExample?.schemaVersion !== 1 || !Array.isArray(workstationPlanExample.workstations) || workstationPlanExample.workstations.length === 0) errors.push('workstations/plan.example.json: Schema 无效');
-
 const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
 if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 9/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V9 状态分层、结果指标、集成转换或并发锁');
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');

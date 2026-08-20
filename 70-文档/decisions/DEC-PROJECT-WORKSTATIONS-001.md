@@ -1,10 +1,11 @@
 ---
 id: DEC-PROJECT-WORKSTATIONS-001
-status: accepted
+status: superseded
 affects:
   - ARCH-PROJECT-WORKSTATIONS
 sourceTaskId: task-20260813064029790-38f6c229
 supersedes: []
+supersededBy: DEC-REMOVE-PROJECT-WORKSTATIONS-002
 ---
 
 # 项目业务工作站采用中央控制层与项目实例层

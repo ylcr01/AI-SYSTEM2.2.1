@@ -121,7 +121,6 @@ node ./40-脚本/task.mjs 评估摘要 --from 2026-08-01 --to 2026-08-31
 
 - `.ai/spec-map.json`：代码、规格、测试和 Decision 的确定性映射；
 - `specImpact=updated|decision-required`：规格与架构决策门禁；
-- `.ai/workstations/`：长期业务领域工作站；
 - 严格 Preservation：明确要求保持全部行为或参考实现等价时启用；
 - Review Package：只有用户或项目显式要求 Review 时生成；
 - Experience Candidate：只能从已验收 Task 按需整理，不自动晋升规则；

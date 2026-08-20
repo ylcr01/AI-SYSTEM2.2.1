@@ -5,7 +5,6 @@ import { resolveRepositoryPath } from './path-boundary.mjs';
 import { readProjectManifests } from './manifest-reader.mjs';
 import { loadQualityContext } from './quality-registry.mjs';
 import { classifyTask } from './task-policy.mjs';
-import { routeWorkstation } from './workstations.mjs';
 
 function inferRole(context, intent) {
   const registered = context.module?.role ?? context.template?.role;
@@ -107,7 +106,6 @@ export function buildContext(options = {}) {
     handoffRequired: options.handoffRequired,
   });
   const facts = [];
-  let workstationRouting = null;
 
   if (context.projectPath) {
     addRepositoryFact(facts, context.projectPath, context.project?.entrypoints?.agents ?? 'AGENTS.md', 'project', '项目入口');
@@ -142,15 +140,6 @@ export function buildContext(options = {}) {
   }
   if (context.gitRoot && path.resolve(context.gitRoot) === path.resolve(SYSTEM_ROOT)) {
     addFact(facts, path.join(SYSTEM_ROOT, 'AGENTS.md'), 'system', '系统入口', 'preloaded');
-  }
-
-  const workstationRoot = context.projectPath ?? context.gitRoot;
-  if (workstationRoot) {
-    workstationRouting = routeWorkstation(workstationRoot, intent, options.workstation ?? null);
-    for (const file of workstationRouting?.files ?? []) {
-      const reason = file.endsWith(`${path.sep}index.json`) ? '项目工作站索引' : '任务命中的工作站资料';
-      addFact(facts, file, 'project', reason);
-    }
   }
 
   const manifests = readProjectManifests(context);
@@ -188,12 +177,11 @@ export function buildContext(options = {}) {
     manifests,
     configuration,
     quality,
-    workstationRouting,
     filesToRead,
     warnings,
     next: [
       '先读取项目入口、任务相关资料、目标代码和直接调用方',
-      '代码任务按 Context Ladder 逐层加载：入口与资料 → 目标实现 → 直接测试与调用方；仅当结构或业务不确定时才加载 Contract/Workstation，涉及规格影响才加载 Spec，明显命中才加载 Experience',
+      '代码任务按 Context Ladder 逐层加载：入口与资料 → 目标实现 → 直接测试与调用方；仅当结构或业务不确定时才加载 Contract，涉及规格影响才加载 Spec，明显命中才加载 Experience',
       classification.structureImpact === 'structural'
         ? '读取一个主要 Contract 和最多一个 Active Canonical'
         : '保持局部，不默认加载 Contract/Canonical',

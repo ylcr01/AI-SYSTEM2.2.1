@@ -239,7 +239,6 @@ function help() {
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
-       [--workstation <业务领域工作站 id>]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
@@ -302,7 +301,6 @@ try {
         description: args['review-description'] ?? '用户或项目明确要求 Review',
       } : null,
       integrationTarget: args['integration-target'],
-      workstation: args.workstation,
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({

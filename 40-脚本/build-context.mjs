@@ -79,7 +79,6 @@ function compactContext(result) {
       })),
     },
     configuration: result.configuration ?? [],
-    workstationRouting: result.workstationRouting ?? null,
     filesToRead: result.filesToRead ?? [],
     readPlan: readPlanFor(result),
     warnings: [...(result.warnings ?? [])],
@@ -89,10 +88,6 @@ function compactContext(result) {
   if ((context.moduleCandidates?.length ?? 0) > 1) {
     compact.warnings.push(`检测到 ${context.moduleCandidates.length} 个模块候选，必要时使用 --full 诊断路由。`);
   }
-  if (result.workstationRouting?.ambiguous) {
-    compact.warnings.push('多个业务工作站命中且得分相同，请使用 --workstation 显式选择。');
-  }
-
   return compact;
 }
 
@@ -107,7 +102,6 @@ try {
     skills: listArg(args.skill),
     tracked: args.ephemeral !== true,
     handoffRequired: args.handoff === true,
-    workstation: args.workstation,
   });
 
   console.log(JSON.stringify(args.full === true ? result : compactContext(result), null, 2));

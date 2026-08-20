@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 删除项目业务工作站的中央能力、自动上下文路由、CLI、模板和宿主 Skill；项目中已有的 `.ai/workstations/` 可继续作为普通文档保留。
+
 ## V2.2.2
 
 ### Friction Reduction

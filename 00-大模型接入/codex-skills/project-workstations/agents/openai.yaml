@@ -1,4 +1,0 @@
-interface:
-  display_name: "项目业务工作站"
-  short_description: "分析项目并建立可直接对话、可持续维护的业务领域成员工作站"
-  default_prompt: "使用 $project-workstations 分析当前项目并提出业务领域工作站方案。"

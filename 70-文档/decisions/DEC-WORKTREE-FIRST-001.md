@@ -3,7 +3,6 @@ id: DEC-WORKTREE-FIRST-001
 status: accepted
 affects:
   - ARCH-AGENT-INTEGRATION
-  - ARCH-PROJECT-WORKSTATIONS
 sourceTaskId: task-20260814092526757-caabc12d
 supersedes: []
 ---
@@ -17,7 +16,7 @@ supersedes: []
 ## 决定
 
 - 同一项目只有一个写任务时可使用 Local/主工作区；出现并行写时，每个任务必须在准备前进入独立 Worktree。
-- Codex 桌面端优先使用任务专属 managed Worktree；其他宿主使用 detached worktree。长期业务工作站不永久绑定 Worktree。
+- Codex 桌面端优先使用任务专属 managed Worktree；其他宿主使用 detached worktree。Worktree 始终按任务临时分配。
 - Local/目标分支工作区只保留一个写 Task 或执行串行集成；不允许多个并行写任务共享 Local 或永久 Worktree。
 - linked/detached worktree 继续显式声明 `integrationTarget`，形成提交后进入 `ready_to_integrate`，由单一集成者进入目标分支。
 - `needs_rework` 继续视为活动写状态；暂不继续时通过 `保存` 显式释放工作树，`恢复` 时重新检查写冲突。

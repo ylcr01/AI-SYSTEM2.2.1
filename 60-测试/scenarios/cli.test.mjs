@@ -24,6 +24,7 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--task-check-file/u);
   assert.match(full.stdout, /--goal-card-file/u);
   assert.match(full.stdout, /--reason-category/u);
+  assert.doesNotMatch(full.stdout, /--workstation/u);
   assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
   assert.match(full.stdout, /重验集成/u);
 });
@@ -41,6 +42,12 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
     name: 'sample-app',
     scripts: { test: 'node --test', build: 'vite build' },
     dependencies: { vue: '3' },
+  }));
+  const legacyWorkstations = path.join(repo, '.ai', 'workstations');
+  fs.mkdirSync(legacyWorkstations, { recursive: true });
+  fs.writeFileSync(path.join(legacyWorkstations, 'index.json'), JSON.stringify({
+    schemaVersion: 1,
+    workstations: [{ id: 'legacy-domain', keywords: ['Web'] }],
   }));
 
   const compactResult = runNode(BUILD_CONTEXT, [
@@ -64,6 +71,8 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(compact.manifests[0].name, 'sample-app');
   assert.deepEqual(compact.manifests[0].frameworks, ['vue']);
   assert.equal('facts' in compact, false);
+  assert.equal('workstationRouting' in compact, false);
+  assert.ok(!compact.filesToRead.some(file => file.includes(`${path.sep}.ai${path.sep}workstations${path.sep}`)));
   assert.equal('quality' in compact, true);
   assert.equal(compact.quality.baseline?.id, 'implementation-quality-baseline');
   assert.ok(compact.quality.contracts.every(item => !('path' in item) && !('files' in item)));
@@ -78,6 +87,8 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(full.view, undefined);
   assert.ok(Array.isArray(full.facts));
   assert.ok(Array.isArray(full.manifests));
+  assert.equal('workstationRouting' in full, false);
+  assert.ok(!full.filesToRead.some(file => file.includes(`${path.sep}.ai${path.sep}workstations${path.sep}`)));
   assert.equal(full.facts.find(fact => fact.path.endsWith('package.json')).readMode, 'machine');
   assert.ok(full.quality);
   assert.ok(full.quality.methods.some(method => method.name === 'develop-web'));

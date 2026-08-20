@@ -7,7 +7,6 @@
     "modelEntry": "40-脚本/configure-model-entry.mjs",
     "task": "40-脚本/task.mjs",
     "context": "40-脚本/build-context.mjs",
-    "workstations": "40-脚本/workstations.mjs",
     "specMap": "40-脚本/spec-map.mjs",
     "specConsistency": "40-脚本/spec-consistency.mjs",
     "checks": "40-脚本/run-checks.mjs",
