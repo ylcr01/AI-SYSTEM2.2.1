@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { gitRepo, tempDir, runNode, taskCheck } from '../helpers.mjs';
+import { gitRepo, tempDir, runNode as runNodeRaw, taskCheck } from '../helpers.mjs';
 import { updateTask } from '../../40-脚本/lib/state-manager.mjs';
 import { createEvidence } from '../../40-脚本/lib/evidence.mjs';
 
@@ -13,6 +13,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
 const TASK = path.join(ROOT, '40-脚本/task.mjs');
 const RUN_CHECKS = path.join(ROOT, '40-脚本/run-checks.mjs');
+
+function runNode(script, args = [], options = {}) {
+  const effectiveArgs = script === TASK && args[0] === '准备' && !args.includes('--allow-primary-write')
+    ? [...args, '--allow-primary-write', '--primary-write-reason', '测试 fixture 显式许可']
+    : args;
+  return runNodeRaw(script, effectiveArgs, options);
+}
 
 test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () => {
   const result = runNode(TASK, ['--help'], { cwd: ROOT });
@@ -28,6 +35,9 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--quality-profile/u);
   assert.match(full.stdout, /follow-up.*--delivery-id/u);
   assert.match(full.stdout, /不保存消息正文/u);
+  assert.match(full.stdout, /--allow-primary-write/u);
+  assert.match(full.stdout, /--allow-risk-integration/u);
+  assert.match(full.stdout, /默认在隔离集成 Worktree/u);
   assert.doesNotMatch(full.stdout, /--workstation/u);
   assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
   assert.match(full.stdout, /重验集成/u);
@@ -59,6 +69,49 @@ test('CLI 状态迁移默认 dry-run，显式 apply 才写入', t => {
   assert.equal(report.applied.length, 1);
   assert.ok(report.backupRoot);
   assert.equal(fs.existsSync(path.join(stateRoot, '待验收', `${taskId}.json`)), true);
+});
+
+test('Task CLI 默认拒绝在主 checkout 准备普通写任务', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const blocked = runNodeRaw(TASK, [
+    '准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确',
+    '--scope', '.', '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.notEqual(blocked.status, 0);
+  assert.match(blocked.stderr, /主 checkout 只用于串行集成/u);
+});
+
+test('Task CLI 默认自动集成低风险 Worktree 结果并清理任务资源', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t), parent = tempDir(t), worktree = path.join(parent, 'task-worktree');
+  const target = spawnSync('git', ['-C', repo, 'branch', '--show-current'], { encoding:'utf8' }).stdout.trim();
+  const branch = 'codex/cli-auto-integration';
+  const added = spawnSync('git', ['-C', repo, 'worktree', 'add', '-b', branch, worktree, target], { encoding:'utf8' });
+  assert.equal(added.status, 0, added.stderr);
+  const prepared = runNodeRaw(TASK, [
+    '准备', '--cwd', worktree, '--intent', '修改普通功能', '--acceptance', '功能正确',
+    '--scope', '.', '--integration-target', target, '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const taskId = JSON.parse(prepared.stdout).taskId;
+  fs.writeFileSync(path.join(worktree, 'target.txt'), 'integrated\n');
+  for (const gitArgs of [
+    ['add', 'target.txt'],
+    ['-c', 'user.email=test@example.com', '-c', 'user.name=AI R&D OS Test', 'commit', '-m', 'task result'],
+  ]) {
+    const result = spawnSync('git', ['-C', worktree, ...gitArgs], { encoding:'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const delivered = runNodeRaw(TASK, ['交付', '--task-id', taskId, '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  assert.equal(JSON.parse(delivered.stdout).integration.status, 'ready');
+  const integrated = runNodeRaw(TASK, ['集成', '--task-id', taskId, '--state-root', stateRoot], { cwd:ROOT, timeout:30000 });
+  assert.equal(integrated.status, 0, integrated.stderr);
+  const receipt = JSON.parse(integrated.stdout);
+  assert.equal(receipt.integration.status, 'integrated');
+  assert.equal(receipt.integration.cleanup.source.worktree, 'removed');
+  assert.equal(fs.existsSync(worktree), false);
+  assert.equal(fs.readFileSync(path.join(repo, 'target.txt'), 'utf8').trim(), 'integrated');
+  assert.notEqual(spawnSync('git', ['-C', repo, 'show-ref', '--verify', `refs/heads/${branch}`], { encoding:'utf8' }).status, 0);
 });
 
 test('独立检查入口拒绝旧的无限继续参数', () => {

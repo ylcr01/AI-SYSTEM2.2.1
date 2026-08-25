@@ -5,9 +5,9 @@
 ## 路由
 
 - **普通对话**：不依赖仓库事实时直接回答，不建 Task、不运行工程脚本。
-- **只读工程分析与仓库上下文**：只读分析或修改仓库前，先运行 `node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --intent "<目标>"`，只读取轻量结果与目标代码、直接测试；仅身份、路由或依赖诊断追加 `--full`。
-- **轻量直达**：`continuity=ephemeral` 的 Quick/普通 Standard 局部任务，输出简短目标卡后实施最小 Diff，不创建 Task；只跑定点检查并报告失败、跳过和未验证项，不声称 Evidence、`waiting_acceptance` 或用户验收。
-- **仓库写任务（正式 Task）**：`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入、跨仓或 Worktree 任务，编辑前运行 `task.mjs 准备`。主工作区仅一个写 Task；并行任务独占 Worktree并声明 `--integration-target`。Worktree 先提交再集成；暂停用 `保存`，继续用 `恢复`。仅有效 `waiting_acceptance` 可称“本轮已交付”，不得伪造 `accepted`。
+- **只读工程分析与仓库上下文**：先运行 `node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --intent "<目标>"`，只读取轻量结果与目标代码、直接测试；仅身份、路由或依赖诊断追加 `--full`，不得修改仓库。
+- **轻量直达**：`continuity=ephemeral` 的 Quick/普通 Standard 局部修改也必须先由宿主进入任务专属 Worktree，再输出简短目标卡、实施最小 Diff；它不创建正式 Task，只跑定点检查并报告失败、跳过和未验证项，不声称 Evidence、`waiting_acceptance` 或用户验收。
+- **仓库写任务（正式 Task）**：`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入、跨仓等任务一律使用任务专属 Worktree（Codex managed Worktree 或 `git worktree add --detach`），编辑前运行 `task.mjs 准备` 并声明 `--integration-target`。主 Local checkout 只用于只读分析和单一集成者串行集成。Worktree 完成后及时提交、`交付`；进入 `ready_to_integrate` 后默认立即执行 `集成 --task-id "<taskId>"`，系统在隔离候选上应用提交和重放检查，成功才快进目标分支并安全清理；目标脏、冲突、验证失败或高风险时不修改目标分支。暂停用 `保存`，继续用 `恢复`。只有有效 `waiting_acceptance` 可称“本轮已交付”，不得伪造 `accepted`。
 - **对话后续**：仅有精确 `continuation.taskId + deliveryId` 时，下一消息前调用一次 `后续`：追问 `related-question`、缺陷 `defect-return`、新增目标 `scope-extension`、非正式肯定 `positive-acknowledgement`、独立话题 `topic-advance`；不确定或含追问用 `related-question`。追问只记首次；无 continuation 不猜 Task，不存正文、不跑检查、不自动建 Task。
 - **写任务对齐**：准备前先读项目事实、目标代码与相关测试并输出简短目标卡；Quick/局部明确任务可 direct，Controlled/Structural 或不同业务结果的实质方案必须先确认或获得明确委托；根因未知先只读探索。对齐、重对齐与交付映射规则见 `20-能力模块/clarify-requirements/CONTRACT.md`。
 - **外部写入或高风险动作**：Push、发布、部署、迁移、远程删除、生产数据修改等必须另获用户明确授权；安全、认证、隐私、迁移和不可逆动作还要覆盖拒绝路径、失败停止条件和可执行回滚。

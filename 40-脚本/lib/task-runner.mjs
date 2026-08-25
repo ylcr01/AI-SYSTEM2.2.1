@@ -41,7 +41,7 @@ import {
 } from './behavior-preservation.mjs';
 import { loadChangeRationale, validateChangeRationale, changeRationaleSummary } from './change-rationale.mjs';
 import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, reviewHasBlockingFindings } from './review.mjs';
-import { createTask, readTask, findTask, updateTask, listTasks } from './state-manager.mjs';
+import { createTask, readTask, findTask, updateTask, listTasks, withIntegrationLock } from './state-manager.mjs';
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 import { addIntentSpecificationHints, buildSpecState, revalidateSpecState, stableSpecReviewState } from './spec-service.mjs';
@@ -52,6 +52,13 @@ import {
   normalizeReturnReasonCategory,
   observeConversationFollowUp,
 } from './outcome-metrics.mjs';
+import {
+  inspectTargetCheckout,
+  prepareIntegrationCandidate,
+  promoteIntegrationCandidate,
+  removeIntegrationWorktree,
+  cleanupTaskSource,
+} from './integration-workflow.mjs';
 
 function defaultAcceptanceCovers(classification) {
   const kinds = new Set(classification.artifactKinds ?? []);
@@ -316,6 +323,14 @@ export function prepareTask(options = {}) {
   addIntentSpecificationHints(built, gitRoot, intent);
   const scope = normalizeScope(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
+  if (options.enforceWorktree === true && !baseline.linkedWorktree) {
+    if (options.allowPrimaryWrite !== true) {
+      throw new Error('主 checkout 只用于串行集成，普通写任务必须在独占 Worktree 中准备；Codex 桌面端请在新任务选择“Worktree”，其他宿主请使用 git worktree add --detach。仅紧急本地写入可使用 --allow-primary-write --primary-write-reason <用户授权原因>。');
+    }
+    if (!String(options.primaryWriteReason ?? '').trim()) {
+      throw new Error('--allow-primary-write 必须同时提供 --primary-write-reason，记录用户明确授权或紧急原因');
+    }
+  }
   if (providedAlignment?.preservation?.referenceRoots?.length) {
     const inventory = buildReferenceInventory({
       gitRoot,
@@ -343,6 +358,9 @@ export function prepareTask(options = {}) {
   const integration = integrationRequired
     ? { required:true, target:assertIntegrationTargetExists(gitRoot, normalizeIntegrationTarget(options.integrationTarget)) }
     : null;
+  if (integration && baseline.branch === integration.target) {
+    throw new Error(`任务 Worktree 正在直接持有集成目标 ${integration.target}；请使用 detached HEAD 或独立任务分支，避免并行任务直接推进主分支`);
+  }
   const budget = createBudget({ mode: initial.controlMode, limitMs: options.budgetMs });
   const goal = providedAlignment
     ? buildAlignedGoal(providedAlignment, acceptance, scope)
@@ -941,6 +959,276 @@ export function realignTask(options = {}) {
   });
 }
 
+function automaticIntegrationRiskReasons(task) {
+  const reasons = [];
+  if (task.classification?.controlMode === 'controlled') reasons.push('controlled-change');
+  if (task.classification?.structureImpact === 'structural') reasons.push('structural-change');
+  if ((task.residualRisks ?? []).length) reasons.push('residual-risks');
+  if (task.specImpact?.level === 'decision-required') reasons.push('spec-decision-required');
+  if ((task.authorization?.externalActions ?? []).length) reasons.push('external-actions');
+  return reasons;
+}
+
+function pauseIntegration(options, task, details = {}) {
+  const reason = details.reason ?? 'integration-paused';
+  return updateTask({
+    stateRoot:options.stateRoot,
+    taskId:task.taskId,
+    expectedRevision:task.stateRevision,
+    transitionTo:'ready_to_integrate',
+    event:'integration-pause',
+    mutate(next) {
+      next.integration = {
+        ...next.integration,
+        status:details.status ?? 'paused',
+        pauseReasons:details.pauseReasons ?? [reason],
+        targetGitRoot:details.targetGitRoot ?? next.integration.targetGitRoot,
+        candidateBase:Object.hasOwn(details, 'candidateBase') ? details.candidateBase : next.integration.candidateBase ?? null,
+        candidateCommit:Object.hasOwn(details, 'candidateCommit') ? details.candidateCommit : next.integration.candidateCommit ?? null,
+        integrationWorktree:Object.hasOwn(details, 'integrationWorktree') ? details.integrationWorktree : next.integration.integrationWorktree ?? null,
+        conflictFiles:details.conflictFiles ?? [],
+        diagnostic:details.diagnostic ?? null,
+        riskAuthorization:details.riskAuthorization ?? next.integration.riskAuthorization ?? null,
+      };
+      next.verification = {
+        ...next.verification,
+        stopReason:reason,
+        firstFailure:details.diagnostic ? {
+          name:'integration', command:'git', args:['cherry-pick'], exitCode:1,
+          error:null, output:String(details.diagnostic).slice(-5000), truncated:String(details.diagnostic).length > 5000,
+        } : null,
+      };
+      next.deliveryDecision = { decision:'verifying', reasons:details.pauseReasons ?? [reason] };
+      return next;
+    },
+  });
+}
+
+function integrationCheckFailure(options, task, details) {
+  return updateTask({
+    stateRoot:options.stateRoot,
+    taskId:task.taskId,
+    expectedRevision:task.stateRevision,
+    transitionTo:'needs_rework',
+    event:'integration',
+    mutate(next) {
+      next.integration = {
+        ...next.integration,
+        status:'revalidation_failed',
+        targetGitRoot:details.targetGitRoot,
+        targetCommit:details.targetCommit,
+        candidateBase:null,
+        candidateCommit:null,
+        integrationWorktree:details.cleanup?.removed === false ? details.integrationWorktree : null,
+        pauseReasons:[details.stopReason],
+        cleanup:details.cleanup ? { candidateWorktree:details.cleanup } : next.integration.cleanup ?? null,
+        riskAuthorization:details.riskAuthorization ?? next.integration.riskAuthorization ?? null,
+      };
+      next.verification = {
+        ...next.verification,
+        budget:details.execution?.budget ?? next.verification.budget,
+        stopReason:details.stopReason,
+        firstFailure:firstFailureDiagnostic(details.execution),
+      };
+      next.deliveryDecision = { decision:'needs_rework', reasons:[details.stopReason] };
+      return next;
+    },
+  });
+}
+
+function recordIntegrationSuccess(options, task, details) {
+  const integrationEvidence = compactIntegrationEvidence(task, details.targetCommit, details.plan, details.execution);
+  deletePendingIntegrationRef(details.targetGitRoot, task.integration.pendingRef, task.integration.resultCommit);
+  return updateTask({
+    stateRoot:options.stateRoot,
+    taskId:task.taskId,
+    expectedRevision:task.stateRevision,
+    transitionTo:'waiting_acceptance',
+    event:'integration',
+    mutate(next) {
+      next.integration = {
+        ...next.integration,
+        status:'integrated',
+        targetGitRoot:details.targetGitRoot,
+        targetCommit:details.targetCommit,
+        method:details.method,
+        integratedAt:new Date().toISOString(),
+        integrationEvidence,
+        revalidatedAt:integrationEvidence.createdAt,
+        candidateBase:null,
+        candidateCommit:null,
+        integrationWorktree:null,
+        conflictFiles:[],
+        diagnostic:null,
+        pauseReasons:[],
+        cleanup:details.cleanup ?? null,
+        riskAuthorization:details.riskAuthorization ?? next.integration.riskAuthorization ?? null,
+      };
+      next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
+      next.verification = { ...next.verification, budget:details.execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
+      next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
+      if (next.classification.continuity === 'handoff-required') {
+        next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
+      }
+      return next;
+    },
+  });
+}
+
+export function integrateTask(options = {}) {
+  const initial = readTask({ stateRoot:options.stateRoot, taskId:options.taskId }).task;
+  if (initial.status !== 'ready_to_integrate') throw new Error(`任务当前不能集成: ${initial.status}`);
+  if (!initial.integration?.resultCommit) throw new Error('任务缺少待集成结果提交');
+  const target = normalizeIntegrationTarget(options.target ?? initial.integration.target);
+  if (target !== initial.integration.target) throw new Error(`集成目标不匹配: 任务要求 ${initial.integration.target}`);
+
+  return withIntegrationLock({
+    stateRoot:options.stateRoot,
+    gitCommonDir:initial.integration.gitCommonDir,
+    target,
+  }, () => {
+    const current = readTask({ stateRoot:options.stateRoot, taskId:options.taskId });
+    const task = current.task;
+    if (task.status !== 'ready_to_integrate') throw new Error(`任务已被其他集成器推进: ${task.status}`);
+    const sourceGitRoot = task.integration.sourceGitRoot;
+    const alreadyIntegrated = verifyCommitIntegrated({
+      gitRoot:sourceGitRoot,
+      expectedCommonDir:task.integration.gitCommonDir,
+      target,
+      resultCommit:task.integration.resultCommit,
+      baseCommit:task.integration.baseCommit,
+    });
+    if (alreadyIntegrated.ok) {
+      const targetState = inspectTargetCheckout(sourceGitRoot, target);
+      if (!targetState.ok) return pauseIntegration(options, task, {
+        reason:targetState.reason,
+        targetGitRoot:targetState.targetCheckout,
+      });
+      return confirmIntegration({ ...options, cwd:targetState.targetCheckout, target, autoCleanup:true });
+    }
+
+    const riskReasons = automaticIntegrationRiskReasons(task);
+    if (riskReasons.length && options.allowRisk !== true) {
+      return pauseIntegration(options, task, {
+        reason:'integration-risk-user-decision',
+        status:'paused_risk',
+        pauseReasons:riskReasons,
+      });
+    }
+    if (options.allowRisk === true && !String(options.riskReason ?? '').trim()) {
+      throw new Error('--allow-risk-integration 必须提供 --risk-reason 记录用户授权或风险判断');
+    }
+    const riskAuthorization = options.allowRisk === true
+      ? { reason:String(options.riskReason).trim(), authorizedAt:new Date().toISOString() }
+      : null;
+
+    const candidate = prepareIntegrationCandidate({
+      stateRoot:readTask({ stateRoot:options.stateRoot, taskId:task.taskId }).stateRoot,
+      taskId:task.taskId,
+      sourceGitRoot,
+      gitCommonDir:task.integration.gitCommonDir,
+      target,
+      baseCommit:task.integration.baseCommit,
+      resultCommit:task.integration.resultCommit,
+      existingWorktree:task.integration.integrationWorktree,
+      candidateBase:task.integration.candidateBase,
+    });
+    if (candidate.status !== 'ready') {
+      return pauseIntegration(options, task, {
+        reason:candidate.reason,
+        status:candidate.status === 'conflict' ? 'conflict' : candidate.status === 'needs-commit' ? 'conflict_resolution' : 'paused',
+        targetGitRoot:candidate.targetCheckout,
+        candidateBase:candidate.candidateBase,
+        integrationWorktree:candidate.candidatePath,
+        conflictFiles:candidate.conflicts,
+        diagnostic:candidate.diagnostic ?? candidate.dirty,
+        riskAuthorization,
+      });
+    }
+
+    const before = captureBaseline(candidate.candidatePath);
+    if (before.head !== candidate.candidateCommit || before.files.length > 0) {
+      return pauseIntegration(options, task, {
+        reason:'integration-candidate-dirty',
+        status:'paused',
+        targetGitRoot:candidate.targetCheckout,
+        candidateBase:candidate.candidateBase,
+        candidateCommit:candidate.candidateCommit,
+        integrationWorktree:candidate.candidatePath,
+      });
+    }
+    const plan = integrationCheckPlan(task, candidate.candidatePath);
+    if (plan.missingCovers.length || plan.missingAcceptance.length) {
+      const cleanup = removeIntegrationWorktree({ targetCheckout:candidate.targetCheckout, candidatePath:candidate.candidatePath });
+      return pauseIntegration(options, task, {
+        reason:'integration-check-coverage-missing',
+        pauseReasons:[...plan.missingCovers, ...plan.missingAcceptance],
+        targetGitRoot:candidate.targetCheckout,
+        integrationWorktree:cleanup.removed ? null : candidate.candidatePath,
+        diagnostic:cleanup.removed ? null : cleanup.diagnostic ?? cleanup.reason,
+        riskAuthorization,
+      });
+    }
+    const execution = executeCheckPlan(plan, { cwd:candidate.candidatePath, budget:task.verification.budget });
+    const after = captureBaseline(candidate.candidatePath);
+    const mutated = after.head !== before.head || after.fingerprint !== before.fingerprint;
+    if (!execution.ok || mutated) {
+      const stopReason = mutated ? 'integration-check-mutated-candidate' : `integration-check-${execution.stopReason ?? execution.status ?? 'failed'}`;
+      const cleanup = removeIntegrationWorktree({ targetCheckout:candidate.targetCheckout, candidatePath:candidate.candidatePath });
+      return integrationCheckFailure(options, task, {
+        targetGitRoot:candidate.targetCheckout,
+        targetCommit:candidate.targetCommit,
+        stopReason,
+        execution,
+        cleanup,
+        integrationWorktree:candidate.candidatePath,
+        riskAuthorization,
+      });
+    }
+
+    const promoted = promoteIntegrationCandidate({
+      sourceGitRoot,
+      target,
+      candidatePath:candidate.candidatePath,
+      candidateBase:candidate.candidateBase,
+      candidateCommit:candidate.candidateCommit,
+    });
+    if (!promoted.ok) {
+      const cleanup = removeIntegrationWorktree({ targetCheckout:candidate.targetCheckout, candidatePath:candidate.candidatePath });
+      return pauseIntegration(options, task, {
+        reason:promoted.reason,
+        status:'paused',
+        targetGitRoot:promoted.targetCheckout ?? candidate.targetCheckout,
+        integrationWorktree:cleanup.removed ? null : candidate.candidatePath,
+        diagnostic:promoted.diagnostic ?? (cleanup.removed ? null : cleanup.diagnostic ?? cleanup.reason),
+        riskAuthorization,
+      });
+    }
+
+    const candidateCleanup = removeIntegrationWorktree({
+      targetCheckout:promoted.targetCheckout,
+      candidatePath:candidate.candidatePath,
+    });
+    const sourceCleanup = cleanupTaskSource({
+      targetCheckout:promoted.targetCheckout,
+      sourceGitRoot,
+      resultCommit:task.integration.resultCommit,
+      target,
+      keepWorktree:options.keepWorktree === true,
+      protectedPaths:[current.stateRoot],
+    });
+    return recordIntegrationSuccess(options, task, {
+      targetGitRoot:promoted.targetCheckout,
+      targetCommit:promoted.targetCommit,
+      method:promoted.method,
+      plan,
+      execution,
+      cleanup:{ candidateWorktree:candidateCleanup, source:sourceCleanup },
+      riskAuthorization,
+    });
+  });
+}
+
 export function revalidateIntegration(options = {}) {
   const current = readTask({ stateRoot:options.stateRoot, taskId:options.taskId });
   const task = current.task;
@@ -1068,33 +1356,26 @@ export function confirmIntegration(options = {}) {
       }
     });
   }
-  const integrationEvidence = compactIntegrationEvidence(task, result.targetCommit, plan, execution);
-  deletePendingIntegrationRef(targetGitRoot, task.integration.pendingRef, task.integration.resultCommit);
-  return updateTask({
-    stateRoot: options.stateRoot,
-    taskId: task.taskId,
-    expectedRevision: task.stateRevision,
-    transitionTo: 'waiting_acceptance',
-    event: 'integration',
-    mutate(next) {
-      next.integration = {
-        ...next.integration,
-        status:'integrated',
-        targetGitRoot,
-        targetCommit:result.targetCommit,
-        method:result.method,
-        integratedAt:new Date().toISOString(),
-        integrationEvidence,
-        revalidatedAt:integrationEvidence.createdAt,
-      };
-      next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
-      next.verification = { ...next.verification, budget:execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
-      next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
-      if (next.classification.continuity === 'handoff-required') {
-        next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
+  const cleanup = options.autoCleanup === true
+    ? {
+        candidateWorktree:{ removed:false, reason:'not-created' },
+        source:cleanupTaskSource({
+          targetCheckout:targetGitRoot,
+          sourceGitRoot:task.integration.sourceGitRoot,
+          resultCommit:task.integration.resultCommit,
+          target,
+          keepWorktree:options.keepWorktree === true,
+          protectedPaths:[current.stateRoot],
+        }),
       }
-      return next;
-    }
+    : null;
+  return recordIntegrationSuccess(options, task, {
+    targetGitRoot,
+    targetCommit:result.targetCommit,
+    method:result.method,
+    plan,
+    execution,
+    cleanup,
   });
 }
 

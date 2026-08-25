@@ -28,9 +28,9 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → build-context → 读取最小相关事实
-局部低风险修改  → build-context → 最小 Diff + 定点检查 → 报告真实结果
-正式写 Task     → 正在处理 → 本轮已交付 → 显式验收 / 对话自然收口 / 返工
-并行 Worktree   → 正在处理（含集成与目标 HEAD 重验）→ 本轮已交付 → 显式验收 / 对话自然收口 / 返工
+局部低风险修改  → 专属 Worktree → build-context → 最小 Diff + 定点检查 → 报告真实结果
+正式写 Task     → 专属 Worktree → 独立提交 → 隔离应用与重验 → 串行快进目标分支 → 本轮已交付
+Local/主工作区  → 只读分析或单一集成者串行集成
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
@@ -81,17 +81,18 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>" `
 
 ### 执行修改
 
-先读取轻量上下文。结果为 `continuity=ephemeral` 时，宿主直接实施最小 Diff，并只运行目标测试或受影响检查，不创建 Task。`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入、跨仓或 Worktree 才进入正式 Task：
+宿主先为仓库写任务进入专属 Worktree，再读取轻量上下文。结果为 `continuity=ephemeral` 时直接实施最小 Diff，并只运行目标测试或受影响检查，不创建正式 Task。`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务才进入正式 Task：
 
 ```powershell
-node ./40-脚本/task.mjs 准备 --cwd <项目路径> --intent "<目标>" --acceptance "<验收>" --scope "."
+node ./40-脚本/task.mjs 准备 --cwd <Worktree 路径> --intent "<目标>" `
+  --acceptance "<验收>" --scope "." --integration-target main
 
 node ./40-脚本/task.mjs 交付 --task-id <编号>
 
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
-正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态；正式 Task 中显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
+正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态。主 Local checkout 只用于只读分析和串行集成，正式 Task 在主 checkout 准备会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
 
 ### 并行 Worktree
 
@@ -104,8 +105,18 @@ node ./40-脚本/task.mjs 准备 --cwd <新路径> --intent "<目标>" `
 # Worktree 中完成修改并提交后执行交付
 node ./40-脚本/task.mjs 交付 --task-id <编号> --spec-impact none
 
-# 由目标工作区的单一集成者完成 merge/cherry-pick 后
-node ./40-脚本/task.mjs 集成 --task-id <编号> --cwd <目标工作区>
+# 单一集成者默认直接执行，无需等待用户再次确认
+node ./40-脚本/task.mjs 集成 --task-id <编号>
+```
+
+`集成` 会按 Git Common Dir 和目标分支获取串行锁，在专用临时 Worktree 中把任务提交应用到最新目标 HEAD，重放交付检查，只有成功时才快进目标分支。之后清理待集成引用、任务分支以及已确认干净的任务 Worktree。若冲突，系统保留隔离集成 Worktree；解决冲突并提交后重新运行同一命令。
+
+以下情况 fail closed 且不修改目标分支：目标 checkout 有未提交改动、冲突未解决或未提交、集成检查失败、目标 HEAD 竞态变化，以及 Controlled/Structural、规格待决策或有残余风险的任务。后一类只能在用户明确授权后使用 `--allow-risk-integration --risk-reason "<原因>"`。
+
+为保留兼容路径，已经手工 merge/cherry-pick 的结果仍可以使用：
+
+```powershell
+node ./40-脚本/task.mjs 集成 --task-id <编号> --confirm-only --cwd <目标工作区>
 ```
 
 目标 HEAD 后续变化时运行：

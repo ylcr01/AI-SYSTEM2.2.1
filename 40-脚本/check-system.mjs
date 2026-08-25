@@ -35,11 +35,11 @@ for (const relative of [
   '30-知识库/索引.json',
   '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs',
   '40-脚本/build-release-inventory.mjs', '40-脚本/verify-system.mjs',
-  '40-脚本/lib/state-manager.mjs', '40-脚本/lib/outcome-metrics.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs', '40-脚本/lib/alignment.mjs', '40-脚本/lib/change-rationale.mjs',
+  '40-脚本/lib/state-manager.mjs', '40-脚本/lib/outcome-metrics.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs', '40-脚本/lib/integration-workflow.mjs', '40-脚本/lib/alignment.mjs', '40-脚本/lib/change-rationale.mjs',
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
   '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs',
   '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-REMOVE-PROJECT-WORKSTATIONS-002.md',
-  '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '70-文档/specifications/quality-profile-and-state.md', '80-运行记录/README.md'
+  '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '70-文档/decisions/DEC-AUTOMATIC-SERIAL-INTEGRATION-001.md', '70-文档/specifications/quality-profile-and-state.md', '80-运行记录/README.md'
 ]) requireFile(relative);
 
 try {
@@ -82,13 +82,13 @@ if (specMapExample?.schemaVersion !== 1 || !Array.isArray(specMapExample.mapping
 const specPolicyExample = readJson('.ai/templates/spec-policy.example.json');
 if (specPolicyExample?.schemaVersion !== 1 || !['advisory','balanced','strict'].includes(specPolicyExample.mode)) errors.push('spec-policy.example.json: Schema 无效');
 const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
-if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 10/u.test(state) || !/conversationOutcome/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V10 状态分层、对话结果、结果指标、集成转换或并发锁');
+if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/withIntegrationLock/u.test(state) || !/CURRENT_SCHEMA = 10/u.test(state) || !/conversationOutcome/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V10 状态分层、对话结果、结果指标、集成转换或并发锁');
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
 for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','continuation.taskId + deliveryId','closed','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
 const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
-for (const marker of ['继续验证','重验集成','迁移状态','后续','delivery-id','observation-id']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续或维护命令 ${marker}`);
+for (const marker of ['继续验证','重验集成','迁移状态','后续','delivery-id','observation-id','--allow-primary-write','--allow-risk-integration','--confirm-only']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续、集成或维护命令 ${marker}`);
 
 const result = {
   ok: errors.length === 0,

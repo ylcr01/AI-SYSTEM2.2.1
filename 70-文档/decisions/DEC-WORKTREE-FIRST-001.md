@@ -5,6 +5,7 @@ affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260814092526757-caabc12d
 supersedes: []
+supersededBy: DEC-AUTOMATIC-SERIAL-INTEGRATION-001
 ---
 
 # 并行写任务在准备前使用独立 Worktree
