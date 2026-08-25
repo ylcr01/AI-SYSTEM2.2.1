@@ -10,6 +10,7 @@
 
 ### 内核减重与可信性修复
 
+- 仓库写任务改为一律使用任务专属 Worktree；Local/主工作区只读或串行集成。新增 `WORKTREE_REQUIRED` / `WORKTREE_CONFLICT` 硬门禁、Codex managed Worktree → detached Worktree 确定性 fallback，以及面向模型的生成式入口指令，禁止把工作树占用转述为用户阻塞或静默降级到 Local。
 - 删除项目业务工作站的中央能力、自动上下文路由、CLI、模板和宿主 Skill；项目中已有的 `.ai/workstations/` 可继续作为普通文档保留。
 - 删除 10 个未注册、不可由宿主发现的内部 `SKILL.md`，将实际能力明确为 Quality Profile → Contract/Canonical 路由；新增 `--quality-profile`，旧 `--skill` 仅作兼容别名。
 - 新增状态迁移的 dry-run / 显式 `--apply` 流程：仅升级受支持的非终态旧 Schema 和目录错位，写前备份，冲突 fail closed，不推断用户决定。

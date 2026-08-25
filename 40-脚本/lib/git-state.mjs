@@ -127,6 +127,19 @@ export function integrationRequiredForBaseline(baseline, explicitTarget = null) 
   return Boolean(explicitTarget || baseline?.linkedWorktree || !baseline?.branch);
 }
 
+export function assertTaskWorktreeBaseline(baseline) {
+  if (baseline?.linkedWorktree) return baseline;
+  const error = new Error('WORKTREE_REQUIRED: 仓库写任务禁止在 Local/主工作区准备。Codex 桌面端先为该任务创建或移入专属 managed Worktree；宿主不可用或识别失败时，立即使用 `git worktree add --detach <新路径> <起点>` 创建任务专属 Worktree。随后从该 Worktree 重新运行准备并显式传入 `--integration-target <目标分支>`。这是内部路由信号，不是用户阻塞；不得等待主工作树释放、向用户报告“被占用”，或静默降级到 Local。Local 只用于只读分析和单一集成者串行集成。');
+  error.code = 'WORKTREE_REQUIRED';
+  error.routing = {
+    managedPreferred:true,
+    detachedFallback:true,
+    localFallbackAllowed:false,
+    integrationTargetRequired:true,
+  };
+  throw error;
+}
+
 export function assertIntegrationTargetExists(gitRoot, target) {
   const normalized = normalizeIntegrationTarget(target);
   const result = gitResult(gitRoot, ['rev-parse', '--verify', `refs/heads/${normalized}^{commit}`]);
