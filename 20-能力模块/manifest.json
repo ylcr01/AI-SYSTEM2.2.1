@@ -1,24 +1,21 @@
 {
-  "schemaVersion": 2,
-  "abilities": [
+  "schemaVersion": 3,
+  "profiles": [
     {
       "name": "clarify-requirements",
       "status": "active",
-      "skill": "20-能力模块/clarify-requirements/SKILL.md",
       "contract": "20-能力模块/clarify-requirements/CONTRACT.md",
       "artifactKinds": ["requirements"]
     },
     {
       "name": "curate-knowledge",
       "status": "active",
-      "skill": "20-能力模块/curate-knowledge/SKILL.md",
       "contract": "20-能力模块/curate-knowledge/CONTRACT.md",
       "artifactKinds": ["knowledge"]
     },
     {
       "name": "design-product",
       "status": "active",
-      "skill": "20-能力模块/design-product/SKILL.md",
       "contract": "20-能力模块/design-product/CONTRACT.md",
       "artifactKinds": ["product", "requirements"],
       "exemplars": [
@@ -35,7 +32,6 @@
     {
       "name": "design-ui",
       "status": "active",
-      "skill": "20-能力模块/design-ui/SKILL.md",
       "contract": "20-能力模块/design-ui/CONTRACT.md",
       "artifactKinds": ["ui", "product"],
       "exemplars": [
@@ -52,7 +48,6 @@
     {
       "name": "develop-web",
       "status": "active",
-      "skill": "20-能力模块/develop-web/SKILL.md",
       "contract": "20-能力模块/develop-web/CONTRACT.md",
       "artifactKinds": ["code", "ui", "api"],
       "exemplars": [
@@ -69,7 +64,6 @@
     {
       "name": "develop-app",
       "status": "active",
-      "skill": "20-能力模块/develop-app/SKILL.md",
       "contract": "20-能力模块/develop-app/CONTRACT.md",
       "artifactKinds": ["code", "ui"],
       "exemplars": [
@@ -86,7 +80,6 @@
     {
       "name": "develop-server",
       "status": "active",
-      "skill": "20-能力模块/develop-server/SKILL.md",
       "contract": "20-能力模块/develop-server/CONTRACT.md",
       "artifactKinds": ["code", "api", "data"],
       "exemplars": [
@@ -103,7 +96,6 @@
     {
       "name": "integrate-systems",
       "status": "active",
-      "skill": "20-能力模块/integrate-systems/SKILL.md",
       "contract": "20-能力模块/integrate-systems/CONTRACT.md",
       "artifactKinds": ["integration", "api", "code"],
       "exemplars": [
@@ -120,7 +112,6 @@
     {
       "name": "operate-environments",
       "status": "active",
-      "skill": "20-能力模块/operate-environments/SKILL.md",
       "contract": "20-能力模块/operate-environments/CONTRACT.md",
       "artifactKinds": ["operations"],
       "exemplars": [
@@ -137,7 +128,6 @@
     {
       "name": "write-documentation",
       "status": "active",
-      "skill": "20-能力模块/write-documentation/SKILL.md",
       "contract": "20-能力模块/write-documentation/CONTRACT.md",
       "artifactKinds": ["documentation"],
       "exemplars": [

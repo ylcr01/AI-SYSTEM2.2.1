@@ -92,9 +92,9 @@ AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Contex
 ## 目标对齐
 
 - 区分四类事实：用户原话（`originalRequest`，原样保留）、项目事实、已确认决定（`confirmedDecisions`）、低风险假设（`assumptions`，可被事实推翻，不是硬约束）。
-- Goal 用一句话表达；Expected Outcome 必须可观察；Protected Behavior 是不得破坏的现有行为，准备时自动转为 Acceptance 并标记来源，没有 Evidence 的保护行为不能视为已保持。
-- `direct`：目标清楚、Scope 局部、Acceptance 可从需求与项目事实直接形成、无项目事实冲突、无需用户实质决定；Controlled/Structural 任务禁止 direct；reasonCodes 可选，仅作内部诊断，不强求凑齐固定依据。
-- `confirmed`：用户确认了 Goal、最终效果或关键方案，必须记录 `decisionNote`；`delegated`：用户明确委托，必须记录 `delegatedTopics` 与边界，不能绕过现有 Scope、外部写入与不可逆动作门禁。
+- Goal 用一句话表达；Expected Outcome 必须可观察；Protected Behavior 是不得破坏的现有行为，准备时自动转为 Acceptance 并标记来源，没有 Evidence 的保护行为不能视为已保持。准备前在进度中输出 3～5 行简短目标卡，只固定“做成什么、不破坏什么、怎样算完成”，不展开详细实现步骤。
+- `direct`：目标清楚、Scope 局部、Acceptance 可从需求与项目事实直接形成、无项目事实冲突、无需用户实质决定；Controlled/Structural 任务禁止 direct；reasonCodes 可选，仅作内部诊断，不强求凑齐固定依据。使用 direct 前反向检查是否存在另一种同样合理但会产生不同用户结果的解释，存在则转为 confirmed。
+- `confirmed`：用户确认了 Goal、最终效果或关键方案，必须记录 `decisionNote`；`delegated`：用户明确委托，必须记录 `delegatedTopics` 与边界，不能绕过现有 Scope、外部写入、数据迁移与不可逆动作门禁。
 - 执行中只有 Goal、Outcome、Acceptance、Scope、已确认决定或风险发生实质变化时才暂停重新对齐；普通实现变化、假设被低风险推翻不触发。
 - 交付时 Controlled/Structural 或严格行为保持任务必须提供 Change Rationale，把所有 ChangeSet 文件映射到 Goal 或 Acceptance；未知文件、未知 Acceptance、空 reason 与旧指纹被机器拒绝，未映射文件不能进入等待验收。普通 Standard 任务可选提供，提供时校验，缺失不阻止交付。
 - `goal-card-file` / `rationale-file` / `task-check-file` 是系统与宿主模型之间的机器交换产物：由模型自动生成，存放于 OS 临时目录或明确忽略的临时目录，不要求用户手工填写，不提交到业务仓库；旧 `alignment-file` 仅作兼容别名。

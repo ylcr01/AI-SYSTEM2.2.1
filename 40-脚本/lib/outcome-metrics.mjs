@@ -165,6 +165,7 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   });
   const tracked = selected.filter((task) => task.outcomeMetrics?.trackingStartedAt);
   const decided = tracked.filter((task) => typeof task.outcomeMetrics.firstPassAccepted === 'boolean');
+  const unknown = tracked.length - decided.length;
   const firstPassAccepted = decided.filter((task) => task.outcomeMetrics.firstPassAccepted === true).length;
   const verificationTasks = tracked.filter((task) => task.outcomeMetrics.verificationRunCount > 0);
   const verificationRuns = verificationTasks.reduce((sum, task) => sum + task.outcomeMetrics.verificationRunCount, 0);
@@ -186,6 +187,8 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   const warnings = [];
   if (tracked.length < 10) warnings.push('有效指标样本少于 10，只能用于方向观察');
   if (selected.length > tracked.length) warnings.push(`${selected.length - tracked.length} 条旧 Task 没有完整指标，未纳入比率和耗时计算`);
+  if (unknown > 0) warnings.push(`${unknown} 条已跟踪 Task 没有明确用户验收，不能纳入首轮验收结论`);
+  warnings.push('返工只统计同一 Task 内显式记录的用户退回；未关联的新修复 Task 不在返工计数中');
   warnings.push('本摘要不包含可比基线，不能单独证明机制净收益');
 
   return {
@@ -200,10 +203,17 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
     },
     firstPassAcceptance: {
       decided: decided.length,
+      unknown,
       passed: firstPassAccepted,
       rate: decided.length ? Number((firstPassAccepted / decided.length).toFixed(4)) : null,
+      coverage: tracked.length ? Number((decided.length / tracked.length).toFixed(4)) : null,
     },
-    rework: { tasks: reworkTasks.length, count: reworkCount },
+    rework: {
+      tasks: reworkTasks.length,
+      count: reworkCount,
+      countingScope: 'same-task-explicit-user-reject',
+      unlinkedRepairTasksIncluded: false,
+    },
     userDecisions: { count: userDecisionCount },
     verification: {
       tasks: verificationTasks.length,

@@ -18,7 +18,7 @@ import {
 } from './lib/task-runner.mjs';
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
 import { findGitRoot, normalizePath } from './lib/registry.mjs';
-import { diagnoseState, readHistory } from './lib/state-manager.mjs';
+import { diagnoseState, migrateState, readHistory } from './lib/state-manager.mjs';
 import { publicTaskState, summarizeOutcomeMetrics } from './lib/outcome-metrics.mjs';
 
 const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -32,6 +32,7 @@ const aliases = new Map([
   ['continue-verification', '继续验证'],
   ['revalidate-integration', '重验集成'],
   ['diagnose-state', '诊断状态'],
+  ['migrate-state', '迁移状态'],
   ['metrics', '评估摘要'], ['outcome-metrics', '评估摘要'],
 ]);
 const action = aliases.get(args._[0]) ?? args._[0] ?? '帮助';
@@ -65,7 +66,7 @@ function evidenceLabel(cover) {
 function compactOutcomes(task) {
   const acceptance = task.acceptance ?? [];
   if (!acceptance.length) return [];
-  const hasDelivery = Boolean(task.deliveryDecision || task.changeSet);
+  const hasDelivery = Boolean(task.changeSet);
   const missingAcceptance = task.verification?.missingAcceptance;
   const verificationResolved = Array.isArray(missingAcceptance);
   const missing = new Set(missingAcceptance ?? []);
@@ -232,6 +233,7 @@ function help() {
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
   评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
+  迁移状态 [--state-root <path>] [--apply]（默认仅预演；写入前备份）
 
 默认只返回四种用户状态和结果信息。Goal Card、Rationale、Task Check 等机器交换产物由宿主自动处理；运行“帮助 --full”查看宿主协议，运行具体命令时追加 --full 查看完整 Task。`);
     return;
@@ -239,6 +241,7 @@ function help() {
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
+       [--quality-profile <name>（兼容旧 --skill，可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
@@ -262,6 +265,8 @@ function help() {
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
   评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
+  迁移状态 [--state-root <path>] [--apply] [--migration-id <id>]
+       （默认 dry-run；--apply 仅升级支持的旧 Schema 和修正非终态目录错位，写入前备份）
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
@@ -285,7 +290,10 @@ try {
       alignmentFile: goalCardFileArg(),
       scope: args.scope ?? '.',
       projectId: args.project,
-      skills: listArg(args.skill),
+      qualityProfiles: [...new Set([
+        ...listArg(args['quality-profile']),
+        ...listArg(args.skill),
+      ])],
       tracked: args.ephemeral !== true,
       handoffRequired: args.handoff === true,
       specImpact: args['spec-impact'],
@@ -382,6 +390,12 @@ try {
     output(findTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
   } else if (action === '诊断状态') {
     output(diagnoseState({ stateRoot: args['state-root'] }));
+  } else if (action === '迁移状态') {
+    output(migrateState({
+      stateRoot:args['state-root'],
+      apply:args.apply === true,
+      migrationId:args['migration-id'],
+    }));
   } else if (action === '评估摘要') {
     const allProjects = args['all-projects'] === true;
     const gitRoot = allProjects ? null : findGitRoot(args.cwd ?? process.cwd());

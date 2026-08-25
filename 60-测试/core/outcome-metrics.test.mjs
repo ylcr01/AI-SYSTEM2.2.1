@@ -1,3 +1,4 @@
+// BR-AIRD-METRICS-001
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -72,11 +73,23 @@ test('只读摘要区分有效样本和旧 Task，不把小样本写成稳定结
     legacyWithoutMetrics:1,
     stateCounts:{ working:1, needs_decision:0, ready_for_acceptance:0, done:2 },
   });
-  assert.deepEqual(summary.firstPassAcceptance, { decided:2, passed:1, rate:0.5 });
-  assert.deepEqual(summary.rework, { tasks:1, count:1 });
+  assert.deepEqual(summary.firstPassAcceptance, { decided:2, unknown:0, passed:1, rate:0.5, coverage:1 });
+  assert.deepEqual(summary.rework, { tasks:1, count:1, countingScope:'same-task-explicit-user-reject', unlinkedRepairTasksIncluded:false });
   assert.deepEqual(summary.verification, { tasks:2, runs:2, totalMs:400, averageMs:200 });
   assert.deepEqual(summary.returnReasons, [{ category:'scope', count:1 }]);
   assert.ok(summary.warnings.some(item => /少于 10/u.test(item)));
   assert.ok(summary.warnings.some(item => /旧 Task/u.test(item)));
+  assert.ok(summary.warnings.some(item => /未关联的新修复 Task/u.test(item)));
   assert.ok(summary.warnings.some(item => /不能单独证明/u.test(item)));
+});
+
+test('首轮验收指标显式报告未知样本和结论覆盖率', () => {
+  const unknown = applyOutcomeMetricEvent(createOutcomeMetrics({ at:'2026-08-20T00:00:00.000Z' }), {
+    event:'delivery', to:'waiting_acceptance', at:'2026-08-20T00:00:01.000Z', durationMs:100,
+  });
+  const summary = summarizeOutcomeMetrics([{
+    status:'waiting_acceptance', createdAt:'2026-08-20T00:00:00.000Z', updatedAt:'2026-08-20T00:00:01.000Z', outcomeMetrics:unknown,
+  }]);
+  assert.deepEqual(summary.firstPassAcceptance, { decided:0, unknown:1, passed:0, rate:null, coverage:0 });
+  assert.ok(summary.warnings.some(item => /没有明确用户验收/u.test(item)));
 });

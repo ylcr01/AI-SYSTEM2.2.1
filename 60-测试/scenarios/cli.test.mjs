@@ -1,3 +1,4 @@
+// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,9 +25,38 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--task-check-file/u);
   assert.match(full.stdout, /--goal-card-file/u);
   assert.match(full.stdout, /--reason-category/u);
+  assert.match(full.stdout, /--quality-profile/u);
   assert.doesNotMatch(full.stdout, /--workstation/u);
   assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
   assert.match(full.stdout, /重验集成/u);
+  assert.match(full.stdout, /迁移状态.*--apply/u);
+});
+
+test('CLI 状态迁移默认 dry-run，显式 apply 才写入', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const prepared = runNode(TASK, [
+    '准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确',
+    '--scope', '.', '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const taskId = JSON.parse(prepared.stdout).taskId;
+  const active = path.join(stateRoot, '进行中', `${taskId}.json`);
+  const raw = JSON.parse(fs.readFileSync(active, 'utf8'));
+  raw.schemaVersion = 8;
+  raw.status = 'waiting_acceptance';
+  delete raw.outcomeMetrics;
+  fs.writeFileSync(active, JSON.stringify(raw));
+  const before = fs.readFileSync(active, 'utf8');
+  const dry = runNode(TASK, ['迁移状态', '--state-root', stateRoot, '--migration-id', 'cli-dry'], { cwd:ROOT });
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.equal(JSON.parse(dry.stdout).readOnly, true);
+  assert.equal(fs.readFileSync(active, 'utf8'), before);
+  const applied = runNode(TASK, ['迁移状态', '--state-root', stateRoot, '--migration-id', 'cli-apply', '--apply'], { cwd:ROOT });
+  assert.equal(applied.status, 0, applied.stderr);
+  const report = JSON.parse(applied.stdout);
+  assert.equal(report.applied.length, 1);
+  assert.ok(report.backupRoot);
+  assert.equal(fs.existsSync(path.join(stateRoot, '待验收', `${taskId}.json`)), true);
 });
 
 test('独立检查入口拒绝旧的无限继续参数', () => {
@@ -91,18 +121,29 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.ok(!full.filesToRead.some(file => file.includes(`${path.sep}.ai${path.sep}workstations${path.sep}`)));
   assert.equal(full.facts.find(fact => fact.path.endsWith('package.json')).readMode, 'machine');
   assert.ok(full.quality);
-  assert.ok(full.quality.methods.some(method => method.name === 'develop-web'));
-  assert.ok(!compact.filesToRead.some(file => file.endsWith(path.join('develop-web', 'SKILL.md'))));
+  assert.ok(full.quality.profiles.includes('develop-web'));
+  assert.equal('methods' in full.quality, false);
+  assert.equal('skills' in full.quality, false);
+  assert.ok(!compact.filesToRead.some(file => file.endsWith('SKILL.md')));
   assert.ok(Buffer.byteLength(compactResult.stdout) < Buffer.byteLength(fullResult.stdout));
 
-  const explicitSkillResult = runNode(BUILD_CONTEXT, [
+  const explicitProfileResult = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '分析当前实现',
+    '--quality-profile', 'develop-web',
+  ], { cwd: ROOT });
+  assert.equal(explicitProfileResult.status, 0, explicitProfileResult.stderr);
+  const explicitProfile = JSON.parse(explicitProfileResult.stdout);
+  assert.ok(explicitProfile.filesToRead.some(file => file.endsWith(path.join('develop-web', 'CONTRACT.md'))));
+  assert.ok(!explicitProfile.filesToRead.some(file => file.endsWith('SKILL.md')));
+
+  const legacySkillAliasResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
     '--intent', '分析当前实现',
     '--skill', 'develop-web',
   ], { cwd: ROOT });
-  assert.equal(explicitSkillResult.status, 0, explicitSkillResult.stderr);
-  assert.ok(JSON.parse(explicitSkillResult.stdout).filesToRead
-    .some(file => file.endsWith(path.join('develop-web', 'SKILL.md'))));
+  assert.equal(legacySkillAliasResult.status, 0, legacySkillAliasResult.stderr);
+  assert.deepEqual(JSON.parse(legacySkillAliasResult.stdout).filesToRead, explicitProfile.filesToRead);
 
   const dependencyResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
@@ -285,6 +326,30 @@ test('CLI 准备→交付→验收完整闭环', t => {
   const acceptedReceipt = JSON.parse(accepted.stdout);
   assert.equal(acceptedReceipt.state, 'done');
   assert.equal(acceptedReceipt.stateLabel, '已结束');
+});
+
+test('CLI 重新对齐后旧交付不得把新验收项标成 verified', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const prepared = runNode(TASK, ['准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确', '--scope', '.', '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const task = JSON.parse(prepared.stdout);
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const delivered = runNode(TASK, ['交付', '--task-id', task.taskId, '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  assert.equal(JSON.parse(delivered.stdout).outcomes[0].status, 'verified');
+  const goalCard = path.join(stateRoot, 'realign.json');
+  fs.writeFileSync(goalCard, JSON.stringify({
+    originalRequest:'修复普通功能', goal:'改为新行为', expectedOutcomes:['新行为生效'], protectedBehaviors:[],
+    acceptance:['新行为正确'], confirmedDecisions:['用户确认采用新行为'], nonGoals:[], assumptions:[],
+    alignment:{ mode:'confirmed', reasonCodes:[], decisionNote:'用户在当前任务确认修订目标', delegatedTopics:[] },
+  }));
+  const realigned = runNode(TASK, ['重新对齐', '--task-id', task.taskId, '--goal-card-file', goalCard, '--reason', '用户修订目标', '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(realigned.status, 0, realigned.stderr);
+  const receipt = JSON.parse(realigned.stdout);
+  assert.equal(receipt.state, 'working');
+  assert.deepEqual(receipt.outcomes.map(item => [item.description, item.status]), [['新行为正确', 'pending']]);
+  assert.equal(receipt.result.allOutcomesVerified, false);
+  assert.equal('gaps' in receipt, false);
 });
 
 test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t => {
@@ -574,8 +639,8 @@ test('CLI 自动记录退回指标并提供只读评估摘要', t => {
   assert.equal(summary.view, 'outcome-metrics');
   assert.equal(summary.sample.total, 1);
   assert.equal(summary.sample.tracked, 1);
-  assert.deepEqual(summary.firstPassAcceptance, { decided:1, passed:0, rate:0 });
-  assert.deepEqual(summary.rework, { tasks:1, count:1 });
+  assert.deepEqual(summary.firstPassAcceptance, { decided:1, unknown:0, passed:0, rate:0, coverage:1 });
+  assert.deepEqual(summary.rework, { tasks:1, count:1, countingScope:'same-task-explicit-user-reject', unlinkedRepairTasksIncluded:false });
   assert.deepEqual(summary.returnReasons, [{ category:'code-quality', count:1 }]);
   assert.equal(summary.verification.runs, 1);
   assert.ok(summary.warnings.some(item => /不能单独证明/u.test(item)));

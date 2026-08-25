@@ -149,7 +149,7 @@ export function buildContext(options = {}) {
     intent,
     structureImpact: classification.structureImpact,
     artifactKinds: classification.artifactKinds,
-    explicitSkills: options.skills ?? [],
+    explicitProfiles: options.qualityProfiles ?? options.skills ?? [],
     projectRoot: context.modulePath ?? context.projectPath ?? context.gitRoot,
     templateRoot: context.templatePath,
   });

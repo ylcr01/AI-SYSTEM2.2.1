@@ -27,7 +27,7 @@ for (const check of checkRegistry?.checks ?? []) {
 }
 
 for (const relative of [
-  'README.md', 'AGENTS.md', '.ai/checks.json', '.github/workflows/ci.yml',
+  'README.md', 'AGENTS.md', '.ai/checks.json', '.ai/spec-map.json', '.github/workflows/ci.yml',
   '.ai/templates/module-spec-template.md', '.ai/templates/decision-template.md', '.ai/templates/spec-map.example.json', '.ai/templates/spec-policy.example.json',
   '00-大模型接入/接入说明.md',
   '10-注册表/projects.json', '10-注册表/templates.json',
@@ -39,7 +39,7 @@ for (const relative of [
   '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
   '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs',
   '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-REMOVE-PROJECT-WORKSTATIONS-002.md',
-  '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '80-运行记录/README.md'
+  '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '70-文档/specifications/quality-profile-and-state.md', '80-运行记录/README.md'
 ]) requireFile(relative);
 
 try {
@@ -52,16 +52,20 @@ try {
 
 const abilityManifest = readJson('20-能力模块/manifest.json');
 const artifactKinds = new Set(['code','product','requirements','ui','api','data','integration','operations','documentation','knowledge']);
-if (abilityManifest?.schemaVersion !== 2) errors.push('20-能力模块/manifest.json: Schema 必须是 2');
-for (const ability of abilityManifest?.abilities ?? []) {
-  for (const key of ['skill','contract']) requireFile(ability[key]);
-  for (const kind of ability.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${ability.name}: artifactKind 无效 ${kind}`);
-  for (const item of ability.exemplars ?? []) {
+if (abilityManifest?.schemaVersion !== 3) errors.push('20-能力模块/manifest.json: Schema 必须是 3');
+for (const profile of abilityManifest?.profiles ?? []) {
+  requireFile(profile.contract);
+  if ('skill' in profile) errors.push(`${profile.name}: 质量 Profile 不得声明不可发现的 skill 文件`);
+  if (fs.existsSync(path.join(SYSTEM_ROOT, '20-能力模块', profile.name, 'SKILL.md'))) {
+    errors.push(`${profile.name}: 内部质量资料不得伪装成宿主 SKILL.md`);
+  }
+  for (const kind of profile.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${profile.name}: artifactKind 无效 ${kind}`);
+  for (const item of profile.exemplars ?? []) {
     if (!['active','observe','retired','deprecated','disabled'].includes(item.status)) errors.push(`${item.id}: lifecycle 无效`);
     if (item.status === 'active' && item.supersededBy) errors.push(`${item.id}: active 不能同时 superseded`);
-    for (const kind of item.artifactKinds ?? ability.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${item.id}: artifactKind 无效 ${kind}`);
+    for (const kind of item.artifactKinds ?? profile.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${item.id}: artifactKind 无效 ${kind}`);
     for (const relative of item.read ?? []) {
-      const file = path.join(SYSTEM_ROOT, '20-能力模块', ability.name, relative);
+      const file = path.join(SYSTEM_ROOT, '20-能力模块', profile.name, relative);
       if (!fs.existsSync(file)) errors.push(`${item.id}: Canonical 文件不存在 ${relative}`);
     }
   }
@@ -84,12 +88,12 @@ if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('�
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
 for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
 const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
-for (const marker of ['继续验证','重验集成']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复命令 ${marker}`);
+for (const marker of ['继续验证','重验集成','迁移状态']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复或维护命令 ${marker}`);
 
 const result = {
   ok: errors.length === 0,
   version: pkg?.version ?? null,
-  abilities: abilityManifest?.abilities?.length ?? 0,
+  qualityProfiles: abilityManifest?.profiles?.length ?? 0,
   knowledgeRoutes: knowledge?.routes?.length ?? 0,
   errors,
   warnings

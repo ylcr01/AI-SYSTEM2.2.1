@@ -49,9 +49,23 @@ import { normalizeReturnReasonCategory } from './outcome-metrics.mjs';
 
 function defaultAcceptanceCovers(classification) {
   const kinds = new Set(classification.artifactKinds ?? []);
-  if (kinds.has('documentation') || kinds.has('product') || kinds.has('requirements')) return ['documentation'];
+  if (kinds.size === 1 && kinds.has('documentation')) return ['documentation'];
   if (kinds.has('operations')) return classification.controlMode === 'quick' ? ['documentation'] : ['target-environment'];
   return ['behavior'];
+}
+
+export function inferAcceptanceCovers(description, classification) {
+  const text = String(description ?? '').trim();
+  const documentation = /(?:文档|说明书|指南|README|AGENTS(?:\.md)?|CONTRACT\.md|规范文档|规格文档|入口规则)/iu.test(text);
+  if (documentation) return ['documentation'];
+  const covers = [];
+  const browser = /(?:浏览器|页面|界面|\bUI\b|交互|按钮|表单|弹窗|菜单|布局|样式)/iu.test(text);
+  if (browser) covers.push('behavior', 'browser');
+  const migration = /(?:数据迁移|状态迁移|迁移数据|数据库迁移|持久化|回滚|rollback|备份恢复|兼容旧数据)/iu.test(text);
+  if (migration) covers.push('behavior', 'data', 'rollback');
+  const targetEnvironment = /(?:部署|发布|目标环境|生产环境|运行环境|线上环境)/u.test(text);
+  if (targetEnvironment) covers.push('target-environment');
+  return covers.length ? [...new Set(covers)] : defaultAcceptanceCovers(classification);
 }
 
 function acceptanceItems(value, classification) {
@@ -59,11 +73,11 @@ function acceptanceItems(value, classification) {
   const items = values.flatMap((item) => typeof item === 'string' ? String(item).split(/[;；\n]/u) : [item]).filter(Boolean);
   const normalized = items.length ? items : ['完成用户目标并提供可信证据'];
   return normalized.map((item, index) => typeof item === 'string'
-    ? { id: `A${index + 1}`, description: item.trim(), requiredCovers: defaultAcceptanceCovers(classification), requiredCoversInferred: true, status: 'open' }
+    ? { id: `A${index + 1}`, description: item.trim(), requiredCovers: inferAcceptanceCovers(item, classification), requiredCoversInferred: true, status: 'open' }
     : {
       id: item.id ?? `A${index + 1}`,
       description: String(item.description ?? item.statement ?? ''),
-      requiredCovers: item.requiredCovers ?? defaultAcceptanceCovers(classification),
+      requiredCovers: item.requiredCovers ?? inferAcceptanceCovers(item.description ?? item.statement, classification),
       requiredCoversInferred: item.requiredCovers === undefined,
       ...(item.source !== undefined ? { source: String(item.source) } : {}),
       ...(item.referenceBehaviorId !== undefined ? { referenceBehaviorId: String(item.referenceBehaviorId) } : {}),
@@ -72,9 +86,8 @@ function acceptanceItems(value, classification) {
 }
 
 function acceptanceForClassification(acceptance, classification) {
-  const inferred = defaultAcceptanceCovers(classification);
   return (acceptance ?? []).map((item) => item.requiredCoversInferred === true
-    ? { ...item, requiredCovers: inferred }
+    ? { ...item, requiredCovers: inferAcceptanceCovers(item.description, classification) }
     : item);
 }
 
@@ -228,7 +241,7 @@ export function prepareTask(options = {}) {
     intent,
     acceptance: acceptance.map((item) => item.description).join(' '),
     classification: initial,
-    skills: options.skills ?? [],
+    qualityProfiles: options.qualityProfiles ?? options.skills ?? [],
   });
   const gitRoot = built.context.gitRoot;
   if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');
@@ -804,13 +817,18 @@ export function realignTask(options = {}) {
       next.handoff = null;
       next.changeRationale = null;
       next.changeSet = null;
+      next.deliveryDecision = null;
+      next.residualRisks = [];
+      next.specTraceability = null;
+      next.specConsistency = null;
       next.blockers = [];
       next.verification = {
         ...next.verification,
         inputCycle: Number(next.verification?.inputCycle ?? 0) + 1,
         requiredCovers: [],
         missingCovers: [],
-        missingAcceptance: [],
+        missingAcceptance: acceptance.map((item) => item.id),
+        acceptanceGaps: [],
         systemEvidenceHashes: [],
         untrustedTechnicalEvidence: [],
         preservationCoverage: null,

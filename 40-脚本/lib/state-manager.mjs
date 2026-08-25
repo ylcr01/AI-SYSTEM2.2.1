@@ -70,6 +70,17 @@ function nonTerminalTasks(value) {
   return files.map((file) => currentTask(readRaw(file)));
 }
 
+function nonTerminalRecordFiles(value) {
+  return [
+    ['active', value.active],
+    ['waiting', value.waiting],
+  ].flatMap(([source, dir]) => fs.existsSync(dir)
+    ? fs.readdirSync(dir)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => ({ source, file:path.join(dir, name), name }))
+    : []);
+}
+
 function assertWorkspaceAvailable(value, gitRoot, taskId = null) {
   if (!gitRoot) return;
   const conflict = activeTasks(value).find((item) => item.taskId !== taskId
@@ -284,6 +295,158 @@ export function diagnoseState(input = {}) {
   try { counts.history = readHistory({ stateRoot: value.root }).length; }
   catch (error) { diagnostics.push({ code: 'invalid-history', diagnostic: error.message }); }
   return { schemaVersion: 1, stateRoot: value.root, readOnly: true, ok: diagnostics.length === 0, counts, diagnostics };
+}
+
+function contentFingerprint(content) {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+function migrationIdentifier(value) {
+  const id = value ?? `state-v${CURRENT_SCHEMA}-${new Date().toISOString().replace(/[-:.TZ]/gu, '')}`;
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,78}[A-Za-z0-9_-])?$/u.test(id)) throw new Error('迁移编号无效');
+  return id;
+}
+
+function withTaskLocks(value, taskIds, action, index = 0) {
+  if (index >= taskIds.length) return action();
+  return withFileLock(
+    lockFile(value, taskIds[index]),
+    () => withTaskLocks(value, taskIds, action, index + 1),
+    { timeoutMs:10000, staleMs:60000 },
+  );
+}
+
+function stateMigrationPlan(value) {
+  const records = [];
+  const blockers = [];
+  const byTaskId = new Map();
+  for (const record of nonTerminalRecordFiles(value)) {
+    try {
+      const content = fs.readFileSync(record.file, 'utf8');
+      const raw = JSON.parse(content);
+      const task = currentTask(raw);
+      const parsed = { ...record, content, raw, task, fingerprint:contentFingerprint(content) };
+      records.push(parsed);
+      const values = byTaskId.get(task.taskId) ?? [];
+      values.push(parsed);
+      byTaskId.set(task.taskId, values);
+    } catch (error) {
+      blockers.push({ code:'invalid-task-record', file:record.name, source:record.source, diagnostic:error.message });
+    }
+  }
+
+  const duplicateIds = new Set([...byTaskId.entries()].filter(([, items]) => items.length > 1).map(([taskId]) => taskId));
+  for (const taskId of duplicateIds) {
+    blockers.push({
+      code:'duplicate-task',
+      taskId,
+      locations:byTaskId.get(taskId).map((item) => item.source),
+    });
+  }
+
+  const actions = [];
+  for (const record of records) {
+    if (duplicateIds.has(record.task.taskId)) continue;
+    if (TERMINAL.has(record.task.status)) {
+      blockers.push({ code:'terminal-task-in-nonterminal-store', taskId:record.task.taskId, status:record.task.status });
+      continue;
+    }
+    if (record.name !== `${record.task.taskId}.json`) {
+      blockers.push({ code:'task-filename-mismatch', taskId:record.task.taskId, file:record.name });
+      continue;
+    }
+    const destinationBucket = record.task.status === 'waiting_acceptance' ? 'waiting' : 'active';
+    const schemaUpgrade = record.raw.schemaVersion !== CURRENT_SCHEMA;
+    const bucketMove = record.source !== destinationBucket;
+    if (!schemaUpgrade && !bucketMove) continue;
+    actions.push({
+      taskId:record.task.taskId,
+      schemaFrom:record.raw.schemaVersion,
+      schemaTo:CURRENT_SCHEMA,
+      sourceBucket:record.source,
+      destinationBucket,
+      sourceFile:record.file,
+      destinationFile:taskFile(value, record.task.taskId, destinationBucket),
+      sourceFingerprint:record.fingerprint,
+      task:record.task,
+      schemaUpgrade,
+      bucketMove,
+    });
+  }
+  return { records, actions, blockers };
+}
+
+function publicMigrationAction(action) {
+  return {
+    taskId:action.taskId,
+    schemaFrom:action.schemaFrom,
+    schemaTo:action.schemaTo,
+    sourceBucket:action.sourceBucket,
+    destinationBucket:action.destinationBucket,
+    schemaUpgrade:action.schemaUpgrade,
+    bucketMove:action.bucketMove,
+  };
+}
+
+export function migrateState(input = {}) {
+  const value = paths(input.stateRoot);
+  const apply = input.apply === true;
+  const migrationId = migrationIdentifier(input.migrationId);
+  const plan = stateMigrationPlan(value);
+  const report = {
+    schemaVersion:1,
+    stateRoot:value.root,
+    currentTaskSchema:CURRENT_SCHEMA,
+    mode:apply ? 'apply' : 'dry-run',
+    readOnly:!apply,
+    ok:plan.blockers.length === 0,
+    migrationId,
+    planned:plan.actions.map(publicMigrationAction),
+    applied:[],
+    blockers:plan.blockers,
+    backupRoot:null,
+  };
+  if (!apply) return report;
+  if (plan.blockers.length) {
+    throw new Error(`状态迁移被 ${plan.blockers.length} 个冲突阻止；请先运行 dry-run 并处理 blockers`);
+  }
+  if (!plan.actions.length) return report;
+
+  const backupBase = path.resolve(value.root, '迁移备份');
+  const backupRoot = path.resolve(backupBase, migrationId);
+  if (!backupRoot.startsWith(`${backupBase}${path.sep}`)) throw new Error('迁移备份目录越出状态根目录');
+  const migrationLock = path.join(value.locks, 'state-migration.lock');
+  const taskIds = plan.actions.map((action) => action.taskId).sort();
+  return withFileLock(migrationLock, () => withTaskLocks(value, taskIds, () => {
+    if (fs.existsSync(backupRoot)) throw new Error(`迁移备份目录已存在: ${backupRoot}`);
+    for (const action of plan.actions) {
+      if (!fs.existsSync(action.sourceFile)) throw new Error(`迁移源记录已变化或不存在: ${action.taskId}`);
+      const currentContent = fs.readFileSync(action.sourceFile, 'utf8');
+      if (contentFingerprint(currentContent) !== action.sourceFingerprint) {
+        throw new Error(`迁移源记录在预演后发生变化: ${action.taskId}`);
+      }
+      if (action.destinationFile !== action.sourceFile && fs.existsSync(action.destinationFile)) {
+        throw new Error(`迁移目标已存在，拒绝覆盖: ${action.taskId}`);
+      }
+    }
+
+    for (const action of plan.actions) {
+      const bucketName = action.sourceBucket === 'active' ? '进行中' : '待验收';
+      const backupFile = path.join(backupRoot, bucketName, path.basename(action.sourceFile));
+      fs.mkdirSync(path.dirname(backupFile), { recursive:true });
+      fs.copyFileSync(action.sourceFile, backupFile, fs.constants.COPYFILE_EXCL);
+    }
+    for (const action of plan.actions) {
+      atomicWriteJson(action.destinationFile, action.task, value.pending);
+      if (action.destinationFile !== action.sourceFile) fs.rmSync(action.sourceFile, { force:true });
+    }
+    return {
+      ...report,
+      ok:true,
+      backupRoot,
+      applied:plan.actions.map(publicMigrationAction),
+    };
+  }), { timeoutMs:10000, staleMs:60000 });
 }
 
 export const allowedTransitions = TRANSITIONS;

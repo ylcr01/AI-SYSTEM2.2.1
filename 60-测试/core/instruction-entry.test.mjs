@@ -26,6 +26,7 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.match(result.stdout, /external writes without explicit user authorization/u);
   assert.doesNotMatch(result.stdout, /build-context\.mjs/u);
   assert.doesNotMatch(result.stdout, /task\.mjs/u);
+  assert.doesNotMatch(result.stdout, /Browser verification|最多 4 条核心链路/u);
   assert.ok(Buffer.byteLength(result.stdout) < 500);
 });
 

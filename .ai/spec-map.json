@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "mappings": [
+    {
+      "id": "ai-rd-os-quality-profile-routing",
+      "paths": [
+        "20-能力模块/**",
+        "40-脚本/build-context.mjs",
+        "40-脚本/check-system.mjs",
+        "40-脚本/lib/context-builder.mjs",
+        "40-脚本/lib/quality-registry.mjs",
+        "40-脚本/lib/task-runner.mjs",
+        "40-脚本/task.mjs"
+      ],
+      "keywords": ["Quality Profile", "质量 Profile", "quality-profile"],
+      "specificationFiles": ["70-文档/specifications/quality-profile-and-state.md"],
+      "specificationIds": [
+        "BR-AIRD-QUALITY-001",
+        "BR-AIRD-QUALITY-002",
+        "BR-AIRD-QUALITY-003"
+      ],
+      "testFiles": [
+        "60-测试/integration/context-quality.test.mjs",
+        "60-测试/scenarios/cli.test.mjs"
+      ],
+      "decisionFiles": []
+    },
+    {
+      "id": "ai-rd-os-state-migration",
+      "paths": [
+        "40-脚本/lib/state-manager.mjs",
+        "40-脚本/task.mjs",
+        "70-文档/50-兼容与状态.md"
+      ],
+      "keywords": ["状态迁移", "migrate-state", "Task Schema"],
+      "specificationFiles": ["70-文档/specifications/quality-profile-and-state.md"],
+      "specificationIds": [
+        "BR-AIRD-STATE-001",
+        "TR-AIRD-STATE-001",
+        "EX-AIRD-STATE-001"
+      ],
+      "testFiles": [
+        "60-测试/core/state-manager.test.mjs",
+        "60-测试/scenarios/cli.test.mjs"
+      ],
+      "decisionFiles": []
+    },
+    {
+      "id": "ai-rd-os-task-truthfulness",
+      "paths": [
+        "40-脚本/lib/task-runner.mjs",
+        "40-脚本/lib/outcome-metrics.mjs",
+        "40-脚本/task.mjs"
+      ],
+      "keywords": ["重新对齐", "Acceptance Evidence", "决定覆盖率", "outcome-metrics"],
+      "specificationFiles": ["70-文档/specifications/quality-profile-and-state.md"],
+      "specificationIds": [
+        "BR-AIRD-REALIGN-001",
+        "TR-AIRD-REALIGN-001",
+        "BR-AIRD-EVIDENCE-001",
+        "BR-AIRD-METRICS-001"
+      ],
+      "testFiles": [
+        "60-测试/integration/alignment-realign.test.mjs",
+        "60-测试/integration/task-runner.test.mjs",
+        "60-测试/core/outcome-metrics.test.mjs",
+        "60-测试/scenarios/cli.test.mjs"
+      ],
+      "decisionFiles": []
+    }
+  ]
+}

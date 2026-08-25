@@ -10,7 +10,7 @@ artifactKinds: [knowledge, documentation]
 ## 强制边界
 - 只有根因明确、处理经过验证且有复用价值时形成经验。
 - 普通任务只能形成项目经验；跨项目提升需要多个独立任务证据和人工确认。
-- 不自动修改 Prompt、Contract、Skill 或 Canonical。
+- 不自动修改 Prompt、Contract、Quality Profile、宿主 Skill 或 Canonical。
 - 一次实现不能自动晋升为 Canonical。
 
 ## 记录内容

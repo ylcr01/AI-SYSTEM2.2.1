@@ -1,3 +1,4 @@
+// BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -125,6 +126,11 @@ function deliveredDirectTask(t) {
 test('重新对齐增加修订、切换模式、清空旧验证产物并回到 implementing', (t) => {
   const { stateRoot, task } = deliveredDirectTask(t);
   const beforeScope = task.authorization.scope;
+  const storedFile = path.join(stateRoot, '待验收', `${task.taskId}.json`);
+  const stored = JSON.parse(fs.readFileSync(storedFile, 'utf8'));
+  stored.verification.acceptanceGaps = [{ acceptanceId: 'A1', description: '旧目标缺口', missingCovers: ['behavior'] }];
+  stored.residualRisks = ['旧目标风险'];
+  fs.writeFileSync(storedFile, JSON.stringify(stored, null, 2));
   const realigned = realignTask({
     stateRoot,
     taskId: task.taskId,
@@ -144,8 +150,15 @@ test('重新对齐增加修订、切换模式、清空旧验证产物并回到 i
   assert.equal(realigned.task.reviewPackage, undefined);
   assert.equal(realigned.task.changeRationale, null);
   assert.equal(realigned.task.handoff, null);
+  assert.equal(realigned.task.changeSet, null);
+  assert.equal(realigned.task.deliveryDecision, null);
+  assert.deepEqual(realigned.task.residualRisks, []);
+  assert.equal(realigned.task.specTraceability, null);
+  assert.equal(realigned.task.specConsistency, null);
   assert.equal(realigned.task.verification.inputCycle, 1);
   assert.equal(realigned.task.verification.checkManifest, null);
+  assert.deepEqual(realigned.task.verification.acceptanceGaps, []);
+  assert.deepEqual(realigned.task.verification.missingAcceptance, ['A1']);
   assert.deepEqual(realigned.task.acceptance.map((item) => item.description), ['新行为正确']);
 });
 

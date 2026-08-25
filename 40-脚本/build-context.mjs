@@ -99,7 +99,10 @@ try {
     projectId: args.project,
     intent: args.intent ?? '',
     acceptance: args.acceptance ?? '',
-    skills: listArg(args.skill),
+    qualityProfiles: [...new Set([
+      ...listArg(args['quality-profile']),
+      ...listArg(args.skill),
+    ])],
     tracked: args.ephemeral !== true,
     handoffRequired: args.handoff === true,
   });

@@ -144,7 +144,7 @@ CI 在 Windows/Linux 的 Node.js 20 和 22 上运行。发布清单不静态宣�
 ```text
 00-大模型接入/   宿主接入与模型入口
 10-注册表/       项目与模板身份
-20-能力模块/     按需能力 Contract、Skill 与样板
+20-能力模块/     按需质量 Profile、Contract 与样板
 30-知识库/       中央知识路由
 40-脚本/         上下文、Task、验证和诊断工具
 60-测试/         Core、Integration、Scenarios 测试
