@@ -11,6 +11,7 @@ import {
   resumeTask,
   continueVerification,
   recordHandoff,
+  integrateTask,
   confirmIntegration,
   revalidateIntegration,
   cancelTask,
@@ -45,7 +46,7 @@ function nextAction(status) {
     implementing: '正在实现目标结果。',
     reviewing: '正在检查实现质量。',
     needs_rework: '当前结果仍需修正；修正后重新验证。',
-    ready_to_integrate: '代码已准备好集成；完成目标分支集成和重验后再交给你验收。',
+    ready_to_integrate: '代码已准备好集成；低风险任务应由单一集成器直接集成和重验，无需等待用户再次确认。',
     waiting_acceptance: '本轮已交付；无需形式确认，下一轮对话会记录为继续讨论、返工或自然收口。',
     closed: '上一任务已根据后续对话自然收口。',
     verifying: '仍有结果缺少验证，补齐后继续。',
@@ -140,6 +141,13 @@ function compactTask(task, result = null) {
       target: task.integration.target,
       ready: ['ready', 'integrated'].includes(task.integration.status),
       integrated: task.integration.status === 'integrated',
+      status: task.integration.status,
+      resultCommit: task.integration.resultCommit ?? null,
+      targetCommit: task.integration.targetCommit ?? null,
+      pauseReasons: task.integration.pauseReasons ?? [],
+      conflictFiles: task.integration.conflictFiles ?? [],
+      integrationWorktree: task.integration.integrationWorktree ?? null,
+      cleanup: task.integration.cleanup ?? null,
     };
   }
 
@@ -265,6 +273,7 @@ function help() {
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
        [--quality-profile <name>（兼容旧 --skill，可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
+       [--allow-primary-write --primary-write-reason <原因>（仅用户明确授权的紧急 Local 写入）]
        [--integration-target <目标分支>（linked/detached worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
@@ -277,7 +286,9 @@ function help() {
   重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
-  集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
+  集成 --task-id <id> [--target <目标分支>] [--keep-worktree]
+       [--allow-risk-integration --risk-reason <原因>] [--confirm-only --cwd <目标仓库>]
+       （默认在隔离集成 Worktree 应用、重验后快进目标分支并清理任务资源）
   重验集成 --task-id <id> [--cwd <目标仓库>] [--target <目标分支>]
   继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
   验收 --task-id <id> --decision 通过|退回 [--note <原因>]
@@ -334,6 +345,9 @@ try {
         description: args['review-description'] ?? '用户或项目明确要求 Review',
       } : null,
       integrationTarget: args['integration-target'],
+      enforceWorktree:true,
+      allowPrimaryWrite:args['allow-primary-write'] === true,
+      primaryWriteReason:args['primary-write-reason'],
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({
@@ -378,12 +392,17 @@ try {
       reasonCategory: args['reason-category'],
     }));
   } else if (action === '集成') {
-    output(confirmIntegration({
+    const integrationOptions = {
       stateRoot: args['state-root'],
       taskId: requiredArg(args, 'task-id'),
-      cwd: args.cwd ?? process.cwd(),
       target: args.target,
-    }));
+      keepWorktree:args['keep-worktree'] === true,
+      allowRisk:args['allow-risk-integration'] === true,
+      riskReason:args['risk-reason'],
+    };
+    output(args['confirm-only'] === true
+      ? confirmIntegration({ ...integrationOptions, cwd:args.cwd ?? process.cwd() })
+      : integrateTask(integrationOptions));
   } else if (action === '重验集成') {
     output(revalidateIntegration({
       stateRoot:args['state-root'],

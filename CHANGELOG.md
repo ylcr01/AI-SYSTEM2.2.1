@@ -14,6 +14,7 @@
 - 删除 10 个未注册、不可由宿主发现的内部 `SKILL.md`，将实际能力明确为 Quality Profile → Contract/Canonical 路由；新增 `--quality-profile`，旧 `--skill` 仅作兼容别名。
 - 新增状态迁移的 dry-run / 显式 `--apply` 流程：仅升级受支持的非终态旧 Schema 和目录错位，写前备份，冲突 fail closed，不推断用户决定。
 - 修复重新对齐沿用旧交付结果、任务级标签误分每条 Acceptance Evidence，以及指标隐藏未知验收和返工计数边界的问题。
+- 普通写任务默认在专属 Worktree 中准备；低风险任务交付后由串行集成器在隔离候选上重放检查并 fast-forward 目标分支，成功后安全清理任务分支和 Worktree，冲突、脏目标、检查失败或高风险状态均保留成果并停止集成。
 
 ## V2.2.2
 
