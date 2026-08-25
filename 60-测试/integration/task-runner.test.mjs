@@ -164,7 +164,7 @@ function preservationRepo(t, checks) {
   fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export const create = () => 1;\n');
   fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'export const cancel = () => 1;\n');
   fs.writeFileSync(path.join(repo, 'src', 'types.js'), 'export const T = 1;\n');
-  fs.writeFileSync(path.join(repo, 'tests', 'r.test.js'), '// targeted reference test\n');
+  fs.writeFileSync(path.join(repo, 'tests', 'r.test.js'), "const test=require('node:test');\nfor(const id of ['R1','R2','R3','R4','R5'])test(`参考行为 ${id}`,()=>{});\n");
   for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'ref']]) {
     const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
     if (result.status !== 0) throw new Error(result.stderr);
@@ -222,7 +222,7 @@ function writeRationale(t, task, changeSet, files) {
 
 test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
   const repo = preservationRepo(t, []);
-  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), '// targeted\n');
+  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), "const test=require('node:test');test('目标功能正确',()=>{});\n");
   for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'test']]) {
     const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
     if (result.status !== 0) throw new Error(result.stderr);
@@ -243,13 +243,14 @@ test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
   const changeSet = computeChangeSet(prepared.task.baseline);
   const taskCheckFile = writeJson(t, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     checks: [{
       name: 'target-A1',
       runner: 'node-test',
-      covers: ['behavior'],
-      acceptanceIds: ['A1'],
-      testFiles: ['tests/target.test.js'],
+      cases: [{
+        id: 'target-feature', acceptanceIds: ['A1'], covers: ['behavior'],
+        testFile: 'tests/target.test.js', testName: '目标功能正确',
+      }],
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     }],
@@ -268,7 +269,45 @@ test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
   assert.equal(checkEvidence.source.type, 'command');
   assert.equal(checkEvidence.source.actor, 'ai-system');
   assert.deepEqual(checkEvidence.source.testFiles, ['tests/target.test.js']);
+  assert.deepEqual(checkEvidence.result.caseSummary, { declared: 1, passed: 1, failed: 0, malformedEvents: 0 });
+  assert.equal(checkEvidence.result.caseResults[0].executed[0].name, '目标功能正确');
   assert.ok(delivered.task.verification.systemEvidenceHashes.includes(checkEvidence.payloadHash));
+});
+
+test('Task Check 零命中、skip 和 todo 均不能证明 Acceptance', (t) => {
+  const samples = [
+    { testName: '不存在的目标用例', source: "const test=require('node:test');test('实际用例',()=>{});\n" },
+    { testName: '目标用例跳过', source: "const test=require('node:test');test('目标用例跳过',{skip:true},()=>{});\n" },
+    { testName: '目标用例待办', source: "const test=require('node:test');test('目标用例待办',{todo:true},()=>{});\n" },
+  ];
+  for (const sample of samples) {
+    const repo = preservationRepo(t, []);
+    fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), sample.source);
+    for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'target-case']]) {
+      const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+      if (result.status !== 0) throw new Error(result.stderr);
+    }
+    const stateRoot = tempDir(t);
+    const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', acceptance: ['功能正确'], scope: '.' });
+    fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+    const delivered = deliverTask({
+      stateRoot,
+      taskId: prepared.task.taskId,
+      taskCheckFile: writeJson(t, { schemaVersion: 2, checks: [{
+        name: `reject-${sample.testName}`,
+        runner: 'node-test',
+        cases: [{
+          id: 'target-case', acceptanceIds: ['A1'], covers: ['behavior'],
+          testFile: 'tests/target.test.js', testName: sample.testName,
+        }],
+        estimatedCost: 'very-low', timeoutMs: 5000,
+      }] }, 'task-checks.json'),
+    });
+    assert.notEqual(delivered.task.status, 'waiting_acceptance', sample.testName);
+    assert.ok(delivered.task.verification.missingAcceptance.includes('A1'), sample.testName);
+    assert.equal(delivered.task.evidence.some((item) => item.acceptanceIds?.includes('A1')), false, sample.testName);
+    assert.equal(delivered.task.verification.firstFailure.name, `reject-${sample.testName}`);
+  }
 });
 
 test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
@@ -296,13 +335,14 @@ test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
   fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'export const rewritten = () => 42;\n');
   const changeSet = computeChangeSet(prepared.task.baseline);
   const taskCheckFile = writeJson(t, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     checks: ['R1', 'R2', 'R3', 'R5'].map((id) => ({
       name: `check-${id}`,
       runner: 'node-test',
-      covers: ['behavior'],
-      acceptanceIds: [ids[id]],
-      testFiles: ['tests/r.test.js'],
+      cases: [{
+        id: `case-${id}`, acceptanceIds: [ids[id]], covers: ['behavior'],
+        testFile: 'tests/r.test.js', testName: `参考行为 ${id}`,
+      }],
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     })),
@@ -338,13 +378,14 @@ test('内部实现不同但行为全验证时 complete 且允许交付', (t) => 
   const changeSet = computeChangeSet(prepared.task.baseline);
   const ids = Object.fromEntries(prepared.task.acceptance.map((item) => [item.referenceBehaviorId, item.id]));
   const taskCheckFile = writeJson(t, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     checks: ['R1', 'R2', 'R3', 'R4', 'R5'].map((id) => ({
       name: `bind-${id}`,
       runner: 'node-test',
-      covers: ['behavior'],
-      acceptanceIds: [ids[id]],
-      testFiles: ['tests/r.test.js'],
+      cases: [{
+        id: `case-${id}`, acceptanceIds: [ids[id]], covers: ['behavior'],
+        testFile: 'tests/r.test.js', testName: `参考行为 ${id}`,
+      }],
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     })),

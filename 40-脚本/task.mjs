@@ -140,6 +140,7 @@ function compactTask(task) {
         kind: 'check-failed',
         check: task.verification.firstFailure.name,
         exitCode: task.verification.firstFailure.exitCode,
+        error: task.verification.firstFailure.error,
         output: task.verification.firstFailure.output,
         truncated: task.verification.firstFailure.truncated,
       };
@@ -247,7 +248,7 @@ function help() {
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
-       [--task-check-file <json>（仅声明受控 runner/testFiles/config，并显式绑定具体 Acceptance）]
+       [--task-check-file <json>（Schema 2：受控 runner/cases，每个 case 显式绑定 Acceptance、Cover、测试文件与精确用例名）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
   重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）

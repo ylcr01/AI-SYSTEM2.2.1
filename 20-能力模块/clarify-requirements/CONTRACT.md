@@ -109,4 +109,4 @@ AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Contex
 - 行为保持型任务必须完整查看 Reference Root：所有 tracked Reference 文件必须归入 Reference Behavior 或 excludedFiles；每个 Reference Behavior 自动成为一条 Acceptance，并需要行为 Evidence 证明。
 - 未经用户批准的 `allowedDifferences` 默认是缺陷，且存在 allowedDifferences 时不得使用 direct Alignment。
 - 不确定旧行为先查代码、调用方、测试、规格/Contract、Reference 与项目事实；只有无法解决且会改变业务结果时才问用户，多个问题尽量一次确认；行为等价范围内的内部实现优化无需询问。
-- 具体 Acceptance 用系统执行的 `--task-check-file` 明确证明；宽泛全量 Check 不自动绑定多个 Acceptance。
+- 具体 Acceptance 用系统执行的 `--task-check-file` 明确证明；新 Task Check 的每个 case 必须绑定 Acceptance、Cover、测试文件和精确用例名，零命中、skip/todo 或无法解析的用例结果不能形成证明；宽泛全量 Check 不自动绑定多个 Acceptance。

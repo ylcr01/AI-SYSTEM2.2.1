@@ -2,7 +2,7 @@
 moduleId: MOD-AIRD-QUALITY-STATE
 title: 质量资料路由与 Task 真实性
 status: active
-lastVerifiedTaskId: task-20260824073432643-8f54a95f
+lastVerifiedTaskId: task-20260825043603678-aaf6487c
 lastVerifiedCommit: null
 ---
 
@@ -35,6 +35,7 @@ lastVerifiedCommit: null
 | BR-AIRD-STATE-001 | 状态迁移默认 dry-run；只有显式 `--apply` 才写入，且必须先原样备份、校验源指纹和目标冲突 | 静默损坏运行账本 | 仅处理当前内核支持读取的 V6/V7/V8 非终态记录与目录错位 |
 | BR-AIRD-REALIGN-001 | 重新对齐必须使旧 `deliveryDecision`、ChangeSet、Evidence、Acceptance Gap、Review、规格校验和旧风险失效；新 Acceptance 在当前输入重新验证前只能是 pending 或 unverified | 旧结果冒充新目标已经完成 | 重新对齐不改变 Scope、外部授权或集成目标 |
 | BR-AIRD-EVIDENCE-001 | Evidence 要求按每条 Acceptance 的业务语义推断；纯文档、运行行为、用户界面、数据迁移和目标环境分别路由，显式 `requiredCovers` 不得被任务级分类覆盖 | 文档检查误证业务行为，或无关浏览器流程被强制执行 | `product`/`requirements` 标签本身不等于 documentation；普通“显示结果”不等于 browser |
+| BR-AIRD-EVIDENCE-002 | 新建 Task Check 必须使用用例级 Schema 2；每个 case 绑定 Acceptance、Cover、测试文件和精确 Node 测试名。只有实际命中数等于声明值、全部执行通过且没有 skip/todo 时才能形成 Acceptance Evidence；Runner 结果无法解析时失败关闭。旧 Check Manifest 只兼容重放，不作为新建入口 | 测试文件或进程退出码为 0，但目标业务用例没有真正执行 | Check Manifest 固化 cases、Runner/结果协议版本和测试文件哈希 |
 | BR-AIRD-METRICS-001 | 首轮验收摘要必须同时报告 decided、unknown、rate 和 coverage；返工只计同一 Task 内显式用户退回，并声明未关联修复 Task 不在计数中 | 小量已决定样本被表达成整体稳定结果 | 小样本和无可比基线仍需保留警告 |
 
 ## 4. 状态迁移
@@ -65,4 +66,5 @@ lastVerifiedCommit: null
 | EX-AIRD-STATE-001 | 冲突被覆盖 | Unit | `60-测试/core/state-manager.test.mjs` | covered |
 | BR-AIRD-REALIGN-001 / TR-AIRD-REALIGN-001 | 旧交付误证新目标 | Integration/Scenario | `60-测试/integration/alignment-realign.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
 | BR-AIRD-EVIDENCE-001 | 任务级标签误分每条验收 | Integration | `60-测试/integration/task-runner.test.mjs` | covered |
+| BR-AIRD-EVIDENCE-002 | 零命中、skip/todo、错选或结果协议失真被误判为通过 | Core/Integration/Scenario | `60-测试/core/check-planner.test.mjs`; `60-测试/integration/check-planner.test.mjs`; `60-测试/integration/task-runner.test.mjs`; `60-测试/scenarios/cli.test.mjs`; `60-测试/scenarios/trust-gates.test.mjs` | covered |
 | BR-AIRD-METRICS-001 | 未知验收或返工边界被隐藏 | Unit/Scenario | `60-测试/core/outcome-metrics.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |

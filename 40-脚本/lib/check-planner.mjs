@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createBudget, budgetDecision, consumeBudget, remainingBudget } from './verification-budget.mjs';
-import { buildAdapterCheck } from './check-adapters.mjs';
+import { buildAdapterCheck, evaluateAdapterResult } from './check-adapters.mjs';
 
 const COST = { 'very-low': 0, low: 1, medium: 2, high: 3 };
 
@@ -68,48 +68,77 @@ export function loadChecks(cwd, options = {}) {
   ];
 }
 
+function canonicalTestFile(gitRoot, file, label) {
+  const absolute = path.resolve(gitRoot, file);
+  if (!lexicalPathWithin(path.resolve(gitRoot), absolute)) {
+    throw new Error(`${label} 越出 Git Root: ${file}`);
+  }
+  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+    throw new Error(`${label} 不存在或不是文件: ${file}`);
+  }
+  return path.relative(gitRoot, absolute).split(path.sep).join('/');
+}
+
+function validateTaskCase(item, checkName, context, seenIds) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`Task Check ${checkName} 包含无效 case`);
+  }
+  const id = String(item.id ?? '').trim();
+  const testName = String(item.testName ?? '').trim();
+  if (!Array.isArray(item.acceptanceIds)) throw new Error(`Task Check ${checkName} 的 case ${id || '<missing>'} acceptanceIds 必须是数组`);
+  if (!Array.isArray(item.covers)) throw new Error(`Task Check ${checkName} 的 case ${id || '<missing>'} covers 必须是数组`);
+  const acceptanceIds = [...new Set(item.acceptanceIds)].map((value) => String(value).trim()).filter(Boolean);
+  const covers = [...new Set(item.covers)].map((value) => String(value).trim()).filter(Boolean);
+  const expectedMatches = item.expectedMatches ?? 1;
+  if (!id) throw new Error(`Task Check ${checkName} 的 case 缺少 id`);
+  if (seenIds.has(id)) throw new Error(`Task Check ${checkName} 的 case id 重复: ${id}`);
+  seenIds.add(id);
+  if (!testName) throw new Error(`Task Check ${checkName} 的 case ${id} 缺少 testName`);
+  if (!acceptanceIds.length) throw new Error(`Task Check ${checkName} 的 case ${id} 必须显式绑定非空 acceptanceIds`);
+  if (!covers.length) throw new Error(`Task Check ${checkName} 的 case ${id} 缺少 covers`);
+  if (!Number.isSafeInteger(expectedMatches) || expectedMatches <= 0) {
+    throw new Error(`Task Check ${checkName} 的 case ${id} expectedMatches 必须是正安全整数`);
+  }
+  const testFile = canonicalTestFile(context.gitRoot, String(item.testFile ?? '').trim(), `Task Check ${checkName} 的 case ${id} testFile`);
+  for (const acceptanceId of acceptanceIds) {
+    const acceptance = (context.acceptance ?? []).find((entry) => entry.id === acceptanceId);
+    if (!acceptance) throw new Error(`Task Check ${checkName} 的 case ${id} 绑定未知 Acceptance: ${acceptanceId}`);
+    if (!covers.some((cover) => (acceptance.requiredCovers ?? []).includes(cover))) {
+      throw new Error(`Task Check ${checkName} 的 case ${id} covers 与 Acceptance ${acceptanceId} 的 requiredCovers 无关`);
+    }
+  }
+  return { id, acceptanceIds, covers, testFile, testName, expectedMatches };
+}
+
 function validateTaskCheck(check, context) {
   if (!check || typeof check !== 'object' || Array.isArray(check)) {
     throw new Error('Task Check 必须是对象');
   }
   const name = String(check.name ?? '').trim();
-  const covers = [...new Set(check.covers ?? [])].map((item) => String(item).trim()).filter(Boolean);
-  const acceptanceIds = [...new Set(check.acceptanceIds ?? [])].map((item) => String(item).trim()).filter(Boolean);
-  const testFiles = [...new Set(check.testFiles ?? [])].map((item) => String(item ?? '').trim()).filter(Boolean);
   if (!name) throw new Error('Task Check 缺少 name');
-  if (!covers.length) throw new Error(`Task Check ${name} 缺少 covers`);
-  if (!acceptanceIds.length) throw new Error(`Task Check ${name} 必须显式绑定非空 acceptanceIds`);
-  if (!testFiles.length) throw new Error(`Task Check ${name} 必须提供非空 testFiles`);
-  for (const acceptanceId of acceptanceIds) {
-    const acceptance = (context.acceptance ?? []).find((item) => item.id === acceptanceId);
-    if (!acceptance) throw new Error(`Task Check ${name} 绑定未知 Acceptance: ${acceptanceId}`);
-    const intersects = covers.some((cover) => (acceptance.requiredCovers ?? []).includes(cover));
-    if (!intersects) {
-      throw new Error(`Task Check ${name} 的 covers 与 Acceptance ${acceptanceId} 的 requiredCovers 无关`);
-    }
-  }
-  for (const testFile of testFiles) {
-    const absolute = path.resolve(context.gitRoot, testFile);
-    if (!lexicalPathWithin(path.resolve(context.gitRoot), absolute)) {
-      throw new Error(`Task Check ${name} 的 testFiles 越出 Git Root: ${testFile}`);
-    }
-    if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
-      throw new Error(`Task Check ${name} 的 testFiles 不存在或不是文件: ${testFile}`);
-    }
-  }
+  const duplicateFields = ['covers', 'acceptanceIds', 'testFiles'].filter((field) => check[field] !== undefined);
+  if (duplicateFields.length) throw new Error(`Task Check v2 ${name} 必须在 cases 中声明 ${duplicateFields.join(', ')}`);
+  if (!Array.isArray(check.cases) || !check.cases.length) throw new Error(`Task Check ${name} 必须提供非空 cases`);
+  const caseIds = new Set();
+  const cases = check.cases.map((item) => validateTaskCase(item, name, context, caseIds));
+  const covers = [...new Set(cases.flatMap((item) => item.covers))];
+  const acceptanceIds = [...new Set(cases.flatMap((item) => item.acceptanceIds))];
+  const testFiles = [...new Set(cases.map((item) => item.testFile))];
   if ((context.projectCheckNames ?? new Set()).has(name) || (context.seen ?? new Set()).has(name)) {
     throw new Error(`Task Check 名称冲突: ${name}`);
   }
   context.seen.add(name);
-  const adapter = buildAdapterCheck({ ...check, name, testFiles });
+  const adapter = buildAdapterCheck({ ...check, name, cases, testFiles });
   return {
     name,
     runner: adapter.runner,
     adapterVersion: adapter.adapterVersion,
+    resultProtocol: adapter.resultProtocol,
     command: adapter.command,
     args: adapter.args,
     covers,
     acceptanceIds,
+    cases,
     testFiles,
     config: check.config ?? {},
     sideEffect: adapter.sideEffect,
@@ -132,6 +161,7 @@ export function loadTaskChecks(file, options = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.checks)) {
     throw new Error('task-check-file 必须是包含 checks 数组的 JSON 对象');
   }
+  if (value.schemaVersion !== 2) throw new Error('新建 task-check-file 必须使用 Schema 2 用例级协议');
   const seen = new Set();
   return value.checks.map((check) => validateTaskCheck(check, { ...options, seen }));
 }
@@ -147,6 +177,7 @@ export function createCheckManifest(plan, options = {}) {
     name: check.name,
     runner: check.runner ?? null,
     adapterVersion: check.adapterVersion ?? null,
+    resultProtocol: check.resultProtocol ?? null,
     config: check.config ?? null,
     command: check.runner ? null : check.command,
     args: check.runner ? null : check.args,
@@ -154,6 +185,7 @@ export function createCheckManifest(plan, options = {}) {
     covers: check.covers ?? [],
     acceptanceMode: check.acceptanceMode ?? 'none',
     acceptanceIds: check.acceptanceIds ?? [],
+    cases: check.cases ?? [],
     testFiles: check.testFiles ?? [],
     testFileHashes: Object.fromEntries((check.testFiles ?? []).map((file) => [file, fileHash(gitRoot, file)])),
     sideEffect: check.sideEffect ?? 'workspace',
@@ -162,7 +194,7 @@ export function createCheckManifest(plan, options = {}) {
     source: check.source ?? 'manifest',
   }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     planFingerprint: plan.fingerprint,
     checks,
     createdAt: new Date().toISOString(),
@@ -170,7 +202,7 @@ export function createCheckManifest(plan, options = {}) {
 }
 
 export function checksFromManifest(manifest, options = {}) {
-  if (!manifest || manifest.schemaVersion !== 1 || !Array.isArray(manifest.checks)) {
+  if (!manifest || ![1, 2].includes(manifest.schemaVersion) || !Array.isArray(manifest.checks)) {
     throw new Error('Check Manifest 无效或版本不受支持');
   }
   const gitRoot = path.resolve(options.gitRoot ?? options.cwd ?? '.');
@@ -181,14 +213,20 @@ export function checksFromManifest(manifest, options = {}) {
       }
     }
     if (stored.runner) {
+      const legacy = manifest.schemaVersion === 1;
       const adapter = buildAdapterCheck({
         name: stored.name,
         runner: stored.runner,
         testFiles: stored.testFiles ?? [],
+        cases: stored.cases ?? [],
         config: stored.config ?? {},
+        legacy,
       });
       if (adapter.adapterVersion !== stored.adapterVersion) {
         throw new Error(`Check Manifest Runner 版本已变化: ${stored.name}`);
+      }
+      if (!legacy && adapter.resultProtocol !== stored.resultProtocol) {
+        throw new Error(`Check Manifest Runner 结果协议已变化: ${stored.name}`);
       }
       return { ...stored, ...adapter, source: 'check-manifest' };
     }
@@ -266,9 +304,14 @@ export function planChecks(input = {}) {
       name: check.name,
       command: check.command,
       args: check.args,
+      runner: check.runner ?? null,
+      adapterVersion: check.adapterVersion ?? null,
+      resultProtocol: check.resultProtocol ?? null,
+      config: check.config ?? null,
       covers: check.covers,
       acceptanceMode: check.acceptanceMode,
-      acceptanceIds: check.acceptanceIds ?? []
+      acceptanceIds: check.acceptanceIds ?? [],
+      cases: check.cases ?? []
     })),
     missingCovers,
     missingAcceptanceCovers
@@ -305,8 +348,11 @@ function executeOne(check, cwd, timeoutMs) {
   const resolved = resolveCommand(check.command);
   const startedAt = new Date().toISOString();
   const started = Date.now();
+  const childEnv = { ...process.env };
+  delete childEnv.NODE_TEST_CONTEXT;
   const result = spawnSync(resolved.command, [...resolved.prefix, ...check.args], {
     cwd,
+    env: childEnv,
     encoding: 'utf8',
     windowsHide: true,
     shell: false,
@@ -314,6 +360,13 @@ function executeOne(check, cwd, timeoutMs) {
     maxBuffer: 8 * 1024 * 1024
   });
   const finishedAt = new Date().toISOString();
+  const adapterResult = evaluateAdapterResult(check, {
+    cwd,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    status: result.status,
+    error: result.error?.message ?? null,
+  });
   const output = {
     name: check.name,
     command: check.command,
@@ -325,12 +378,18 @@ function executeOne(check, cwd, timeoutMs) {
     durationMs: Date.now() - started,
     stdout: tail(result.stdout),
     stderr: tail(result.stderr),
-    error: result.error?.message ?? null,
+    error: result.error?.message ?? adapterResult.error ?? null,
+    runner: check.runner ?? null,
+    adapterVersion: check.adapterVersion ?? null,
+    resultProtocol: check.resultProtocol ?? null,
     covers: check.covers ?? [],
     source: check.source,
     sideEffect: check.sideEffect,
     acceptanceMode: check.acceptanceMode,
     acceptanceIds: check.acceptanceIds ?? [],
+    cases: check.cases ?? [],
+    caseResults: adapterResult.caseResults ?? [],
+    caseSummary: adapterResult.caseSummary ?? null,
     testFiles: check.testFiles ?? [],
     artifacts: check.artifacts ?? []
   };
@@ -338,7 +397,9 @@ function executeOne(check, cwd, timeoutMs) {
     status: output.status,
     stdout: output.stdout,
     stderr: output.stderr,
-    error: output.error
+    error: output.error,
+    caseResults: output.caseResults,
+    caseSummary: output.caseSummary
   })).digest('hex');
   return output;
 }

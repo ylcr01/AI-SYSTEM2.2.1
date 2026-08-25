@@ -158,14 +158,20 @@ function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task
     source: {
       type: 'command', actor: 'ai-system', session: null,
       command: check.command, args: check.args, cwd: check.cwd, sideEffect: check.sideEffect,
-      testFiles: check.testFiles ?? []
+      runner: check.runner ?? null,
+      adapterVersion: check.adapterVersion ?? null,
+      resultProtocol: check.resultProtocol ?? null,
+      testFiles: check.testFiles ?? [],
+      cases: check.cases ?? []
     },
     result: {
       status: check.status === 0 && !check.error ? 'passed' : 'failed',
       exitCode: check.status,
       durationMs: check.durationMs,
       summary: check.error ?? check.stderr?.text ?? `${check.name} 通过`,
-      resultFingerprint: check.resultFingerprint
+      resultFingerprint: check.resultFingerprint,
+      caseResults: check.caseResults ?? [],
+      caseSummary: check.caseSummary ?? null
     },
     createdAt: check.finishedAt ?? new Date().toISOString()
   });
@@ -705,6 +711,8 @@ function compactIntegrationEvidence(task, targetHead, plan, execution) {
       status:item.status,
       durationMs:item.durationMs,
       resultFingerprint:item.resultFingerprint,
+      resultProtocol:item.resultProtocol ?? null,
+      caseSummary:item.caseSummary ?? null,
     })),
     createdAt:new Date().toISOString(),
   };

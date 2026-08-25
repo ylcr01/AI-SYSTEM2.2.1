@@ -3,11 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest, planChecks } from '../../40-脚本/lib/check-planner.mjs';
+import { evaluateAdapterResult } from '../../40-脚本/lib/check-adapters.mjs';
 import { tempDir } from '../helpers.mjs';
 
-function writeTaskChecks(t, checks) {
+function writeTaskChecks(t, checks, schemaVersion = 2) {
   const file = path.join(tempDir(t), 'task-checks.json');
-  fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, checks }));
+  fs.writeFileSync(file, JSON.stringify({ schemaVersion, checks }));
   return file;
 }
 
@@ -30,12 +31,20 @@ function context(t, extra = {}) {
 const VALID_CHECK = {
   name: 'order-create-A1',
   runner: 'node-test',
-  covers: ['behavior'],
-  acceptanceIds: ['A1'],
-  testFiles: ['tests/target.test.js'],
+  cases: [{
+    id: 'order-create-success',
+    acceptanceIds: ['A1'],
+    covers: ['behavior'],
+    testFile: 'tests/target.test.js',
+    testName: '创建订单成功',
+  }],
   estimatedCost: 'low',
   timeoutMs: 30000,
 };
+
+function withCase(overrides) {
+  return { ...VALID_CHECK, cases: [{ ...VALID_CHECK.cases[0], ...overrides }] };
+}
 
 test('Task Check 规范化成 explicit 并保留 testFiles', (t) => {
   const ctx = context(t);
@@ -43,28 +52,40 @@ test('Task Check 规范化成 explicit 并保留 testFiles', (t) => {
   assert.equal(checks.length, 1);
   assert.equal(checks[0].acceptanceMode, 'explicit');
   assert.deepEqual(checks[0].acceptanceIds, ['A1']);
+  assert.deepEqual(checks[0].covers, ['behavior']);
   assert.deepEqual(checks[0].testFiles, ['tests/target.test.js']);
+  assert.deepEqual(checks[0].cases, [{ ...VALID_CHECK.cases[0], expectedMatches: 1 }]);
   assert.deepEqual(checks[0].profiles, ['quick', 'standard', 'controlled', 'release']);
   assert.equal(checks[0].command, 'node');
-  assert.deepEqual(checks[0].args, ['--test', 'tests/target.test.js']);
+  assert.equal(checks[0].adapterVersion, 2);
+  assert.equal(checks[0].resultProtocol, 'node-test-cases-v1');
+  assert.deepEqual(checks[0].args.slice(0, 2), ['--test', '--test-reporter']);
+  assert.ok(checks[0].args[2].endsWith('/node-test-case-reporter.mjs'));
+  assert.deepEqual(checks[0].args.slice(3), ['--test-name-pattern', '^(?:创建订单成功)$', 'tests/target.test.js']);
 });
 
 test('Task Check 校验拒绝各类非法输入', (t) => {
   const ctx = context(t);
   const cases = [
-    [{ ...VALID_CHECK, acceptanceIds: ['A9'] }, /未知 Acceptance/u],
-    [{ ...VALID_CHECK, acceptanceIds: [] }, /非空 acceptanceIds/u],
-    [{ ...VALID_CHECK, testFiles: [] }, /非空 testFiles/u],
-    [{ ...VALID_CHECK, testFiles: ['../outside.test.js'] }, /越出 Git Root/u],
-    [{ ...VALID_CHECK, testFiles: ['missing.test.js'] }, /不存在或不是文件/u],
+    [withCase({ acceptanceIds: ['A9'] }), /未知 Acceptance/u],
+    [withCase({ acceptanceIds: [] }), /非空 acceptanceIds/u],
+    [withCase({ acceptanceIds: 'A1' }), /acceptanceIds 必须是数组/u],
+    [{ ...VALID_CHECK, cases: [] }, /非空 cases/u],
+    [withCase({ testFile: '../outside.test.js' }), /越出 Git Root/u],
+    [withCase({ testFile: 'missing.test.js' }), /不存在或不是文件/u],
     [{ ...VALID_CHECK, sideEffect: 'external' }, /禁止自定义/u],
-    [{ ...VALID_CHECK, acceptanceIds: ['A2'] }, /requiredCovers 无关/u],
+    [withCase({ acceptanceIds: ['A2'] }), /requiredCovers 无关/u],
     [{ ...VALID_CHECK, name: 'project-behavior' }, /名称冲突/u],
-    [{ ...VALID_CHECK, covers: [] }, /缺少 covers/u],
+    [withCase({ covers: [] }), /缺少 covers/u],
+    [withCase({ covers: 'behavior' }), /covers 必须是数组/u],
+    [withCase({ testName: '' }), /缺少 testName/u],
+    [withCase({ expectedMatches: 0 }), /正安全整数/u],
+    [withCase({ expectedMatches: '1' }), /正安全整数/u],
     [{ ...VALID_CHECK, command: 'node' }, /禁止自定义/u],
     [{ ...VALID_CHECK, args: ['-e', 'process.exit(0)'] }, /禁止自定义/u],
     [{ ...VALID_CHECK, runner: 'shell' }, /runner 不受支持/u],
-    [{ ...VALID_CHECK, config: { shell: true } }, /未知字段/u],
+    [{ ...VALID_CHECK, config: { shell: true } }, /不接受 config/u],
+    [{ ...VALID_CHECK, acceptanceIds: ['A1'] }, /必须在 cases 中声明 acceptanceIds/u],
   ];
   for (const [check, pattern] of cases) {
     assert.throws(() => loadTaskChecks(writeTaskChecks(t, [check]), ctx), pattern);
@@ -74,10 +95,15 @@ test('Task Check 校验拒绝各类非法输入', (t) => {
 test('testFiles 支持相对路径、./ 前缀与同文件绝对路径', (t) => {
   const ctx = context(t);
   const absolute = path.resolve(ctx.gitRoot, 'tests', 'target.test.js');
-  for (const testFiles of [['tests/target.test.js'], ['./tests/target.test.js'], [absolute]]) {
-    const checks = loadTaskChecks(writeTaskChecks(t, [{ ...VALID_CHECK, testFiles }]), ctx);
+  for (const testFile of ['tests/target.test.js', './tests/target.test.js', absolute]) {
+    const checks = loadTaskChecks(writeTaskChecks(t, [withCase({ testFile })]), ctx);
     assert.equal(checks.length, 1);
+    assert.deepEqual(checks[0].testFiles, ['tests/target.test.js']);
   }
+});
+
+test('新建 Task Check 拒绝旧 Schema 1', (t) => {
+  assert.throws(() => loadTaskChecks(writeTaskChecks(t, [VALID_CHECK], 1), context(t)), /必须使用 Schema 2/u);
 });
 
 test('acceptanceIdsForCheck 对 Reference Behavior 只允许显式绑定', () => {
@@ -139,8 +165,8 @@ test('显式绑定的针对性检查仍可证明多条验收', () => {
 test('同一 task-check-file 内重复名称被拒绝', (t) => {
   const ctx = context(t);
   const checks = [
-    { ...VALID_CHECK, name: 'dup', acceptanceIds: ['A1'], covers: ['behavior'] },
-    { ...VALID_CHECK, name: 'dup', acceptanceIds: ['A1'], covers: ['behavior'] },
+    { ...VALID_CHECK, name: 'dup' },
+    { ...VALID_CHECK, name: 'dup' },
   ];
   assert.throws(() => loadTaskChecks(writeTaskChecks(t, checks), ctx), /名称冲突/u);
 });
@@ -153,8 +179,51 @@ test('Check Manifest 固化 Runner 与测试文件哈希并可重放', (t) => {
     acceptanceCoverage: {}, checks,
   });
   const manifest = createCheckManifest(plan, { gitRoot: ctx.gitRoot });
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.checks[0].resultProtocol, 'node-test-cases-v1');
+  assert.deepEqual(manifest.checks[0].cases, [{ ...VALID_CHECK.cases[0], expectedMatches: 1 }]);
   const replay = checksFromManifest(manifest, { gitRoot: ctx.gitRoot });
-  assert.deepEqual(replay[0].args, ['--test', 'tests/target.test.js']);
+  assert.equal(replay[0].adapterVersion, 2);
+  assert.equal(replay[0].resultProtocol, 'node-test-cases-v1');
   fs.writeFileSync(path.join(ctx.gitRoot, 'tests', 'target.test.js'), '// changed\n');
   assert.throws(() => checksFromManifest(manifest, { gitRoot: ctx.gitRoot }), /测试输入已变化/u);
+});
+
+test('旧 Check Manifest 仍按 Runner v1 兼容重放', (t) => {
+  const ctx = context(t);
+  const checks = loadTaskChecks(writeTaskChecks(t, [VALID_CHECK]), ctx);
+  const current = createCheckManifest(planChecks({
+    profile: 'standard', requiredCovers: ['behavior'], acceptance: ctx.acceptance,
+    acceptanceCoverage: {}, checks,
+  }), { gitRoot: ctx.gitRoot });
+  const stored = current.checks[0];
+  const legacy = {
+    ...current,
+    schemaVersion: 1,
+    checks: [{
+      ...stored,
+      adapterVersion: 1,
+      resultProtocol: undefined,
+      cases: undefined,
+      config: { testNamePattern: '创建订单成功' },
+    }],
+  };
+  const replay = checksFromManifest(legacy, { gitRoot: ctx.gitRoot });
+  assert.equal(replay[0].adapterVersion, 1);
+  assert.equal(replay[0].resultProtocol, 'exit-code-v1');
+  assert.deepEqual(replay[0].args, ['--test', '--test-name-pattern', '创建订单成功', 'tests/target.test.js']);
+});
+
+test('node-test 用例事件无法解析时失败关闭', () => {
+  const result = evaluateAdapterResult({
+    runner: 'node-test',
+    resultProtocol: 'node-test-cases-v1',
+    cases: [{ ...VALID_CHECK.cases[0], expectedMatches: 1 }],
+  }, {
+    cwd: process.cwd(),
+    stdout: 'AI_RD_NODE_TEST_CASE {not-json}\n',
+  });
+  assert.match(result.error, /无法解析/u);
+  assert.equal(result.caseSummary.malformedEvents, 1);
+  assert.equal(result.caseResults[0].status, 'failed');
 });

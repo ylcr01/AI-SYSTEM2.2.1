@@ -1,4 +1,5 @@
-import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import test from 'node:test';import { loadChecks,planChecks,executeCheckPlan,resolveCommand } from '../../40-脚本/lib/check-planner.mjs';import { tempDir } from '../helpers.mjs';
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import test from 'node:test';import { fileURLToPath } from 'node:url';import { loadChecks,loadTaskChecks,planChecks,executeCheckPlan,resolveCommand } from '../../40-脚本/lib/check-planner.mjs';import { tempDir } from '../helpers.mjs';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 test('计划选择最低成本且能补充 Covers 的检查',()=>{const plan=planChecks({profile:'standard',requiredCovers:['behavior','typecheck'],checks:[{name:'all',command:'node',args:[],profiles:['standard'],covers:['behavior','typecheck'],sideEffect:'none',estimatedCost:'high'},{name:'behavior',command:'node',args:[],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'low'},{name:'types',command:'node',args:[],profiles:['standard'],covers:['typecheck'],sideEffect:'none',estimatedCost:'low'}]});assert.deepEqual(plan.checks.map(x=>x.name),['behavior','types']);assert.deepEqual(plan.missingCovers,[]);});
 test('自动计划禁止外部写入',()=>{assert.throws(()=>executeCheckPlan({profile:'controlled',checks:[{name:'deploy',command:'node',args:[],sideEffect:'external'}]},{cwd:process.cwd(),budget:{mode:'controlled',limitMs:1000,spentMs:0}}),/禁止执行外部写入/);});
 
@@ -78,4 +79,39 @@ test('宽泛检查仍补充全局 Cover 但不绑定多条验收并输出业务�
     { acceptanceId: 'A1', description: '退款恢复库存', missingCovers: ['behavior'] },
     { acceptanceId: 'A2', description: '部分退款数量正确', missingCovers: ['behavior'] }
   ]);
+});
+
+function casePlan(t, testName) {
+  const file=path.join(tempDir(t),'task-check.json');
+  fs.writeFileSync(file,JSON.stringify({schemaVersion:2,checks:[{
+    name:`case-${testName}`,
+    runner:'node-test',
+    cases:[{
+      id:'C1',acceptanceIds:['A1'],covers:['behavior'],
+      testFile:'60-测试/fixtures/node-test-case-sample.test.mjs',testName,
+    }],
+    estimatedCost:'very-low',timeoutMs:5000,
+  }]}));
+  const acceptance=[{id:'A1',requiredCovers:['behavior']}];
+  const checks=loadTaskChecks(file,{gitRoot:ROOT,acceptance,projectCheckNames:new Set()});
+  return planChecks({profile:'standard',requiredCovers:['behavior'],acceptance,acceptanceCoverage:{},checks});
+}
+
+test('node-test 用例级 Runner 返回实际命中与通过结果',t=>{
+  const execution=executeCheckPlan(casePlan(t,'目标用例通过'),{cwd:ROOT,budget:{mode:'standard',limitMs:5000,spentMs:0}});
+  assert.equal(execution.ok,true,JSON.stringify(execution,null,2));
+  assert.deepEqual(execution.results[0].caseSummary,{declared:1,passed:1,failed:0,malformedEvents:0});
+  assert.equal(execution.results[0].caseResults[0].testName,'目标用例通过');
+  assert.equal(execution.results[0].caseResults[0].matchedCount,1);
+  assert.equal(execution.results[0].caseResults[0].passedCount,1);
+  assert.equal(execution.results[0].caseResults[0].executed[0].status,'passed');
+});
+
+test('node-test 零命中、失败、skip 和 todo 均阻止检查通过',t=>{
+  for(const testName of ['不存在的目标用例','目标用例失败','目标用例跳过','目标用例待办']){
+    const execution=executeCheckPlan(casePlan(t,testName),{cwd:ROOT,budget:{mode:'standard',limitMs:5000,spentMs:0}});
+    assert.equal(execution.ok,false,testName);
+    assert.equal(execution.stopReason,'failed',testName);
+    assert.equal(execution.results[0].caseResults[0].status,'failed',testName);
+  }
 });

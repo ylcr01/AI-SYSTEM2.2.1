@@ -355,7 +355,7 @@ test('CLI 重新对齐后旧交付不得把新验收项标成 verified', t => {
 test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t => {
   const repo = gitRepo(t, { checks: [] });
   fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), '// targeted\n');
+  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), "const test=require('node:test');test('退款后库存恢复',()=>{});\n");
   for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'tests']]) {
     const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
     if (result.status !== 0) throw new Error(result.stderr);
@@ -376,13 +376,14 @@ test('交付回执用 Outcome 语言展示每条验收状态与缺口提示', t 
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
   const taskCheck = path.join(stateRoot, 'task-checks.json');
   fs.writeFileSync(taskCheck, JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     checks: [{
       name: 'bind-A1',
       runner: 'node-test',
-      covers: ['behavior'],
-      acceptanceIds: ['A1'],
-      testFiles: ['tests/target.test.js'],
+      cases: [{
+        id: 'refund-restores-stock', acceptanceIds: ['A1'], covers: ['behavior'],
+        testFile: 'tests/target.test.js', testName: '退款后库存恢复',
+      }],
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     }],
