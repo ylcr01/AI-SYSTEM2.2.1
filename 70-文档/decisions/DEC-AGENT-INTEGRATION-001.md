@@ -5,7 +5,6 @@ affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260812095713070-9975ae49
 supersedes: []
-supersededBy: DEC-AUTOMATIC-SERIAL-INTEGRATION-001
 ---
 
 # 并行 Agent 使用 detached worktree 与单一集成者
