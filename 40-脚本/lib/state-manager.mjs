@@ -56,6 +56,27 @@ function workspaceLockFile(value, gitRoot) {
   return path.join(value.locks, `workspace-${key}.lock`);
 }
 
+function integrationLockFile(value, gitCommonDir, target) {
+  const key = crypto.createHash('sha256')
+    .update(`${normalizePath(gitCommonDir)}\0${String(target ?? '')}`)
+    .digest('hex')
+    .slice(0, 24);
+  return path.join(value.locks, `integration-${key}.lock`);
+}
+
+export function withIntegrationLock(input = {}, action) {
+  if (typeof action !== 'function') throw new Error('集成锁缺少执行函数');
+  if (!input.gitCommonDir) throw new Error('集成锁缺少 Git Common Dir');
+  if (!String(input.target ?? '').trim()) throw new Error('集成锁缺少目标分支');
+  const value = paths(input.stateRoot);
+  fs.mkdirSync(value.locks, { recursive:true });
+  return withFileLock(
+    integrationLockFile(value, input.gitCommonDir, input.target),
+    action,
+    { timeoutMs:10000, staleMs:30 * 60 * 1000 },
+  );
+}
+
 function activeTasks(value) {
   if (!fs.existsSync(value.active)) return [];
   return fs.readdirSync(value.active)

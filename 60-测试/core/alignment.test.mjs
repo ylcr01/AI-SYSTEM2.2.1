@@ -232,7 +232,7 @@ test('完整准备回执保留目标、对齐模式与基线指纹', (t) => {
   const file = writeAlignment(t, DIRECT_ALIGNMENT);
   const result = runNode(
     path.join(ROOT, '40-脚本', 'task.mjs'),
-    ['准备', '--cwd', repo, '--state-root', stateRoot, '--intent', DIRECT_ALIGNMENT.originalRequest, '--alignment-file', file, '--scope', '.', '--full'],
+    ['准备', '--cwd', repo, '--state-root', stateRoot, '--intent', DIRECT_ALIGNMENT.originalRequest, '--alignment-file', file, '--scope', '.', '--allow-primary-write', '--primary-write-reason', 'CLI 回执兼容测试', '--full'],
     { cwd: ROOT },
   );
   assert.equal(result.status, 0, result.stderr);
