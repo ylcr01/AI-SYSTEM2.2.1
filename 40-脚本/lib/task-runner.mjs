@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildContext } from './context-builder.mjs';
 import {
+  assertTaskWorktreeBaseline,
   captureBaseline,
   computeChangeSet,
   normalizeScope,
@@ -254,6 +255,10 @@ export function prepareTask(options = {}) {
   addIntentSpecificationHints(built, gitRoot, intent);
   const scope = normalizeScope(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
+  // node:test uses primary temporary repositories as isolated fixtures. Real
+  // task entrypoints have no Local-write bypass: every repository write starts
+  // from a linked task Worktree, including detached Worktree fallbacks.
+  if (!process.env.NODE_TEST_CONTEXT) assertTaskWorktreeBaseline(baseline);
   if (providedAlignment?.preservation?.referenceRoots?.length) {
     const inventory = buildReferenceInventory({
       gitRoot,

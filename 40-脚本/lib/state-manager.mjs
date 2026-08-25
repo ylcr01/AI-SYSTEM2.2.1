@@ -87,7 +87,10 @@ function assertWorkspaceAvailable(value, gitRoot, taskId = null) {
     && WRITING.has(item.status)
     && normalizePath(item.baseline?.gitRoot) === normalizePath(gitRoot));
   if (conflict) {
-    throw new Error(`当前 Git 工作树已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一工作树不能并行写。若使用 Codex 桌面端，请为新对话选择“Worktree”，或先用 Handoff 将当前对话移入 Worktree；每个并行写 Task 必须独占一个 managed Worktree。其他宿主请使用 \`git worktree add --detach <新路径> <起点>\` 创建独立 worktree。进入 Worktree 后准备 Task 时必须声明 \`--integration-target <目标分支>\`。若冲突 Task 暂不继续，可运行 \`task.mjs 保存 --task-id ${conflict.taskId}\` 显式释放工作树，恢复时会重新检查写冲突。系统不会自动创建、移动或删除 worktree。`);
+    const error = new Error(`WORKTREE_CONFLICT: 当前任务 Worktree 已有活动写 Task: ${conflict.taskId} (${conflict.status})。同一 Worktree 不能承载第二个写任务。Codex 桌面端立即为新任务创建专属 managed Worktree，或用 Handoff 将任务移入该 Worktree；宿主不可用或识别失败时，使用 \`git worktree add --detach <新路径> <起点>\` 创建独立 Worktree，并在准备时传入 \`--integration-target <目标分支>\`。这是内部路由信号，不是用户阻塞；不得等待、向用户报告“主工作树被占用”或降级到 Local。若原 Task 暂不继续，可运行 \`task.mjs 保存 --task-id ${conflict.taskId}\` 释放该 Worktree。任务内核不会自动创建、移动或删除 worktree；执行模型必须完成上述确定性路由。`);
+    error.code = 'WORKTREE_CONFLICT';
+    error.conflictTaskId = conflict.taskId;
+    throw error;
   }
 }
 

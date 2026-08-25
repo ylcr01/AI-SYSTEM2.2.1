@@ -21,13 +21,16 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /AI_RD_OS_ROOT/u);
   assert.match(result.stdout, /AGENTS\.md/u);
+  assert.match(result.stdout, /task-dedicated Worktree/u);
+  assert.match(result.stdout, /deterministic detached fallback/u);
+  assert.match(result.stdout, /Never write or silently fall back to Local\/main/u);
   assert.match(result.stdout, /Scope or Evidence gates/u);
   assert.match(result.stdout, /waiting_acceptance/u);
   assert.match(result.stdout, /external writes without explicit user authorization/u);
   assert.doesNotMatch(result.stdout, /build-context\.mjs/u);
   assert.doesNotMatch(result.stdout, /task\.mjs/u);
   assert.doesNotMatch(result.stdout, /Browser verification|最多 4 条核心链路/u);
-  assert.ok(Buffer.byteLength(result.stdout) < 500);
+  assert.ok(Buffer.byteLength(result.stdout) < 800);
 });
 
 test('项目入口初始化保持轻量且默认不覆盖', (t) => {
@@ -37,6 +40,7 @@ test('项目入口初始化保持轻量且默认不覆盖', (t) => {
   const file = path.join(project, 'AGENTS.md');
   assert.equal(fs.existsSync(file), true);
   assert.match(fs.readFileSync(file, 'utf8'), /AI_RD_OS_ROOT/u);
+  assert.match(fs.readFileSync(file, 'utf8'), /本文件只登记当前项目特有/u);
   const second = runNode(SCRIPT, ['初始化项目', '--cwd', project], { cwd: ROOT });
   assert.notEqual(second.status, 0);
 });

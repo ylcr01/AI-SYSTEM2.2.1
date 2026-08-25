@@ -28,8 +28,8 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → build-context → 读取最小相关事实
-主工作区写任务  → 正在处理 → 等待你验收 → 已结束
-并行 Worktree   → 正在处理（含集成与目标 HEAD 重验）→ 等待你验收 → 已结束
+所有仓库写任务  → 专属 Worktree → 提交 → 串行集成与目标 HEAD 重验 → 等待你验收 → 已结束
+Local/主工作区  → 只读分析或单一集成者串行集成
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
@@ -41,7 +41,7 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 - 新 Task Check 使用用例级 Schema 2，只接受受控 Runner；每个 case 显式绑定 Acceptance、Cover、测试文件和精确用例名。Runner 必须返回真实命中、通过、失败、skip/todo 结果，Check Manifest 同时绑定用例声明、Runner 协议与输入哈希。
 - Task 写作态、待验收和历史记录分层保存；默认回执只展示四种用户状态，最终验收只能由用户产生。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
-- 并行任务独占 Worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- 每个写任务独占 Worktree；Local 不承载实现。集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
 - Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
 
 详细规则以 [`AGENTS.md`](AGENTS.md)、[`20-能力模块/clarify-requirements/CONTRACT.md`](20-能力模块/clarify-requirements/CONTRACT.md) 和 [`70-文档/20-可信门禁.md`](70-文档/20-可信门禁.md) 为准；维护者可运行 `task.mjs --help --full` 查看机器协议。
@@ -69,8 +69,13 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>"
 
 ### 执行写任务
 
+先为每个写任务建立专属 Worktree。Codex 桌面端优先选择 managed Worktree；若宿主未能创建或识别，则使用下方 detached Worktree fallback，不能改在 Local 中执行。
+
 ```powershell
-node ./40-脚本/task.mjs 准备 --cwd <项目路径> --intent "<目标>" --acceptance "<验收>" --scope "."
+git worktree add --detach <任务路径> <起点>
+
+node ./40-脚本/task.mjs 准备 --cwd <任务路径> --intent "<目标>" `
+  --acceptance "<验收>" --scope "." --integration-target main
 
 node ./40-脚本/task.mjs 交付 --task-id <编号>
 
@@ -79,18 +84,16 @@ node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 
 宿主会在需要时自动生成 Goal Card、Change Rationale 和定点检查。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。
 
-### 并行 Worktree
+### Worktree 交付与串行集成
 
 ```powershell
-git worktree add --detach <新路径> <起点>
-
-node ./40-脚本/task.mjs 准备 --cwd <新路径> --intent "<目标>" `
+node ./40-脚本/task.mjs 准备 --cwd <任务路径> --intent "<目标>" `
   --acceptance "<验收>" --scope "." --integration-target main
 
 # Worktree 中完成修改并提交后执行交付
 node ./40-脚本/task.mjs 交付 --task-id <编号> --spec-impact none
 
-# 由目标工作区的单一集成者完成 merge/cherry-pick 后
+# 单一集成者先同步目标分支最新 HEAD，完成 merge/cherry-pick、冲突处理后
 node ./40-脚本/task.mjs 集成 --task-id <编号> --cwd <目标工作区>
 ```
 
