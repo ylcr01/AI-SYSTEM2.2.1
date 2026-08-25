@@ -214,6 +214,9 @@ export function checksFromManifest(manifest, options = {}) {
     }
     if (stored.runner) {
       const legacy = manifest.schemaVersion === 1;
+      if (legacy && stored.acceptanceMode === 'explicit' && (stored.acceptanceIds ?? []).length) {
+        throw new Error(`旧 Check Manifest ${stored.name} 只依据退出码，不能继续作为 Acceptance 证明；请重新交付并生成 Schema 2 用例级检查`);
+      }
       const adapter = buildAdapterCheck({
         name: stored.name,
         runner: stored.runner,
@@ -241,6 +244,24 @@ export function acceptanceIdsForCheck(check, acceptance = []) {
   return (check.acceptanceIds ?? []).filter((id) => acceptance.some((item) => item.id === id));
 }
 
+function acceptanceCoverPairsForCheck(check, acceptance = []) {
+  const knownAcceptanceIds = new Set(acceptance.map((item) => item.id));
+  const pairs = new Set();
+  if (Array.isArray(check.cases) && check.cases.length) {
+    for (const item of check.cases) {
+      for (const acceptanceId of item.acceptanceIds ?? []) {
+        if (!knownAcceptanceIds.has(acceptanceId)) continue;
+        for (const cover of item.covers ?? []) pairs.add(`${acceptanceId}\u0000${cover}`);
+      }
+    }
+    return pairs;
+  }
+  for (const acceptanceId of acceptanceIdsForCheck(check, acceptance)) {
+    for (const cover of check.covers ?? []) pairs.add(`${acceptanceId}\u0000${cover}`);
+  }
+  return pairs;
+}
+
 function acceptanceRequirements(acceptance, existingCoverage = {}) {
   const requirements = new Map();
   for (const item of acceptance ?? []) {
@@ -254,13 +275,11 @@ function acceptanceRequirements(acceptance, existingCoverage = {}) {
 
 function checkContributions(check, acceptance, globalRequired, globalCovered, pairRequired, pairCovered) {
   const global = (check.covers ?? []).filter((cover) => globalRequired.has(cover) && !globalCovered.has(cover));
-  const boundIds = new Set(acceptanceIdsForCheck(check, acceptance));
+  const availablePairs = acceptanceCoverPairsForCheck(check, acceptance);
   const pairs = [];
   for (const requirement of pairRequired.values()) {
     const key = `${requirement.acceptanceId}\u0000${requirement.cover}`;
-    if (!pairCovered.has(key) && boundIds.has(requirement.acceptanceId) && (check.covers ?? []).includes(requirement.cover)) {
-      pairs.push(requirement);
-    }
+    if (!pairCovered.has(key) && availablePairs.has(key)) pairs.push(requirement);
   }
   return { global, pairs };
 }

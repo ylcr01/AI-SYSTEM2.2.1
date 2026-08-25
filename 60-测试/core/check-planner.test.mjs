@@ -189,7 +189,7 @@ test('Check Manifest 固化 Runner 与测试文件哈希并可重放', (t) => {
   assert.throws(() => checksFromManifest(manifest, { gitRoot: ctx.gitRoot }), /测试输入已变化/u);
 });
 
-test('旧 Check Manifest 仍按 Runner v1 兼容重放', (t) => {
+test('旧 Check Manifest 的显式 Acceptance 绑定拒绝继续重放', (t) => {
   const ctx = context(t);
   const checks = loadTaskChecks(writeTaskChecks(t, [VALID_CHECK]), ctx);
   const current = createCheckManifest(planChecks({
@@ -208,10 +208,37 @@ test('旧 Check Manifest 仍按 Runner v1 兼容重放', (t) => {
       config: { testNamePattern: '创建订单成功' },
     }],
   };
-  const replay = checksFromManifest(legacy, { gitRoot: ctx.gitRoot });
-  assert.equal(replay[0].adapterVersion, 1);
-  assert.equal(replay[0].resultProtocol, 'exit-code-v1');
-  assert.deepEqual(replay[0].args, ['--test', '--test-name-pattern', '创建订单成功', 'tests/target.test.js']);
+  assert.throws(
+    () => checksFromManifest(legacy, { gitRoot: ctx.gitRoot }),
+    /不能继续作为 Acceptance 证明/u,
+  );
+});
+
+test('用例级规划不把不同 case 的 Acceptance 和 Cover 做笛卡尔积', (t) => {
+  const ctx = context(t, {
+    acceptance: [
+      { id: 'A1', requiredCovers: ['behavior', 'negative-path'] },
+      { id: 'A2', requiredCovers: ['negative-path'] },
+    ],
+  });
+  const checks = loadTaskChecks(writeTaskChecks(t, [{
+    ...VALID_CHECK,
+    cases: [
+      { ...VALID_CHECK.cases[0], id: 'a1-behavior', acceptanceIds: ['A1'], covers: ['behavior'] },
+      { ...VALID_CHECK.cases[0], id: 'a2-negative', acceptanceIds: ['A2'], covers: ['negative-path'] },
+    ],
+  }]), ctx);
+  const plan = planChecks({
+    profile: 'standard',
+    requiredCovers: ['behavior', 'negative-path'],
+    acceptance: ctx.acceptance,
+    acceptanceCoverage: {},
+    checks,
+  });
+  assert.deepEqual(plan.missingAcceptanceCovers, [
+    { acceptanceId: 'A1', cover: 'negative-path' },
+  ]);
+  assert.deepEqual(plan.missingAcceptance, ['A1']);
 });
 
 test('node-test 用例事件无法解析时失败关闭', () => {

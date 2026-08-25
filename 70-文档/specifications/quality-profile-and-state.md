@@ -34,8 +34,9 @@ lastVerifiedCommit: null
 | BR-AIRD-QUALITY-003 | 新配置使用 `profiles` / `--quality-profile`；旧 `skills` / `--skill` 仅作输入兼容，输出不得再声明 `skills` 或 `methods`，也不得读取 `SKILL.md` | 外部调用方突发失效或伪能力继续传播 | 兼容别名与新参数应产生相同文件计划 |
 | BR-AIRD-STATE-001 | 状态迁移默认 dry-run；只有显式 `--apply` 才写入，且必须先原样备份、校验源指纹和目标冲突 | 静默损坏运行账本 | 仅处理当前内核支持读取的 V6/V7/V8 非终态记录与目录错位 |
 | BR-AIRD-REALIGN-001 | 重新对齐必须使旧 `deliveryDecision`、ChangeSet、Evidence、Acceptance Gap、Review、规格校验和旧风险失效；新 Acceptance 在当前输入重新验证前只能是 pending 或 unverified | 旧结果冒充新目标已经完成 | 重新对齐不改变 Scope、外部授权或集成目标 |
-| BR-AIRD-EVIDENCE-001 | Evidence 要求按每条 Acceptance 的业务语义推断；纯文档、运行行为、用户界面、数据迁移和目标环境分别路由，显式 `requiredCovers` 不得被任务级分类覆盖 | 文档检查误证业务行为，或无关浏览器流程被强制执行 | `product`/`requirements` 标签本身不等于 documentation；普通“显示结果”不等于 browser |
-| BR-AIRD-EVIDENCE-002 | 新建 Task Check 必须使用用例级 Schema 2；每个 case 绑定 Acceptance、Cover、测试文件和精确 Node 测试名。只有实际命中数等于声明值、全部执行通过且没有 skip/todo 时才能形成 Acceptance Evidence；Runner 结果无法解析时失败关闭。旧 Check Manifest 只兼容重放，不作为新建入口 | 测试文件或进程退出码为 0，但目标业务用例没有真正执行 | Check Manifest 固化 cases、Runner/结果协议版本和测试文件哈希 |
+| BR-AIRD-ALIGN-001 | 初始分类为 Structural，或 Intent、Acceptance、显式 Scope 命中非纯文档 Controlled 风险时，缺少 confirmed/delegated Goal Card 必须在 `准备` 阶段拒绝；初始低风险任务只有在真实 ChangeSet 升级风险时才进入重新对齐 | 高风险实现先完成、交付时才发现目标未确认，造成无效修改和状态污染 | 纯文档权限说明不因关键词误触发代码级门禁；Standard/Quick 保持原路径 |
+| BR-AIRD-EVIDENCE-001 | Evidence 要求按每条 Acceptance 的业务语义推断；纯文档、运行行为、用户界面、数据迁移、拒绝/失败处理路径和目标环境分别路由，显式 `requiredCovers` 不得被任务级分类覆盖 | 文档检查误证业务行为、负向结果只用正向测试证明，或无关浏览器流程被强制执行 | `product`/`requirements` 标签本身不等于 documentation；未授权、拒绝、无效，或异常/失败的处理与回滚语义要求 `negative-path` |
+| BR-AIRD-EVIDENCE-002 | 新建 Task Check 必须使用用例级 Schema 2；每个 case 绑定 Acceptance、Cover、测试文件和精确 Node 测试名。只有实际命中数等于声明值、全部执行通过且没有 skip/todo 时才能形成 Acceptance Evidence；Runner 结果无法解析时失败关闭。Schema 1 退出码协议仅可重放不绑定 Acceptance 的全局检查，显式绑定 Acceptance 时必须失败关闭并重新交付 | 测试文件或进程退出码为 0，但目标业务用例没有真正执行 | Check Manifest 固化 cases、Runner/结果协议版本和测试文件哈希 |
 | BR-AIRD-METRICS-001 | 首轮验收摘要必须同时报告 decided、unknown、rate 和 coverage；返工只计同一 Task 内显式用户退回，并声明未关联修复 Task 不在计数中 | 小量已决定样本被表达成整体稳定结果 | 小样本和无可比基线仍需保留警告 |
 
 ## 4. 状态迁移

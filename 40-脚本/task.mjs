@@ -19,7 +19,7 @@ import {
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
 import { findGitRoot, normalizePath } from './lib/registry.mjs';
 import { diagnoseState, migrateState, readHistory } from './lib/state-manager.mjs';
-import { publicTaskState, summarizeOutcomeMetrics } from './lib/outcome-metrics.mjs';
+import { publicTaskStateForTask, summarizeOutcomeMetrics } from './lib/outcome-metrics.mjs';
 
 const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -86,7 +86,7 @@ function compactOutcomes(task) {
 }
 
 function compactTask(task) {
-  const publicState = publicTaskState(task.status);
+  const publicState = publicTaskStateForTask(task);
   const receipt = {
     schemaVersion: 2,
     view: 'outcome',
@@ -195,21 +195,24 @@ function compactTask(task) {
 function compactTaskList(result) {
   const counts = { working: 0, needs_decision: 0, ready_for_acceptance: 0, done: 0 };
   for (const task of result.tasks ?? []) {
-    const state = publicTaskState(task.status).id;
+    const state = publicTaskStateForTask(task).id;
     counts[state] += 1;
   }
   return {
     schemaVersion: 2,
     view: 'outcome-list',
     counts,
-    tasks: (result.tasks ?? []).map(task => ({
-      taskId: task.taskId,
-      state: publicTaskState(task.status).id,
-      stateLabel: publicTaskState(task.status).label,
-      goal: task.goal?.summary,
-      updatedAt: task.updatedAt,
-      blockerCount: task.blockers?.length ?? 0,
-    })),
+    tasks: (result.tasks ?? []).map(task => {
+      const state = publicTaskStateForTask(task);
+      return {
+        taskId: task.taskId,
+        state: state.id,
+        stateLabel: state.label,
+        goal: task.goal?.summary,
+        updatedAt: task.updatedAt,
+        blockerCount: task.blockers?.length ?? 0,
+      };
+    }),
   };
 }
 

@@ -63,6 +63,9 @@ export function inferAcceptanceCovers(description, classification) {
   if (browser) covers.push('behavior', 'browser');
   const migration = /(?:数据迁移|状态迁移|迁移数据|数据库迁移|持久化|回滚|rollback|备份恢复|兼容旧数据)/iu.test(text);
   if (migration) covers.push('behavior', 'data', 'rollback');
+  const explicitNegativePath = /(?:未授权|无权限|拒绝|禁止|不允许|非法|无效|越界|超限|不存在|unauthori[sz]ed|forbidden|denied|reject(?:ed)?|invalid|not[ -]?found)/iu.test(text);
+  const handledFailurePath = /(?:(?:异常|错误|失败).*(?:处理|提示|返回|回滚|终止|拒绝|不修改|保持)|(?:处理|提示|返回|回滚|终止|拒绝|不修改|保持).*(?:异常|错误|失败)|(?:error|failure).*(?:handle|message|return|rollback|stop|reject|preserve)|(?:handle|message|return|rollback|stop|reject|preserve).*(?:error|failure))/iu.test(text);
+  if (explicitNegativePath || handledFailurePath) covers.push('behavior', 'negative-path');
   const targetEnvironment = /(?:部署|发布|目标环境|生产环境|运行环境|线上环境)/u.test(text);
   if (targetEnvironment) covers.push('target-environment');
   return covers.length ? [...new Set(covers)] : defaultAcceptanceCovers(classification);
@@ -147,14 +150,14 @@ function scopeAndDiffEvidence(task, changeSet, inputCycle) {
   });
 }
 
-function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task.acceptance) {
+function createCheckEvidence(task, changeSet, inputCycle, check, input = {}) {
   return createEvidence({
     kind: 'tool',
     taskId: task.taskId,
     changeFingerprint: changeSet.fingerprint,
     inputCycle,
-    acceptanceIds: acceptanceIdsForCheck(check, acceptance),
-    covers: check.covers ?? [],
+    acceptanceIds: input.acceptanceIds ?? [],
+    covers: input.covers ?? [],
     source: {
       type: 'command', actor: 'ai-system', session: null,
       command: check.command, args: check.args, cwd: check.cwd, sideEffect: check.sideEffect,
@@ -162,19 +165,51 @@ function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task
       adapterVersion: check.adapterVersion ?? null,
       resultProtocol: check.resultProtocol ?? null,
       testFiles: check.testFiles ?? [],
-      cases: check.cases ?? []
+      cases: input.cases ?? []
     },
     result: {
       status: check.status === 0 && !check.error ? 'passed' : 'failed',
       exitCode: check.status,
       durationMs: check.durationMs,
-      summary: check.error ?? check.stderr?.text ?? `${check.name} 通过`,
+      summary: check.error || check.stderr?.text || input.summary || `${check.name} 通过`,
       resultFingerprint: check.resultFingerprint,
-      caseResults: check.caseResults ?? [],
-      caseSummary: check.caseSummary ?? null
+      caseResults: input.caseResults ?? [],
+      caseSummary: input.caseSummary ?? null
     },
     createdAt: check.finishedAt ?? new Date().toISOString()
   });
+}
+
+function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task.acceptance) {
+  if (check.resultProtocol === 'node-test-cases-v1' && (check.caseResults?.length ?? 0) > 0) {
+    return check.caseResults.map((caseResult) => {
+      const declared = (check.cases ?? []).find((item) => item.id === caseResult.id) ?? caseResult;
+      const acceptanceIds = acceptanceIdsForCheck({
+        acceptanceMode: 'explicit',
+        acceptanceIds: caseResult.acceptanceIds ?? declared.acceptanceIds ?? [],
+      }, acceptance);
+      return createCheckEvidence(task, changeSet, inputCycle, check, {
+        acceptanceIds,
+        covers: caseResult.covers ?? declared.covers ?? [],
+        cases: [declared],
+        caseResults: [caseResult],
+        caseSummary: {
+          declared: 1,
+          passed: caseResult.status === 'passed' ? 1 : 0,
+          failed: caseResult.status === 'passed' ? 0 : 1,
+          malformedEvents: 0,
+        },
+        summary: `${check.name}/${caseResult.id} 通过`,
+      });
+    });
+  }
+  return [createCheckEvidence(task, changeSet, inputCycle, check, {
+    acceptanceIds: acceptanceIdsForCheck(check, acceptance),
+    covers: check.covers ?? [],
+    cases: check.cases ?? [],
+    caseResults: check.caseResults ?? [],
+    caseSummary: check.caseSummary ?? null,
+  })];
 }
 
 function qualityReviewRefs(task) {
@@ -213,6 +248,7 @@ export function prepareTask(options = {}) {
   const initial = classifyTask({
     intent: classificationText,
     acceptance: providedAlignment ? providedAlignment.acceptance.join(' ') : (options.acceptance ?? []).toString(),
+    scope: options.scope,
     tracked: options.tracked !== false,
     handoffRequired: options.handoffRequired === true
   });
@@ -222,6 +258,12 @@ export function prepareTask(options = {}) {
     || initial.preservationMode === 'reference-equivalent';
   if (strictPreservation && !providedAlignment) {
     throw new Error('behavior-preservation-alignment-required: 行为保持型任务必须提供 --goal-card-file');
+  }
+  const documentationOnly = initial.artifactKinds?.length === 1
+    && initial.artifactKinds[0] === 'documentation';
+  if (!providedAlignment && (initial.structureImpact === 'structural'
+    || (initial.controlMode === 'controlled' && !documentationOnly))) {
+    throw new Error('alignment-required-before-preparation: Controlled/Structural 任务必须在实施前提供 confirmed 或 delegated Goal Card');
   }
   if (strictPreservation && providedAlignment && !providedAlignment.preservation) {
     throw new Error('behavior-preservation-alignment-required: 行为保持型任务的对齐文件必须包含 preservation 结构');
@@ -448,7 +490,7 @@ export function deliverTask(options = {}) {
     } else {
       const checkEvidence = checkExecution.results
         .filter((item) => item.status === 0 && !item.error)
-        .map((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance));
+        .flatMap((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance));
       for (const item of checkEvidence) systemCreatedHashes.add(item.payloadHash);
       evidence.push(...checkEvidence);
       if (!checkExecution.ok) {

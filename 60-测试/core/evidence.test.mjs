@@ -29,6 +29,43 @@ test('Evidence 绑定 Task、ChangeSet、周期和 Payload Hash', () => {
   assert.equal(validateEvidence(evidence, context()).valid, false);
 });
 
+test('Acceptance 绑定的 node-test Evidence 必须使用 v2 且逐 case 记录', () => {
+  const legacy = createEvidence({
+    taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,
+    acceptanceIds: ['A1'], covers: ['behavior'],
+    source: {
+      type: 'command', command: 'node', args: ['--test', '--test-name-pattern', '不存在', 'test.js'],
+      testFiles: ['test.js'],
+    },
+    result: { status: 'passed', exitCode: 0 },
+  });
+  assert.match(validateEvidence(legacy, context()).errors.join(' '), /用例级结果协议/u);
+
+  const declared = {
+    id: 'case-a1', acceptanceIds: ['A1'], covers: ['behavior'],
+    testFile: 'test.js', testName: '目标用例', expectedMatches: 1,
+  };
+  const valid = createEvidence({
+    taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,
+    acceptanceIds: ['A1'], covers: ['behavior'],
+    source: {
+      type: 'command', command: 'node', args: ['--test'], runner: 'node-test',
+      adapterVersion: 2, resultProtocol: 'node-test-cases-v1', testFiles: ['test.js'], cases: [declared],
+    },
+    result: {
+      status: 'passed', exitCode: 0,
+      caseResults: [{ ...declared, status: 'passed', matchedCount: 1, passedCount: 1 }],
+    },
+  });
+  assert.equal(validateEvidence(valid, context()).valid, true);
+
+  const aggregate = structuredClone(valid);
+  aggregate.source.cases.push({ ...declared, id: 'case-a2' });
+  aggregate.result.caseResults.push({ ...declared, id: 'case-a2', status: 'passed' });
+  aggregate.payloadHash = payloadHash(aggregate);
+  assert.match(validateEvidence(aggregate, context()).errors.join(' '), /逐 case 独立记录/u);
+});
+
 test('Scope 和 Diff 不能证明 Acceptance', () => {
   const evidence = createEvidence({
     taskId: 'task-x', changeFingerprint: 'c1', inputCycle: 0,

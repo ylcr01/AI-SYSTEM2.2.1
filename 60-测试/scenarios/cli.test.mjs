@@ -546,14 +546,14 @@ test('Alignment 失败的交付回执 next 要求重新对齐且不提示继续�
   const prepared = runNode(TASK, [
     '准备',
     '--cwd', repo,
-    '--intent', '修改用户权限判断逻辑',
+    '--intent', '修复普通功能',
     '--scope', '.',
     '--state-root', stateRoot,
   ], { cwd: ROOT });
   assert.equal(prepared.status, 0, prepared.stderr);
   const task = JSON.parse(prepared.stdout);
-  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'src', 'user-service.js'), 'export const x = 1;\n');
+  fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'auth', 'user-service.js'), 'export const x = 1;\n');
   const delivered = runNode(TASK, [
     '交付',
     '--task-id', task.taskId,
@@ -561,7 +561,8 @@ test('Alignment 失败的交付回执 next 要求重新对齐且不提示继续�
   ], { cwd: ROOT });
   assert.equal(delivered.status, 0, delivered.stderr);
   const receipt = JSON.parse(delivered.stdout);
-  assert.equal(receipt.state, 'working');
+  assert.equal(receipt.state, 'needs_decision');
+  assert.equal(receipt.stateLabel, '需要你决定');
   assert.equal('verification' in receipt, false);
   assert.match(receipt.next, /重新对齐/u);
   assert.doesNotMatch(receipt.next, /--alignment-file/u);
@@ -651,4 +652,42 @@ test('系统完整检查通过', () => {
   const result = runNode(path.join(ROOT, '40-脚本/check-system.mjs'), [], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).ok, true);
+});
+
+test('风险升级需要重新对齐时公开状态是需要你决定', t => {
+  const repo = gitRepo(t, { checks: [] });
+  const stateRoot = tempDir(t);
+  const goalCard = path.join(stateRoot, 'risk-goal-card.json');
+  fs.writeFileSync(goalCard, JSON.stringify({
+    originalRequest: '修复普通功能',
+    goal: '修复普通功能',
+    expectedOutcomes: ['功能正确'],
+    protectedBehaviors: [],
+    acceptance: ['功能正确'],
+    confirmedDecisions: [],
+    nonGoals: [],
+    assumptions: [],
+    alignment: {
+      mode: 'direct',
+      reasonCodes: ['single-observable-outcome', 'local-scope', 'acceptance-derivable', 'no-project-conflict'],
+      decisionNote: null,
+      delegatedTopics: [],
+    },
+  }));
+  const prepared = runNode(TASK, [
+    '准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确',
+    '--goal-card-file', goalCard, '--scope', '.', '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const taskId = JSON.parse(prepared.stdout).taskId;
+  fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'auth', 'token.js'), 'export const changed = true;\n');
+  const delivered = runNode(TASK, [
+    '交付', '--task-id', taskId, '--state-root', stateRoot, '--no-auto-checks',
+  ], { cwd:ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  const receipt = JSON.parse(delivered.stdout);
+  assert.equal(receipt.state, 'needs_decision');
+  assert.equal(receipt.stateLabel, '需要你决定');
+  assert.match(receipt.next, /重新对齐/u);
 });

@@ -115,33 +115,20 @@ test('对齐 Standard 任务的可选无效 rationale 不阻止交付', (t) => {
   assert.deepEqual(delivered.task.changeRationale.unmappedFiles, ['target.txt']);
 });
 
-test('高风险 Intent 无 Alignment 且普通 runtime 文件变化必须 needs_rework', (t) => {
+test('高风险 Intent 无 Alignment 时准备即拒绝', (t) => {
   const repo = gitRepo(t);
-  const stateRoot = tempDir(t);
-  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修改用户权限判断逻辑', scope: '.' });
-  assert.equal(prepared.task.classification.controlMode, 'controlled');
-  assert.equal('alignment' in prepared.task.goal, false);
-  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'src', 'user-service.ts'), 'export const x = 1;\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, autoChecks: false });
-  assert.equal(delivered.task.classification.controlMode, 'controlled');
-  assert.equal(delivered.task.status, 'needs_rework');
-  assert.equal(delivered.task.verification.stopReason, 'alignment-required');
-  assert.deepEqual(delivered.task.deliveryDecision, { decision: 'needs_rework', reasons: ['alignment-required'] });
-  assert.ok(delivered.task.blockers.some((item) => String(item).includes('confirmed/delegated')));
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '修改用户权限判断逻辑', scope: '.' }),
+    /alignment-required-before-preparation/u,
+  );
 });
 
-test('Structural 任务无 Alignment 时交付必须 needs_rework', (t) => {
+test('Structural 任务无 Alignment 时准备即拒绝', (t) => {
   const repo = gitRepo(t);
-  const stateRoot = tempDir(t);
-  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '新模块拆分公共接口数据模型', scope: '.' });
-  assert.equal(prepared.task.classification.structureImpact, 'structural');
-  assert.equal('alignment' in prepared.task.goal, false);
-  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, autoChecks: false });
-  assert.equal(delivered.task.status, 'needs_rework');
-  assert.equal(delivered.task.verification.stopReason, 'alignment-required');
-  assert.deepEqual(delivered.task.deliveryDecision, { decision: 'needs_rework', reasons: ['alignment-required'] });
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '新模块拆分公共接口数据模型', scope: '.' }),
+    /alignment-required-before-preparation/u,
+  );
 });
 
 test('Alignment 缺失时 Auto Check 完全不执行', (t) => {
@@ -160,10 +147,10 @@ test('Alignment 缺失时 Auto Check 完全不执行', (t) => {
     }],
   });
   const stateRoot = tempDir(t);
-  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修改用户权限判断逻辑', scope: '.' });
-  assert.equal(prepared.task.classification.controlMode, 'controlled');
-  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'src', 'user-service.js'), 'export const x = 1;\n');
+  const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', scope: '.' });
+  assert.equal(prepared.task.classification.controlMode, 'standard');
+  fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'auth', 'user-service.js'), 'export const x = 1;\n');
   const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
   assert.equal(delivered.task.status, 'needs_rework');
   assert.equal(delivered.task.verification.stopReason, 'alignment-required');
@@ -497,4 +484,12 @@ test('无对齐文件的旧 Standard 交付不受 rationale 门禁影响', (t) =
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
   const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
   assert.equal(delivered.task.status, 'waiting_acceptance');
+});
+
+test('显式高风险 Scope 无 Alignment 时准备即拒绝', (t) => {
+  const repo = gitRepo(t);
+  assert.throws(
+    () => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '修复普通功能', acceptance: ['功能正确'], scope: 'auth' }),
+    /alignment-required-before-preparation/u,
+  );
 });

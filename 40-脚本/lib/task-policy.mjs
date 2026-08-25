@@ -1,4 +1,4 @@
-const CONTROLLED_WORDS = /权限|安全|隐私|迁移|生产|发布|部署|不可逆|外部写入|authorization|security|migration|production|deploy|release/iu;
+const CONTROLLED_WORDS = /权限|授权|未授权|未经授权|鉴权|认证|身份认证|访问控制|安全|隐私|迁移|生产|发布|部署|不可逆|外部写入|\bauth\b|authorization|authentication|access control|credentials?|security|migration|production|deploy|release/iu;
 const QUICK_WORDS = /文档|注释|错字|文案|README|说明|comment|typo|docs?/iu;
 const STRUCTURAL_WORDS = /架构|新模块|模块拆分|职责迁移|公共接口|数据模型|跨仓|重构体系|architecture|new module|public contract/iu;
 const REFERENCE_EQUIVALENT_WORDS = /完全参照|完整复刻|逐项等价|以旧实现为行为基线|不能遗漏任何已有功能|100% 等价|reference implementation|exact behavioral equivalence/iu;
@@ -36,10 +36,20 @@ function inferPreservation(text) {
   return { mode: 'preserve-unrequested', reasons: [] };
 }
 
+function inferScopeRisk(scope) {
+  const normalized = String(scope ?? '').trim().replaceAll('\\', '/');
+  if (!normalized || normalized === '.') return [];
+  return HARD_RISK_PATTERNS
+    .filter(([, pattern]) => pattern.test(normalized) || pattern.test(`${normalized}/`))
+    .map(([reason]) => `scope-${reason}:${normalized}`);
+}
+
 export function classifyTask(input = {}) {
   const intent=String(input.intent??'');
   const text=[intent,input.acceptance].filter(Boolean).join(' ');
-  const intentRisk=CONTROLLED_WORDS.test(text);
+  const scopeReasons=inferScopeRisk(input.scope);
+  const textRisk=CONTROLLED_WORDS.test(text);
+  const intentRisk=textRisk||scopeReasons.length>0;
   const artifactKinds=inferArtifactKinds(intent,input.acceptance);
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
   const structural=STRUCTURAL_WORDS.test(text);
@@ -53,7 +63,7 @@ export function classifyTask(input = {}) {
     artifactKinds,
     preservationMode:preservation.mode,
     preservationReasons:preservation.reasons,
-    reasons:intentRisk?['intent-risk-signal']:[]
+    reasons:[...(textRisk?['intent-risk-signal']:[]),...scopeReasons]
   };
 }
 

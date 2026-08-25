@@ -56,6 +56,14 @@ export function publicTaskState(status) {
   return PUBLIC_STATES.needs_decision;
 }
 
+export function publicTaskStateForTask(task = {}) {
+  const stopReason = String(task.verification?.stopReason ?? '');
+  if (['alignment-required', 'alignment-risk-escalation', 'budget'].includes(stopReason)) {
+    return PUBLIC_STATES.needs_decision;
+  }
+  return publicTaskState(task.status);
+}
+
 export function createOutcomeMetrics(input = {}) {
   const at = isoOrNull(input.at) ?? new Date().toISOString();
   return {
@@ -181,7 +189,7 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   }
   const stateCounts = { working:0, needs_decision:0, ready_for_acceptance:0, done:0 };
   for (const task of selected) {
-    const state = publicTaskState(task.status).id;
+    const state = publicTaskStateForTask(task).id;
     stateCounts[state] = (stateCounts[state] ?? 0) + 1;
   }
   const warnings = [];

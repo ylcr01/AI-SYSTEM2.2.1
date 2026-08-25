@@ -5,6 +5,7 @@ import {
   applyOutcomeMetricEvent,
   createOutcomeMetrics,
   publicTaskState,
+  publicTaskStateForTask,
   summarizeOutcomeMetrics,
 } from '../../40-脚本/lib/outcome-metrics.mjs';
 
@@ -17,6 +18,16 @@ test('内部状态只映射为四种用户状态', () => {
   assert.equal(publicTaskState('accepted').id, 'done');
   assert.equal(publicTaskState('cancelled').id, 'done');
   assert.equal(publicTaskState('unknown').id, 'needs_decision');
+});
+
+test('需要用户决定的停止原因覆盖内部 working 状态', () => {
+  for (const stopReason of ['alignment-required', 'alignment-risk-escalation', 'budget']) {
+    assert.equal(publicTaskStateForTask({
+      status: 'needs_rework',
+      verification: { stopReason },
+    }).id, 'needs_decision');
+  }
+  assert.equal(publicTaskStateForTask({ status:'needs_rework', verification:{ stopReason:'failed' } }).id, 'working');
 });
 
 test('交付和用户验收事件形成最小结果指标', () => {

@@ -98,6 +98,40 @@ function validateArtifact(evidence, context, errors) {
   }
 }
 
+function sameValues(left = [], right = []) {
+  return JSON.stringify([...new Set(left)].sort()) === JSON.stringify([...new Set(right)].sort());
+}
+
+function validateAcceptanceBoundNodeTest(evidence, errors) {
+  if (!(evidence?.acceptanceIds?.length > 0) || evidence?.source?.type !== 'command') return;
+  const source = evidence.source ?? {};
+  const args = source.args ?? [];
+  const commandName = path.basename(String(source.command ?? '')).toLowerCase();
+  const looksLikeNodeTest = source.runner === 'node-test'
+    || ((commandName === 'node' || commandName === 'node.exe')
+      && args.includes('--test')
+      && (source.testFiles?.length ?? 0) > 0);
+  if (!looksLikeNodeTest) return;
+  if (source.resultProtocol !== 'node-test-cases-v1' || source.adapterVersion !== 2) {
+    errors.push('Acceptance 绑定的 node-test Evidence 必须使用用例级结果协议');
+    return;
+  }
+  if (!Array.isArray(source.cases) || source.cases.length !== 1
+    || !Array.isArray(evidence.result?.caseResults) || evidence.result.caseResults.length !== 1) {
+    errors.push('Acceptance 绑定的 node-test Evidence 必须逐 case 独立记录');
+    return;
+  }
+  const declared = source.cases[0];
+  const observed = evidence.result.caseResults[0];
+  if (declared.id !== observed.id || observed.status !== 'passed') {
+    errors.push('node-test Evidence 的声明用例与实际通过用例不一致');
+  }
+  if (!sameValues(evidence.acceptanceIds, declared.acceptanceIds)
+    || !sameValues(evidence.covers, declared.covers)) {
+    errors.push('node-test Evidence 的 Acceptance/Cover 归因与用例声明不一致');
+  }
+}
+
 export function validateEvidence(evidence, context = {}) {
   const errors = [];
   if (evidence?.schemaVersion !== 4) errors.push('Evidence Schema 必须是 4');
@@ -132,6 +166,7 @@ export function validateEvidence(evidence, context = {}) {
     }
     if (evidence.source?.sideEffect === 'external') errors.push('普通 Evidence 不得来自未授权外部动作');
   }
+  validateAcceptanceBoundNodeTest(evidence, errors);
 
   validateArtifact(evidence, context, errors);
   if (!['passed', 'failed', 'accepted'].includes(evidence?.result?.status)) errors.push('Evidence result.status 无效');
