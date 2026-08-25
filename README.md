@@ -44,7 +44,7 @@ Local/主工作区  → 只读分析或单一集成者串行集成
 - Task 写作态、已交付和历史记录分层保存；默认回执只展示四种用户状态。`delivered` 只表示本轮工程交付通过，`closed` 只表示后续对话自然收口，`accepted` 仍只能由用户显式产生。
 - 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主只在下一条消息中据此记录相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
-- 并行任务独占 Worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- 每个写任务独占 Worktree；Local 不承载实现。集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
 - Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
 - 默认回执对 ChangeSet、缺口和诊断列表限量展开，并报告 `total`、`shown`、`truncated`；直接检查不展开成功日志，显式 `--full` 才读取完整记录。
 - `build-context` 返回读取计划的内容指纹；同一输入再次调用时传入 `--known-context-fingerprint <上次指纹>`，未变化则返回空读取计划，项目事实变化后自动恢复完整计划。
@@ -83,8 +83,12 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>" `
 
 宿主先为仓库写任务进入专属 Worktree，再读取轻量上下文。结果为 `continuity=ephemeral` 时直接实施最小 Diff，并只运行目标测试或受影响检查，不创建正式 Task。`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务才进入正式 Task：
 
+先为每个写任务建立专属 Worktree。Codex 桌面端优先选择 managed Worktree；若宿主未能创建或识别，则使用下方 detached Worktree fallback，不能改在 Local 中执行。
+
 ```powershell
-node ./40-脚本/task.mjs 准备 --cwd <Worktree 路径> --intent "<目标>" `
+git worktree add --detach <任务路径> <起点>
+
+node ./40-脚本/task.mjs 准备 --cwd <任务路径> --intent "<目标>" `
   --acceptance "<验收>" --scope "." --integration-target main
 
 node ./40-脚本/task.mjs 交付 --task-id <编号>
@@ -94,12 +98,10 @@ node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 
 正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态。主 Local checkout 只用于只读分析和串行集成，正式 Task 在主 checkout 准备会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
 
-### 并行 Worktree
+### Worktree 交付与串行集成
 
 ```powershell
-git worktree add --detach <新路径> <起点>
-
-node ./40-脚本/task.mjs 准备 --cwd <新路径> --intent "<目标>" `
+node ./40-脚本/task.mjs 准备 --cwd <任务路径> --intent "<目标>" `
   --acceptance "<验收>" --scope "." --integration-target main
 
 # Worktree 中完成修改并提交后执行交付

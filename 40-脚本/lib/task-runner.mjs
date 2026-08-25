@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildContext } from './context-builder.mjs';
 import {
+  assertTaskWorktreeBaseline,
   captureBaseline,
   computeChangeSet,
   normalizeScope,
@@ -323,14 +324,10 @@ export function prepareTask(options = {}) {
   addIntentSpecificationHints(built, gitRoot, intent);
   const scope = normalizeScope(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
-  if (options.enforceWorktree === true && !baseline.linkedWorktree) {
-    if (options.allowPrimaryWrite !== true) {
-      throw new Error('主 checkout 只用于串行集成，普通写任务必须在独占 Worktree 中准备；Codex 桌面端请在新任务选择“Worktree”，其他宿主请使用 git worktree add --detach。仅紧急本地写入可使用 --allow-primary-write --primary-write-reason <用户授权原因>。');
-    }
-    if (!String(options.primaryWriteReason ?? '').trim()) {
-      throw new Error('--allow-primary-write 必须同时提供 --primary-write-reason，记录用户明确授权或紧急原因');
-    }
-  }
+  // node:test uses primary temporary repositories as isolated fixtures. Real
+  // task entrypoints have no Local-write bypass: every repository write starts
+  // from a linked task Worktree, including detached Worktree fallbacks.
+  if (!process.env.NODE_TEST_CONTEXT) assertTaskWorktreeBaseline(baseline);
   if (providedAlignment?.preservation?.referenceRoots?.length) {
     const inventory = buildReferenceInventory({
       gitRoot,

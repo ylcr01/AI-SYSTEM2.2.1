@@ -289,6 +289,7 @@ function help() {
   if (args.full !== true) {
     console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+       （写任务必须从任务专属 Worktree 运行；Local/主工作区仅只读与串行集成）
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
   交付 --task-id <id>
   后续 --task-id <id> --delivery-id <id> --observation-id <id>
@@ -306,11 +307,11 @@ function help() {
   }
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+       （Codex managed Worktree 优先；不可用时 detached Worktree，禁止降级到 Local）
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
        [--quality-profile <name>（兼容旧 --skill，可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
-       [--allow-primary-write --primary-write-reason <原因>（仅用户明确授权的紧急 Local 写入）]
-       [--integration-target <目标分支>（linked/detached worktree 必填）]
+       [--integration-target <目标分支>（任务 Worktree 必填）]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
@@ -342,7 +343,7 @@ function help() {
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
-普通问答不建 Task；仓库工作先走 build-context。continuity=ephemeral 的局部修改直接做最小 Diff 与定点检查；Tracked、Controlled、Structural、规格、外部写入或 Worktree 才准备 Task。最终验收只能由用户执行。`);
+普通问答不建 Task；只读分析走 build-context；所有仓库修改先进入专属 Worktree。continuity=ephemeral 的局部修改直接做最小 Diff 与定点检查；Tracked、Controlled、Structural、规格或外部写入才准备正式 Task。Local 只读或由单一集成者串行集成，最终验收只能由用户执行。`);
 }
 
 function goalCardFileArg({ required = false } = {}) {
@@ -380,9 +381,6 @@ try {
         description: args['review-description'] ?? '用户或项目明确要求 Review',
       } : null,
       integrationTarget: args['integration-target'],
-      enforceWorktree:true,
-      allowPrimaryWrite:args['allow-primary-write'] === true,
-      primaryWriteReason:args['primary-write-reason'],
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({
