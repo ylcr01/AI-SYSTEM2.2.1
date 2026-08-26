@@ -20,7 +20,8 @@
       "covers": [
         "static",
         "architecture",
-        "documentation"
+        "documentation",
+        "package"
       ],
       "sideEffect": "none",
       "estimatedCost": "very-low",
