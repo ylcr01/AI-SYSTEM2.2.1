@@ -110,6 +110,36 @@ test('首轮验收指标显式报告未知样本和结论覆盖率', () => {
   assert.ok(summary.warnings.some(item => /没有明确用户验收/u.test(item)));
 });
 
+test('交付迭代摘要区分重复交付、首交付后重对齐和显式退回', () => {
+  let metrics = createOutcomeMetrics({ at:'2026-08-20T00:00:00.000Z' });
+  metrics = applyOutcomeMetricEvent(metrics, {
+    event:'delivery', to:'waiting_acceptance', at:'2026-08-20T00:00:02.000Z', durationMs:100,
+  });
+  metrics = applyOutcomeMetricEvent(metrics, {
+    event:'delivery', to:'waiting_acceptance', at:'2026-08-20T00:00:05.000Z', durationMs:80,
+  });
+  const summary = summarizeOutcomeMetrics([{
+    status:'waiting_acceptance',
+    createdAt:'2026-08-20T00:00:00.000Z',
+    updatedAt:'2026-08-20T00:00:05.000Z',
+    outcomeMetrics:metrics,
+    goal:{ alignment:{ events:[
+      { type:'realignment', at:'2026-08-20T00:00:01.000Z' },
+      { type:'alignment-risk-escalation', at:'2026-08-20T00:00:03.000Z' },
+      { type:'realignment', at:'2026-08-20T00:00:04.000Z' },
+    ] } },
+  }]);
+
+  assert.deepEqual(summary.deliveryIterations, {
+    tasks:1,
+    attempts:2,
+    multiAttemptTasks:1,
+    additionalAttempts:1,
+    postFirstDeliveryRealignments:1,
+  });
+  assert.equal(summary.rework.count, 0);
+});
+
 test('对话后续只记录原始事实并由首次类型派生单轮闭环', () => {
   let conversation = beginConversationDelivery(null, {
     deliveryId:'delivery-1', deliveredAt:'2026-08-20T00:00:01.000Z',

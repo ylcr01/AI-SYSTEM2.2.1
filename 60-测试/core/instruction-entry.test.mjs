@@ -26,10 +26,16 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.match(result.stdout, /exact prior `continuation`/u);
   assert.match(result.stdout, /never scan for a pending Task/u);
   assert.match(result.stdout, /write externally without explicit authorization/u);
+  assert.match(result.stdout, /report degraded state/u);
+  assert.match(result.stdout, /Browser hard limits remain global/u);
+  assert.match(result.stdout, /at most 4 smoke flows/u);
+  assert.match(result.stdout, /hard 3-minute outer timeout/u);
+  assert.match(result.stdout, /Stop on the first failure or timeout/u);
+  assert.match(result.stdout, /full regression requires explicit user authorization/u);
+  assert.match(result.stdout, /Other checks never substitute for browser verification/u);
   assert.doesNotMatch(result.stdout, /build-context\.mjs/u);
   assert.doesNotMatch(result.stdout, /task\.mjs/u);
-  assert.doesNotMatch(result.stdout, /Browser verification|最多 4 条核心链路/u);
-  assert.ok(Buffer.byteLength(result.stdout) < 500);
+  assert.ok(Buffer.byteLength(result.stdout) < 1250);
 });
 
 test('项目入口初始化保持轻量且默认不覆盖', (t) => {
@@ -47,6 +53,9 @@ test('系统入口保持轻量并将低频规则按需路由', () => {
   const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
   assert.ok(Buffer.byteLength(agents) < 5000);
   assert.match(agents, /70-文档\/25-按需任务规则\.md/u);
+  assert.match(agents, /git diff --stat\/--numstat/u);
+  assert.match(agents, /不加载整份 Task JSON/u);
+  assert.match(agents, /裁剪不得隐藏首个失败/u);
   assert.equal(fs.existsSync(path.join(ROOT, '70-文档', '25-按需任务规则.md')), true);
 });
 

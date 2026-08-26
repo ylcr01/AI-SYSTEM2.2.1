@@ -261,6 +261,18 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   const reworkTasks = tracked.filter((task) => task.outcomeMetrics.reworkCount > 0);
   const reworkCount = reworkTasks.reduce((sum, task) => sum + task.outcomeMetrics.reworkCount, 0);
   const userDecisionCount = tracked.reduce((sum, task) => sum + task.outcomeMetrics.userDecisionCount, 0);
+  const deliveryTasks = tracked.filter((task) => task.outcomeMetrics.deliveryAttemptCount > 0);
+  const deliveryAttempts = deliveryTasks.reduce((sum, task) => sum + task.outcomeMetrics.deliveryAttemptCount, 0);
+  const multiDeliveryTasks = deliveryTasks.filter((task) => task.outcomeMetrics.deliveryAttemptCount > 1);
+  const postFirstDeliveryRealignments = tracked.reduce((sum, task) => {
+    const firstDeliveryAt = isoOrNull(task.outcomeMetrics.firstDeliveryAt);
+    if (!firstDeliveryAt) return sum;
+    const count = (task.goal?.alignment?.events ?? []).filter((event) => {
+      const at = isoOrNull(event?.at);
+      return event?.type === 'realignment' && at && at > firstDeliveryAt;
+    }).length;
+    return sum + count;
+  }, 0);
   const conversationTracked = selected.filter((task) => normalizeConversationOutcome(task.conversationOutcome));
   const singleTurnDecided = conversationTracked.filter((task) => singleTurnClosure(task.conversationOutcome) !== null);
   const singleTurnPassed = singleTurnDecided.filter((task) => singleTurnClosure(task.conversationOutcome) === true);
@@ -332,6 +344,13 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
       count: reworkCount,
       countingScope: 'same-task-explicit-user-reject',
       unlinkedRepairTasksIncluded: false,
+    },
+    deliveryIterations: {
+      tasks: deliveryTasks.length,
+      attempts: deliveryAttempts,
+      multiAttemptTasks: multiDeliveryTasks.length,
+      additionalAttempts: deliveryAttempts - deliveryTasks.length,
+      postFirstDeliveryRealignments,
     },
     userDecisions: { count: userDecisionCount },
     verification: {
