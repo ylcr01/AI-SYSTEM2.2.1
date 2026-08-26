@@ -21,8 +21,17 @@ const TRANSITIONS = {
   waiting_acceptance: new Set(['implementing','verifying','accepted','closed','needs_rework','saved','cancelled'])
 };
 
+export function resolveStateRoot(stateRoot, environment = process.env) {
+  const configuredSystemRoot = String(environment.AI_RD_OS_ROOT ?? '').trim();
+  return path.resolve(
+    stateRoot
+      ?? environment.AI_RD_OS_STATE_ROOT
+      ?? path.join(configuredSystemRoot ? path.resolve(configuredSystemRoot) : SYSTEM_ROOT, '80-运行记录'),
+  );
+}
+
 function paths(stateRoot) {
-  const root = path.resolve(stateRoot ?? process.env.AI_RD_OS_STATE_ROOT ?? path.join(SYSTEM_ROOT, '80-运行记录'));
+  const root = resolveStateRoot(stateRoot);
   return {
     root,
     active: path.join(root, '进行中'),

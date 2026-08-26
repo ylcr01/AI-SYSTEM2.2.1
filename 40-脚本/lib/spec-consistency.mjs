@@ -72,7 +72,9 @@ function decisionMetadataErrors(item, taskId) {
   if (!['proposed', 'accepted', 'superseded'].includes(metadata.status)) errors.push('status 必须是 proposed、accepted 或 superseded');
   if (!Array.isArray(metadata.affects) || metadata.affects.length === 0) errors.push('affects 不能为空');
   if (!metadata.sourceTaskId) errors.push('sourceTaskId 不能为空');
-  else if (taskId && metadata.sourceTaskId !== taskId) errors.push(`sourceTaskId 必须等于当前 Task ${taskId}`);
+  else if (taskId && metadata.sourceTaskId !== taskId && metadata.adoptedByTaskId !== taskId) {
+    errors.push(`sourceTaskId 或 adoptedByTaskId 必须等于当前 Task ${taskId}`);
+  }
   if (metadata.status === 'superseded' && !metadata.supersededBy) errors.push('superseded Decision 必须声明 supersededBy');
   return errors;
 }

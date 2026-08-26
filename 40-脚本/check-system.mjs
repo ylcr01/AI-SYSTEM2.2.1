@@ -88,7 +88,8 @@ if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('�
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
 for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','continuation.taskId + deliveryId','closed','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
 const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
-for (const marker of ['继续验证','重验集成','迁移状态','后续','delivery-id','observation-id','--allow-primary-write','--allow-risk-integration','--confirm-only']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续、集成或维护命令 ${marker}`);
+for (const marker of ['继续验证','重验集成','迁移状态','后续','delivery-id','observation-id','--allow-risk-integration','--confirm-only']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续、集成或维护命令 ${marker}`);
+if (taskCli.includes('--allow-primary-write')) errors.push('task.mjs: 不得暴露 Local 写入后门');
 
 const result = {
   ok: errors.length === 0,

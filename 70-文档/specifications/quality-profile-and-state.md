@@ -2,7 +2,7 @@
 moduleId: MOD-AIRD-QUALITY-STATE
 title: 质量资料路由与 Task 真实性
 status: active
-lastVerifiedTaskId: task-20260826031056890-d7d4dbb6
+lastVerifiedTaskId: task-20260826034633068-92d6b9bb
 lastVerifiedCommit: null
 ---
 
@@ -40,6 +40,7 @@ lastVerifiedCommit: null
 | BR-AIRD-OUTPUT-001 | 默认 Context、Task、直接检查、诊断和迁移回执必须限量展开动态内容；成功检查不返回 stdout/stderr，失败必须返回首个失败、截断和 case 事实；只有显式 `--full` 可读取完整结构 | 大 ChangeSet、成功日志或旧状态列表占满会话上下文 | 默认最多 20 个改动、10 个其他动态项；完整日志仍可按需读取 |
 | BR-AIRD-STATE-001 | 状态迁移默认 dry-run；只有显式 `--apply` 才写入，且必须先原样备份、校验源指纹和目标冲突 | 静默损坏运行账本 | 仅处理当前内核支持读取的 V6/V7/V8/V9 非终态记录与目录错位 |
 | BR-AIRD-STATE-002 | 成功交付必须生成本轮唯一的 `taskId + deliveryId` continuation；后续写入还必须携带幂等 `observationId` 和封闭 `kind`。相关询问保持 `waiting_acceptance`，缺陷退回进入 `needs_rework`，范围扩展、非正式肯定或话题推进进入 `closed`；`accepted` 仍只接受用户显式验收事件 | 扫描或猜测错误 Task、把追问误判为返工、把沉默或换话题伪造成用户验收 | 再交付轮换 `deliveryId` 并拒绝旧标识；不保存消息正文、不重跑工程检查、不自动创建扩展 Task |
+| BR-AIRD-STATE-003 | 未显式指定状态根时，任务状态必须优先解析到 `AI_RD_OS_STATE_ROOT`，其次解析到 `AI_RD_OS_ROOT/80-运行记录`；Worktree 脚本不得因自身物理路径不同而分裂运行账本 | 任务在源 Worktree 已交付，但主工作区集成器找不到状态，导致结果长期滞留 | 显式 `stateRoot` 仍具有最高优先级；环境均缺失时才回退到脚本所属系统根 |
 | BR-AIRD-REALIGN-001 | 重新对齐必须使旧 `deliveryDecision`、ChangeSet、Evidence、Acceptance Gap、Review、规格校验和旧风险失效；新 Acceptance 在当前输入重新验证前只能是 pending 或 unverified | 旧结果冒充新目标已经完成 | 重新对齐不改变 Scope、外部授权或集成目标 |
 | BR-AIRD-ALIGN-001 | 初始分类为 Structural，或 Intent、Acceptance、显式 Scope 命中非纯文档 Controlled 风险时，缺少 confirmed/delegated Goal Card 必须在 `准备` 阶段拒绝；初始低风险任务只有在真实 ChangeSet 升级风险时才进入重新对齐 | 高风险实现先完成、交付时才发现目标未确认，造成无效修改和状态污染 | 纯文档权限说明不因关键词误触发代码级门禁；Standard/Quick 保持原路径 |
 | BR-AIRD-EVIDENCE-001 | Evidence 要求按每条 Acceptance 的业务语义推断；纯文档、运行行为、用户界面、数据迁移、拒绝/失败处理路径和目标环境分别路由，显式 `requiredCovers` 不得被任务级分类覆盖 | 文档检查误证业务行为、负向结果只用正向测试证明，或无关浏览器流程被强制执行 | `product`/`requirements` 标签本身不等于 documentation；未授权、拒绝、无效，或异常/失败的处理与回滚语义要求 `negative-path` |
@@ -73,6 +74,7 @@ lastVerifiedCommit: null
 | BR-AIRD-ROUTE-001 | 普通任务过重或高风险绕过门禁 | Core/Integration | `60-测试/core/task-policy.test.mjs`; `60-测试/integration/context-quality.test.mjs` | covered |
 | BR-AIRD-OUTPUT-001 | 大回执占满上下文 | Scenario | `60-测试/scenarios/cli.test.mjs` | covered |
 | BR-AIRD-STATE-001 | 非授权写入 | Unit/Scenario | `60-测试/core/state-manager.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
+| BR-AIRD-STATE-003 | Worktree 与集成器读取不同账本 | Unit | `60-测试/core/state-manager.test.mjs` | covered |
 | BR-AIRD-STATE-002 / TR-AIRD-CONVERSATION-001 | 后续误关联、误返工或伪造验收 | Core/Integration/Scenario | `60-测试/core/state-manager.test.mjs`; `60-测试/integration/task-runner.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
 | TR-AIRD-STATE-001 | 状态或目录被改变 | Unit/Scenario | `60-测试/core/state-manager.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
 | EX-AIRD-STATE-001 | 冲突被覆盖 | Unit | `60-测试/core/state-manager.test.mjs` | covered |

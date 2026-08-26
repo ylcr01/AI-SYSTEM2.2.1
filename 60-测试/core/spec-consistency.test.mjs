@@ -70,3 +70,16 @@ test('完整 Decision 元数据通过门禁', () => {
   });
   assert.equal(result.ok, true);
 });
+
+test('集成任务可采纳保留原始来源的历史 Decision', () => {
+  const result = evaluateSpecConsistency({
+    taskId: 'task-current',
+    specImpact: { level: 'decision-required', declared: true, reason: '采纳已验证的历史决定', affectedSpecificationIds: ['BR-ORD-001'] },
+    traceability: trace([{
+      path: 'docs/modules/order/decisions/DEC-001.md', kind: 'decision', specificationIds: ['BR-ORD-001'],
+      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'accepted', affects: ['order-cancellation'], sourceTaskId: 'task-origin', adoptedByTaskId: 'task-current' } }
+    }]),
+    policy: { mode: 'balanced', configured: false, policyPath: null, blockingRules: ['DECISION_METADATA_INVALID'], requireExplicitImpactForMappedCode: false, requireTestsForAffectedIds: false }
+  });
+  assert.equal(result.ok, true);
+});
