@@ -150,7 +150,10 @@ export function prepareIntegrationCandidate(input = {}) {
     return { ...existing, candidateBase:input.candidateBase ?? targetCommit, targetCommit, targetCheckout:targetState.targetCheckout };
   }
 
-  const revisions = revisionList(sourceGitRoot, input.baseCommit, input.resultCommit);
+  // The task may have been rebased onto a newer target after it was prepared.
+  // Replay only commits that are not already reachable from the current target;
+  // using the original task baseline would reapply target-side commits.
+  const revisions = revisionList(sourceGitRoot, targetCommit, input.resultCommit);
   if (!revisions.commits.length) return { status:'blocked', reason:'integration-result-empty', targetCommit, targetCheckout:targetState.targetCheckout };
   if (revisions.merges.length) return { status:'blocked', reason:'integration-nonlinear-history', merges:revisions.merges, targetCommit, targetCheckout:targetState.targetCheckout };
 

@@ -114,16 +114,8 @@ test('同一工作树拒绝并行 Task，不同 worktree 允许准备',t=>{
   }
 });
 
-test('宿主强制普通写任务使用 Worktree，主 checkout 仅允许显式紧急授权',t=>{
-  const repo=gitRepo(t),stateRoot=tempDir(t);
-  assert.throws(()=>prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['完成'],scope:'.',enforceWorktree:true}),/主 checkout 只用于串行集成/u);
-  assert.throws(()=>prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['完成'],scope:'.',enforceWorktree:true,allowPrimaryWrite:true}),/--primary-write-reason/u);
-  const allowed=prepareTask({cwd:repo,stateRoot,intent:'紧急修复',acceptance:['完成'],scope:'.',enforceWorktree:true,allowPrimaryWrite:true,primaryWriteReason:'用户明确授权'});
-  assert.equal(allowed.task.baseline.linkedWorktree,false);
-});
-
 test('低风险 Worktree 结果默认隔离集成到目标分支并清理任务分支和 Worktree',t=>{
-  const repo=gitRepo(t,{checks:[{name:'target-behavior',command:process.execPath,args:['-e',"const fs=require('node:fs');if(fs.readFileSync('target.txt','utf8').trim()!=='integrated')process.exit(1)"],profiles:['standard','controlled','release'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'task-worktree');
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'task-worktree');
   const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
   const added=spawnSync('git',['-C',repo,'worktree','add','-b','codex/auto-integrate-test',worktree,target],{encoding:'utf8'});
   assert.equal(added.status,0,added.stderr);
@@ -132,7 +124,7 @@ test('低风险 Worktree 结果默认隔离集成到目标分支并清理任务�
   for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']]){
     const result=spawnSync('git',['-C',worktree,...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);
   }
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
   assert.equal(delivered.task.status,'ready_to_integrate');
   const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
   assert.equal(integrated.task.status,'waiting_acceptance');
@@ -143,6 +135,25 @@ test('低风险 Worktree 结果默认隔离集成到目标分支并清理任务�
   assert.notEqual(spawnSync('git',['-C',repo,'show-ref','--verify',delivered.task.integration.pendingRef],{encoding:'utf8'}).status,0);
   assert.equal(integrated.task.integration.cleanup.source.worktree,'removed');
   assert.equal(acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'}).task.status,'accepted');
+});
+
+test('任务结果变基到最新目标后只集成目标尚未包含的提交',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'task-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'target.txt'),'task\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  fs.writeFileSync(path.join(repo,'main.txt'),'new target\n');
+  for(const args of [['add','main.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','target advanced']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
+  const rebased=spawnSync('git',['-C',worktree,'rebase',target],{encoding:'utf8'});
+  assert.equal(rebased.status,0,rebased.stderr);
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  assert.equal(delivered.task.status,'ready_to_integrate');
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(integrated.task.status,'waiting_acceptance');
+  assert.equal(fs.readFileSync(path.join(repo,'main.txt'),'utf8').trim(),'new target');
+  assert.equal(fs.readFileSync(path.join(repo,'target.txt'),'utf8').trim(),'task');
 });
 
 test('源 Worktree 是当前进程目录时切换到目标 checkout 后安全清理',t=>{
@@ -183,7 +194,7 @@ test('目标 checkout 存在未提交改动时自动集成 fail closed 且不推
   const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
   fs.writeFileSync(path.join(worktree,'target.txt'),'task\n');
   for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
   const before=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
   fs.writeFileSync(path.join(repo,'README.md'),'dirty local\n');
   const paused=integrateTask({stateRoot,taskId:prepared.task.taskId});
@@ -200,7 +211,7 @@ test('存在残余风险时默认暂停集成并保留结果',t=>{
   const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
   fs.writeFileSync(path.join(worktree,'target.txt'),'task\n');
   for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,residualRisks:['需要用户确认的数据兼容风险']});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree),residualRisks:['需要用户确认的数据兼容风险']});
   assert.equal(delivered.task.status,'ready_to_integrate');
   const before=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
   const paused=integrateTask({stateRoot,taskId:prepared.task.taskId});
@@ -217,16 +228,18 @@ test('存在残余风险时默认暂停集成并保留结果',t=>{
 
 test('集成候选验证失败时删除临时候选但不推进目标分支',t=>{
   const variable='AI_RD_OS_INTEGRATION_TEST_READY';
-  const repo=gitRepo(t,{checks:[{name:'environment',command:process.execPath,args:['-e',`process.exit(process.env.${variable}==='1'?0:1)`],profiles:['standard','controlled','release'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'task-worktree');
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'task-worktree');
   const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
   assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
   const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
   fs.writeFileSync(path.join(worktree,'target.txt'),'task\n');
-  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  fs.writeFileSync(path.join(worktree,'tests','acceptance.test.mjs'),`import assert from 'node:assert/strict';import test from 'node:test';test('A1 proof',()=>assert.equal(process.env.${variable},'1'));\n`);
+  const taskCheckFile=taskCheck(t,worktree);
+  for(const args of [['add','target.txt','tests/acceptance.test.mjs'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
   const previous=process.env[variable];
   try {
     process.env[variable]='1';
-    const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+    const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile});
     assert.equal(delivered.task.status,'ready_to_integrate');
     const before=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
     process.env[variable]='0';
@@ -250,7 +263,7 @@ test('后集成任务冲突时保留隔离集成 Worktree，解决并提交后�
   const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
   fs.writeFileSync(path.join(worktree,'target.txt'),'task\n');
   for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
   fs.writeFileSync(path.join(repo,'target.txt'),'main\n');
   for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','main result']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
   const mainBefore=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
@@ -280,7 +293,7 @@ test('部分补丁已进入目标分支时不把空 cherry-pick 误判为完成'
   const firstCommit=spawnSync('git',['-C',worktree,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
   fs.writeFileSync(path.join(worktree,'two.txt'),'two\n');
   for(const args of [['add','two.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','task two']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
   assert.equal(delivered.task.status,'ready_to_integrate');
   assert.equal(spawnSync('git',['-C',repo,'cherry-pick',firstCommit],{encoding:'utf8'}).status,0);
   const before=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();

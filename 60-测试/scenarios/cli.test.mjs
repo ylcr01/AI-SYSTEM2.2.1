@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { gitRepo, tempDir, runNode as runNodeRaw, taskCheck } from '../helpers.mjs';
+import { gitRepo, tempDir, runNode, taskCheck } from '../helpers.mjs';
 import { updateTask } from '../../40-脚本/lib/state-manager.mjs';
 import { createEvidence } from '../../40-脚本/lib/evidence.mjs';
 
@@ -13,13 +13,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const BUILD_CONTEXT = path.join(ROOT, '40-脚本/build-context.mjs');
 const TASK = path.join(ROOT, '40-脚本/task.mjs');
 const RUN_CHECKS = path.join(ROOT, '40-脚本/run-checks.mjs');
-
-function runNode(script, args = [], options = {}) {
-  const effectiveArgs = script === TASK && args[0] === '准备' && !args.includes('--allow-primary-write')
-    ? [...args, '--allow-primary-write', '--primary-write-reason', '测试 fixture 显式许可']
-    : args;
-  return runNodeRaw(script, effectiveArgs, options);
-}
 
 test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () => {
   const result = runNode(TASK, ['--help'], { cwd: ROOT });
@@ -35,7 +28,7 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--quality-profile/u);
   assert.match(full.stdout, /follow-up.*--delivery-id/u);
   assert.match(full.stdout, /不保存消息正文/u);
-  assert.match(full.stdout, /--allow-primary-write/u);
+  assert.doesNotMatch(full.stdout, /--allow-primary-write/u);
   assert.match(full.stdout, /--allow-risk-integration/u);
   assert.match(full.stdout, /默认在隔离集成 Worktree/u);
   assert.doesNotMatch(full.stdout, /--workstation/u);
@@ -73,12 +66,12 @@ test('CLI 状态迁移默认 dry-run，显式 apply 才写入', t => {
 
 test('Task CLI 默认拒绝在主 checkout 准备普通写任务', t => {
   const repo = gitRepo(t), stateRoot = tempDir(t);
-  const blocked = runNodeRaw(TASK, [
+  const blocked = runNode(TASK, [
     '准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确',
     '--scope', '.', '--state-root', stateRoot,
-  ], { cwd:ROOT });
+  ], { cwd:ROOT, env:{ NODE_TEST_CONTEXT:'' } });
   assert.notEqual(blocked.status, 0);
-  assert.match(blocked.stderr, /主 checkout 只用于串行集成/u);
+  assert.match(blocked.stderr, /WORKTREE_REQUIRED/u);
 });
 
 test('Task CLI 默认自动集成低风险 Worktree 结果并清理任务资源', t => {
@@ -87,7 +80,7 @@ test('Task CLI 默认自动集成低风险 Worktree 结果并清理任务资源'
   const branch = 'codex/cli-auto-integration';
   const added = spawnSync('git', ['-C', repo, 'worktree', 'add', '-b', branch, worktree, target], { encoding:'utf8' });
   assert.equal(added.status, 0, added.stderr);
-  const prepared = runNodeRaw(TASK, [
+  const prepared = runNode(TASK, [
     '准备', '--cwd', worktree, '--intent', '修改普通功能', '--acceptance', '功能正确',
     '--scope', '.', '--integration-target', target, '--state-root', stateRoot,
   ], { cwd:ROOT });
@@ -101,10 +94,11 @@ test('Task CLI 默认自动集成低风险 Worktree 结果并清理任务资源'
     const result = spawnSync('git', ['-C', worktree, ...gitArgs], { encoding:'utf8' });
     assert.equal(result.status, 0, result.stderr);
   }
-  const delivered = runNodeRaw(TASK, ['交付', '--task-id', taskId, '--state-root', stateRoot], { cwd:ROOT });
+  const taskCheckFile = taskCheck(t, worktree);
+  const delivered = runNode(TASK, ['交付', '--task-id', taskId, '--state-root', stateRoot, '--task-check-file', taskCheckFile], { cwd:ROOT });
   assert.equal(delivered.status, 0, delivered.stderr);
   assert.equal(JSON.parse(delivered.stdout).integration.status, 'ready');
-  const integrated = runNodeRaw(TASK, ['集成', '--task-id', taskId, '--state-root', stateRoot], { cwd:ROOT, timeout:30000 });
+  const integrated = runNode(TASK, ['集成', '--task-id', taskId, '--state-root', stateRoot], { cwd:ROOT, timeout:30000 });
   assert.equal(integrated.status, 0, integrated.stderr);
   const receipt = JSON.parse(integrated.stdout);
   assert.equal(receipt.integration.status, 'integrated');

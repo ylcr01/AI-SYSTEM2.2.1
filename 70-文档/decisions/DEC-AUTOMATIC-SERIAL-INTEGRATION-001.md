@@ -4,6 +4,7 @@ status: accepted
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260825014558132-3eab3e38
+adoptedByTaskId: task-20260826034633068-92d6b9bb
 supersedes:
   - DEC-AGENT-INTEGRATION-001
   - DEC-WORKTREE-FIRST-001
@@ -17,7 +18,7 @@ supersedes:
 
 ## 决定
 
-- 主 Local checkout 只持有目标分支并承担串行集成；普通写任务必须在任务专属 Worktree 中准备。紧急 Local 写入需要显式授权和原因。
+- 主 Local checkout 只持有目标分支并承担串行集成；所有写任务必须在任务专属 Worktree 中准备，不提供 Local 写入例外。
 - Worktree 任务形成独立 `resultCommit` 并通过交付门禁后进入 `ready_to_integrate`。低风险任务由单一集成者默认立即执行 `task.mjs 集成`，不再等待一次重复确认。
 - 集成按 Git Common Dir 与目标分支加锁，在系统专属临时 Worktree 中把任务提交应用到最新目标 HEAD，并重放固化的 Check Manifest。只有候选干净、检查通过且目标 HEAD 未变化时，才以 fast-forward 推进目标分支。
 - 成功后删除 pending ref，并仅在源 Worktree 干净、HEAD 仍等于 `resultCommit` 且不是当前进程目录时删除源 Worktree；任务分支仅在引用仍精确指向 `resultCommit` 时删除。

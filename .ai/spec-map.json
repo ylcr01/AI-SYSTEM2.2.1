@@ -36,6 +36,7 @@
       "specificationFiles": ["70-文档/specifications/quality-profile-and-state.md"],
       "specificationIds": [
         "BR-AIRD-STATE-001",
+        "BR-AIRD-STATE-003",
         "TR-AIRD-STATE-001",
         "EX-AIRD-STATE-001"
       ],

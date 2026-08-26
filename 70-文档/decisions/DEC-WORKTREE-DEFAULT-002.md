@@ -4,6 +4,7 @@ status: accepted
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260825071747201-032e7b26
+adoptedByTaskId: task-20260826034633068-92d6b9bb
 supersedes:
   - DEC-AGENT-INTEGRATION-001
   - DEC-WORKTREE-FIRST-001

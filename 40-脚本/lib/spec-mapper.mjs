@@ -204,6 +204,7 @@ export function readDecisionMetadata(gitRoot, relative) {
       status: typeof frontMatter.status === 'string' ? frontMatter.status : null,
       affects: Array.isArray(frontMatter.affects) ? frontMatter.affects : typeof frontMatter.affects === 'string' ? [frontMatter.affects] : [],
       sourceTaskId: typeof frontMatter.sourceTaskId === 'string' ? frontMatter.sourceTaskId : null,
+      adoptedByTaskId: typeof frontMatter.adoptedByTaskId === 'string' ? frontMatter.adoptedByTaskId : null,
       supersedes: Array.isArray(frontMatter.supersedes) ? frontMatter.supersedes : [],
       supersededBy: typeof frontMatter.supersededBy === 'string' ? frontMatter.supersededBy : null
     }
