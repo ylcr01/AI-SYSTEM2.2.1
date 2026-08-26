@@ -21,6 +21,7 @@ function acceptedTask() {
 
 test('Experience Candidate 只能从已验收 Task 生成', () => {
   assert.throws(() => createExperienceCandidate({ ...acceptedTask(), status: 'waiting_acceptance' }), /已验收/u);
+  assert.throws(() => createExperienceCandidate({ ...acceptedTask(), status: 'closed' }), /已验收/u);
 });
 
 test('候选保留已验收来源、规格和精确指纹', () => {

@@ -11,7 +11,7 @@ const action = args._[0] ?? '检查';
 
 function instructionText(fallback) {
   const fallbackPath = path.resolve(fallback ?? SYSTEM_ROOT);
-  return `# Personal AI R&D Operating System\n\nFor repository-dependent work, resolve \`AI_RD_OS_ROOT\` (fallback: \`${fallbackPath}\`) and read its \`AGENTS.md\` before acting; that file is the routing authority. Never bypass Scope or Evidence gates, run user acceptance, claim completion before \`waiting_acceptance\`, or perform external writes without explicit user authorization.\n`;
+  return `# Personal AI R&D Operating System\n\nFor repository work, resolve \`AI_RD_OS_ROOT\` (fallback: \`${fallbackPath}\`) and read \`AGENTS.md\`; it controls routing. Never bypass Scope/Evidence, run user acceptance, claim delivery before \`waiting_acceptance\`, or write externally without explicit authorization. With an exact prior \`continuation\`, record one classified follow-up per \`AGENTS.md\` before handling the turn; never scan for a pending Task.\n`;
 }
 
 function checkRoot(root) {

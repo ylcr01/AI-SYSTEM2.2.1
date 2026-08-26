@@ -119,7 +119,7 @@ export function validateAlignmentForPreparation({ alignment, classification }) {
 }
 
 export function validateAlignmentForRealignment({ currentTask, nextAlignment }) {
-  if (currentTask && (currentTask.status === 'accepted' || currentTask.status === 'cancelled')) {
+  if (currentTask && ['accepted', 'closed', 'cancelled'].includes(currentTask.status)) {
     throw new Error('已结束任务不能重新对齐，应创建新 Task');
   }
   if (currentTask?.status === 'ready_to_integrate') {

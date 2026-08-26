@@ -1,6 +1,6 @@
 {
   "name": "personal-ai-rd-operating-system",
-  "version": "2.2.2",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "description": "面向个人开发者和强 Coding Agent 的轻量 AI 研发增强层",

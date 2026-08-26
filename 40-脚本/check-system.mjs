@@ -82,13 +82,13 @@ if (specMapExample?.schemaVersion !== 1 || !Array.isArray(specMapExample.mapping
 const specPolicyExample = readJson('.ai/templates/spec-policy.example.json');
 if (specPolicyExample?.schemaVersion !== 1 || !['advisory','balanced','strict'].includes(specPolicyExample.mode)) errors.push('spec-policy.example.json: Schema 无效');
 const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
-if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 9/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V9 状态分层、结果指标、集成转换或并发锁');
+if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/CURRENT_SCHEMA = 10/u.test(state) || !/conversationOutcome/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V10 状态分层、对话结果、结果指标、集成转换或并发锁');
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
-for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
+for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','continuation.taskId + deliveryId','closed','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
 const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
-for (const marker of ['继续验证','重验集成','迁移状态']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复或维护命令 ${marker}`);
+for (const marker of ['继续验证','重验集成','迁移状态','后续','delivery-id','observation-id']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续或维护命令 ${marker}`);
 
 const result = {
   ok: errors.length === 0,

@@ -1,4 +1,4 @@
-// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001
+// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 BR-AIRD-STATE-002 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +26,8 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--goal-card-file/u);
   assert.match(full.stdout, /--reason-category/u);
   assert.match(full.stdout, /--quality-profile/u);
+  assert.match(full.stdout, /follow-up.*--delivery-id/u);
+  assert.match(full.stdout, /不保存消息正文/u);
   assert.doesNotMatch(full.stdout, /--workstation/u);
   assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
   assert.match(full.stdout, /重验集成/u);
@@ -254,7 +256,7 @@ test('Task CLI 默认只展示四态结果，--full 保留完整 Task', t => {
   assert.equal(compactList.status, 0, compactList.stderr);
   const taskList = JSON.parse(compactList.stdout);
   assert.equal(taskList.view, 'outcome-list');
-  assert.deepEqual(taskList.counts, { working:1, needs_decision:0, ready_for_acceptance:0, done:0 });
+  assert.deepEqual(taskList.counts, { working:1, needs_decision:0, delivered:0, done:0 });
   for (const key of ['globalCounts', 'total', 'matched', 'shown', 'hasMore', 'filter']) {
     assert.equal(key in taskList, false);
   }
@@ -308,8 +310,10 @@ test('CLI 准备→交付→验收完整闭环', t => {
   ], { cwd: ROOT });
   assert.equal(delivered.status, 0, delivered.stderr);
   const deliveryReceipt = JSON.parse(delivered.stdout);
-  assert.equal(deliveryReceipt.state, 'ready_for_acceptance');
-  assert.equal(deliveryReceipt.stateLabel, '等待你验收');
+  assert.equal(deliveryReceipt.state, 'delivered');
+  assert.equal(deliveryReceipt.stateLabel, '本轮已交付');
+  assert.equal(deliveryReceipt.continuation.taskId, task.taskId);
+  assert.ok(deliveryReceipt.continuation.deliveryId);
   assert.equal(deliveryReceipt.view, 'outcome');
   assert.equal('evidence' in deliveryReceipt, false);
   assert.equal('verification' in deliveryReceipt, false);
@@ -327,6 +331,43 @@ test('CLI 准备→交付→验收完整闭环', t => {
   const acceptedReceipt = JSON.parse(accepted.stdout);
   assert.equal(acceptedReceipt.state, 'done');
   assert.equal(acceptedReceipt.stateLabel, '已结束');
+});
+
+test('CLI 后续只按 continuation 回写并将相关询问后的新话题隐式收口', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const prepared = runNode(TASK, ['准备', '--cwd', repo, '--intent', '修复普通功能', '--acceptance', '功能正确', '--scope', '.', '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const taskId = JSON.parse(prepared.stdout).taskId;
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
+  const delivered = runNode(TASK, ['交付', '--task-id', taskId, '--state-root', stateRoot, '--task-check-file', taskCheck(t, repo)], { cwd:ROOT });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  const continuation = JSON.parse(delivered.stdout).continuation;
+
+  const missingCorrelation = runNode(TASK, ['后续', '--task-id', taskId, '--kind', 'topic-advance', '--observation-id', 'turn-missing', '--state-root', stateRoot], { cwd:ROOT });
+  assert.notEqual(missingCorrelation.status, 0);
+  assert.match(missingCorrelation.stderr, /delivery-id/u);
+
+  const related = runNode(TASK, ['follow-up', '--task-id', taskId, '--delivery-id', continuation.deliveryId, '--observation-id', 'turn-related', '--kind', 'related-question', '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(related.status, 0, related.stderr);
+  const relatedReceipt = JSON.parse(related.stdout);
+  assert.equal(relatedReceipt.state, 'delivered');
+  assert.deepEqual(relatedReceipt.followUp, { kind:'related-question', observationId:'turn-related', recorded:true, idempotent:false });
+  assert.deepEqual(relatedReceipt.continuation, continuation);
+
+  const closed = runNode(TASK, ['后续', '--task-id', taskId, '--delivery-id', continuation.deliveryId, '--observation-id', 'turn-topic', '--kind', 'topic-advance', '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(closed.status, 0, closed.stderr);
+  const closedReceipt = JSON.parse(closed.stdout);
+  assert.equal(closedReceipt.state, 'done');
+  assert.equal('continuation' in closedReceipt, false);
+  assert.equal(closedReceipt.followUp.kind, 'topic-advance');
+
+  const shown = runNode(TASK, ['查看', '--task-id', taskId, '--state-root', stateRoot, '--full'], { cwd:ROOT });
+  assert.equal(shown.status, 0, shown.stderr);
+  const closedTask = JSON.parse(shown.stdout);
+  assert.equal(closedTask.status, 'closed');
+  assert.equal(closedTask.userAcceptance, undefined);
+  assert.equal(closedTask.outcomeMetrics.firstPassAccepted, null);
+  assert.equal('firstPassResolved' in closedTask.conversationOutcome, false);
 });
 
 test('CLI 重新对齐后旧交付不得把新验收项标成 verified', t => {
@@ -639,7 +680,7 @@ test('CLI 自动记录退回指标并提供只读评估摘要', t => {
     '--task-check-file', taskCheck(t, repo),
   ], { cwd:ROOT });
   assert.equal(delivered.status, 0, delivered.stderr);
-  assert.equal(JSON.parse(delivered.stdout).state, 'ready_for_acceptance');
+  assert.equal(JSON.parse(delivered.stdout).state, 'delivered');
   const rejected = runNode(TASK, [
     '验收', '--task-id', task.taskId, '--state-root', stateRoot, '--decision', '退回',
     '--reason-category', 'code-quality', '--note', '命名不符合项目习惯',

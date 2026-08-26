@@ -5,6 +5,7 @@ import {
   prepareTask,
   deliverTask,
   realignTask,
+  recordTaskFollowUp,
   acceptTask,
   saveTask,
   resumeTask,
@@ -27,6 +28,7 @@ const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
   ['realign', '重新对齐'],
+  ['follow-up', '后续'],
   ['handoff', '交接'], ['resume', '恢复'], ['show', '查看'], ['list', '列表'],
   ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'], ['integrate', '集成'],
   ['continue-verification', '继续验证'],
@@ -44,7 +46,8 @@ function nextAction(status) {
     reviewing: '正在检查实现质量。',
     needs_rework: '当前结果仍需修正；修正后重新验证。',
     ready_to_integrate: '代码已准备好集成；完成目标分支集成和重验后再交给你验收。',
-    waiting_acceptance: '结果已具备验收条件，请检查并决定通过或退回。',
+    waiting_acceptance: '本轮已交付；无需形式确认，下一轮对话会记录为继续讨论、返工或自然收口。',
+    closed: '上一任务已根据后续对话自然收口。',
     verifying: '仍有结果缺少验证，补齐后继续。',
     saved: '任务已暂停，需要你决定是否继续。',
     blocked: '任务被阻止，需要先处理上面的阻塞原因。',
@@ -85,7 +88,7 @@ function compactOutcomes(task) {
   }));
 }
 
-function compactTask(task) {
+function compactTask(task, result = null) {
   const publicState = publicTaskStateForTask(task);
   const receipt = {
     schemaVersion: 2,
@@ -98,6 +101,19 @@ function compactTask(task) {
   if (task.goal?.summary) receipt.goal = task.goal.summary;
   if (task.goal?.expectedOutcomes) receipt.expectedOutcomes = task.goal.expectedOutcomes;
   if (task.goal?.protectedBehaviors) receipt.protectedBehaviors = task.goal.protectedBehaviors;
+  if (task.status === 'waiting_acceptance' && task.conversationOutcome?.deliveryId) {
+    receipt.continuation = {
+      taskId: task.taskId,
+      deliveryId: task.conversationOutcome.deliveryId,
+    };
+  }
+  if (result?.followUp) {
+    receipt.followUp = {
+      ...result.followUp,
+      recorded: result.recorded,
+      idempotent: result.idempotent,
+    };
+  }
 
   if (action === '准备' || action === '查看') {
     receipt.acceptance = (task.acceptance ?? []).map(({ id, description }) => ({
@@ -193,7 +209,7 @@ function compactTask(task) {
 }
 
 function compactTaskList(result) {
-  const counts = { working: 0, needs_decision: 0, ready_for_acceptance: 0, done: 0 };
+  const counts = { working: 0, needs_decision: 0, delivered: 0, done: 0 };
   for (const task of result.tasks ?? []) {
     const state = publicTaskStateForTask(task).id;
     counts[state] += 1;
@@ -219,7 +235,7 @@ function compactTaskList(result) {
 function output(result) {
   let value;
   if (args.full === true) value = result?.task ?? result;
-  else if (result?.task) value = compactTask(result.task);
+  else if (result?.task) value = compactTask(result.task, result);
   else if (Array.isArray(result?.tasks)) value = compactTaskList(result);
   else value = result;
   console.log(JSON.stringify(value, null, 2));
@@ -231,6 +247,8 @@ function help() {
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
   交付 --task-id <id>
+  后续 --task-id <id> --delivery-id <id> --observation-id <id>
+       --kind related-question|defect-return|scope-extension|positive-acknowledgement|topic-advance
   验收 --task-id <id> --decision 通过|退回 [--note <原因>]
   继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
   保存|恢复|交接|查看|取消 --task-id <id>
@@ -253,6 +271,9 @@ function help() {
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
        [--task-check-file <json>（Schema 2：受控 runner/cases，每个 case 显式绑定 Acceptance、Cover、测试文件与精确用例名）]
        [--spec-impact ...] [--spec-impact-reason <text>] [--spec-id <ID>]
+  后续|follow-up --task-id <id> --delivery-id <id> --observation-id <id>
+       --kind related-question|defect-return|scope-extension|positive-acknowledgement|topic-advance
+       （只回写关联交付的最小对话事实；不保存消息正文、不运行检查、不自动创建 Task）
   重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
@@ -339,6 +360,14 @@ try {
       taskId: requiredArg(args, 'task-id'),
       alignmentFile: goalCardFileArg({ required:true }),
       reason: args.reason,
+    }));
+  } else if (action === '后续') {
+    output(recordTaskFollowUp({
+      stateRoot: args['state-root'],
+      taskId: requiredArg(args, 'task-id'),
+      deliveryId: requiredArg(args, 'delivery-id'),
+      observationId: requiredArg(args, 'observation-id'),
+      kind: requiredArg(args, 'kind'),
     }));
   } else if (action === '验收') {
     output(acceptTask({

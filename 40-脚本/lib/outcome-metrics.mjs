@@ -1,9 +1,23 @@
 const PUBLIC_STATES = {
   working: { id: 'working', label: '正在处理' },
   needs_decision: { id: 'needs_decision', label: '需要你决定' },
-  ready_for_acceptance: { id: 'ready_for_acceptance', label: '等待你验收' },
+  delivered: { id: 'delivered', label: '本轮已交付' },
   done: { id: 'done', label: '已结束' },
 };
+
+export const FOLLOW_UP_KINDS = new Set([
+  'related-question',
+  'defect-return',
+  'scope-extension',
+  'positive-acknowledgement',
+  'topic-advance',
+]);
+
+const SINGLE_TURN_CLOSURES = new Set([
+  'scope-extension',
+  'positive-acknowledgement',
+  'topic-advance',
+]);
 
 const WORKING_INTERNAL_STATES = new Set([
   'prepared', 'implementing', 'verifying', 'reviewing', 'ready_to_integrate', 'needs_rework',
@@ -46,14 +60,80 @@ function periodBoundary(value, label) {
 }
 
 function taskTimestamp(task) {
-  return isoOrNull(task.acceptedAt ?? task.updatedAt ?? task.createdAt);
+  return isoOrNull(task.acceptedAt ?? task.closedAt ?? task.updatedAt ?? task.createdAt);
 }
 
 export function publicTaskState(status) {
-  if (status === 'waiting_acceptance') return PUBLIC_STATES.ready_for_acceptance;
-  if (status === 'accepted' || status === 'cancelled') return PUBLIC_STATES.done;
+  if (status === 'waiting_acceptance') return PUBLIC_STATES.delivered;
+  if (status === 'accepted' || status === 'closed' || status === 'cancelled') return PUBLIC_STATES.done;
   if (WORKING_INTERNAL_STATES.has(status)) return PUBLIC_STATES.working;
   return PUBLIC_STATES.needs_decision;
+}
+
+function followUpCounts(value = {}) {
+  return Object.fromEntries([...FOLLOW_UP_KINDS].map((kind) => [kind, integerNonNegative(value[kind])]));
+}
+
+function normalizedFollowUp(value) {
+  if (!value || !FOLLOW_UP_KINDS.has(value.kind)) return null;
+  const observationId = String(value.observationId ?? '').trim();
+  const observedAt = isoOrNull(value.observedAt);
+  if (!observationId || !observedAt) return null;
+  return { observationId, kind: value.kind, observedAt };
+}
+
+export function normalizeConversationOutcome(value) {
+  if (!value || !value.deliveryId) return null;
+  const firstDeliveryFollowUpKind = FOLLOW_UP_KINDS.has(value.firstDeliveryFollowUpKind)
+    ? value.firstDeliveryFollowUpKind
+    : null;
+  return {
+    schemaVersion: 1,
+    deliveryId: String(value.deliveryId),
+    deliveredAt: isoOrNull(value.deliveredAt),
+    firstFollowUp: normalizedFollowUp(value.firstFollowUp),
+    terminalFollowUp: normalizedFollowUp(value.terminalFollowUp),
+    firstDeliveryFollowUpKind,
+    counts: followUpCounts(value.counts),
+  };
+}
+
+export function beginConversationDelivery(previous, input = {}) {
+  const normalized = normalizeConversationOutcome(previous);
+  return {
+    schemaVersion: 1,
+    deliveryId: String(input.deliveryId),
+    deliveredAt: isoOrNull(input.deliveredAt) ?? new Date().toISOString(),
+    firstFollowUp: null,
+    terminalFollowUp: null,
+    firstDeliveryFollowUpKind: normalized?.firstDeliveryFollowUpKind ?? null,
+    counts: followUpCounts(normalized?.counts),
+  };
+}
+
+export function observeConversationFollowUp(previous, input = {}) {
+  const normalized = normalizeConversationOutcome(previous);
+  if (!normalized) throw new Error('任务缺少可关联的交付 continuation');
+  if (!FOLLOW_UP_KINDS.has(input.kind)) throw new Error(`后续类型无效: ${input.kind ?? 'unknown'}`);
+  const observation = {
+    observationId: String(input.observationId),
+    kind: input.kind,
+    observedAt: isoOrNull(input.observedAt) ?? new Date().toISOString(),
+  };
+  const counts = { ...normalized.counts, [input.kind]: normalized.counts[input.kind] + 1 };
+  return {
+    ...normalized,
+    firstFollowUp: normalized.firstFollowUp ?? observation,
+    terminalFollowUp: input.terminal === true ? observation : normalized.terminalFollowUp,
+    firstDeliveryFollowUpKind: normalized.firstDeliveryFollowUpKind ?? input.kind,
+    counts,
+  };
+}
+
+export function singleTurnClosure(conversationOutcome) {
+  const kind = normalizeConversationOutcome(conversationOutcome)?.firstDeliveryFollowUpKind;
+  if (!kind) return null;
+  return SINGLE_TURN_CLOSURES.has(kind);
 }
 
 export function publicTaskStateForTask(task = {}) {
@@ -181,13 +261,21 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   const reworkTasks = tracked.filter((task) => task.outcomeMetrics.reworkCount > 0);
   const reworkCount = reworkTasks.reduce((sum, task) => sum + task.outcomeMetrics.reworkCount, 0);
   const userDecisionCount = tracked.reduce((sum, task) => sum + task.outcomeMetrics.userDecisionCount, 0);
+  const conversationTracked = selected.filter((task) => normalizeConversationOutcome(task.conversationOutcome));
+  const singleTurnDecided = conversationTracked.filter((task) => singleTurnClosure(task.conversationOutcome) !== null);
+  const singleTurnPassed = singleTurnDecided.filter((task) => singleTurnClosure(task.conversationOutcome) === true);
+  const followUps = Object.fromEntries([...FOLLOW_UP_KINDS].map((kind) => [
+    kind,
+    conversationTracked.reduce((sum, task) => sum + normalizeConversationOutcome(task.conversationOutcome).counts[kind], 0),
+  ]));
+  const implicitClosures = selected.filter((task) => task.status === 'closed').length;
   const reasons = new Map();
   for (const task of tracked) {
     for (const reason of task.outcomeMetrics.returnReasons ?? []) {
       reasons.set(reason.category, (reasons.get(reason.category) ?? 0) + 1);
     }
   }
-  const stateCounts = { working:0, needs_decision:0, ready_for_acceptance:0, done:0 };
+  const stateCounts = { working:0, needs_decision:0, delivered:0, done:0 };
   for (const task of selected) {
     const state = publicTaskStateForTask(task).id;
     stateCounts[state] = (stateCounts[state] ?? 0) + 1;
@@ -196,11 +284,15 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   if (tracked.length < 10) warnings.push('有效指标样本少于 10，只能用于方向观察');
   if (selected.length > tracked.length) warnings.push(`${selected.length - tracked.length} 条旧 Task 没有完整指标，未纳入比率和耗时计算`);
   if (unknown > 0) warnings.push(`${unknown} 条已跟踪 Task 没有明确用户验收，不能纳入首轮验收结论`);
+  if (conversationTracked.length < 10) warnings.push('对话收口样本少于 10，只能用于方向观察');
+  if (conversationTracked.length > singleTurnDecided.length) {
+    warnings.push(`${conversationTracked.length - singleTurnDecided.length} 条已交付 Task 尚未观察到后续消息，单轮闭环保持未知`);
+  }
   warnings.push('返工只统计同一 Task 内显式记录的用户退回；未关联的新修复 Task 不在返工计数中');
   warnings.push('本摘要不包含可比基线，不能单独证明机制净收益');
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     view: 'outcome-metrics',
     period: { from, to },
     sample: {
@@ -215,6 +307,25 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
       passed: firstPassAccepted,
       rate: decided.length ? Number((firstPassAccepted / decided.length).toFixed(4)) : null,
       coverage: tracked.length ? Number((decided.length / tracked.length).toFixed(4)) : null,
+    },
+    explicitAcceptance: {
+      decided: decided.length,
+      unknown,
+      passed: firstPassAccepted,
+      rate: decided.length ? Number((firstPassAccepted / decided.length).toFixed(4)) : null,
+      coverage: tracked.length ? Number((decided.length / tracked.length).toFixed(4)) : null,
+    },
+    conversationClosure: {
+      tracked: conversationTracked.length,
+      implicitClosures,
+      singleTurn: {
+        decided: singleTurnDecided.length,
+        unknown: conversationTracked.length - singleTurnDecided.length,
+        passed: singleTurnPassed.length,
+        rate: singleTurnDecided.length ? Number((singleTurnPassed.length / singleTurnDecided.length).toFixed(4)) : null,
+        coverage: conversationTracked.length ? Number((singleTurnDecided.length / conversationTracked.length).toFixed(4)) : null,
+      },
+      followUps,
     },
     rework: {
       tasks: reworkTasks.length,

@@ -1,4 +1,4 @@
-# AI 研发操作系统 V2.2.2 入口规则
+# AI 研发操作系统 V2.3.0 入口规则
 
 适用于具备本地文件和终端能力的模型宿主。只加载当前任务需要的信息，不降低 Scope、Evidence、状态真实性和用户验收门禁。
 
@@ -6,7 +6,8 @@
 
 - **普通对话**：不依赖仓库事实时直接回答，不建 Task、不运行工程脚本。
 - **只读工程分析**：先运行 `node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --intent "<目标>"`，读取轻量结果的 `executionTarget`、`classification`、配置摘要和 `filesToRead`；仅在身份、路由或依赖诊断时追加 `--full`，不得修改仓库。
-- **仓库写任务**：编辑前运行 `node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 准备 --cwd "<项目路径>" --intent "<目标>" --acceptance "<验收>" --scope "<授权路径>"`。同一项目只有一个写任务时可用 Local/主工作区；并行写任务必须各自独占 Worktree（Codex 桌面端用任务专属 managed Worktree，其他宿主用 detached worktree），linked/detached worktree 还必须传入 `--integration-target "<目标分支>"`。保存 `taskId`，按回执 Scope 与 `filesToRead` 实施最小 ChangeSet；worktree 任务先提交再运行 `交付`，其状态进入 `ready_to_integrate` 后，由单一集成者将 `resultCommit` 集成到目标分支并运行 `集成 --task-id "<taskId>" --cwd "<目标工作区>"`。`needs_rework` 暂不继续时运行 `保存` 释放工作树，`恢复` 时重新竞争写权限。只有状态为 `waiting_acceptance` 且当前门禁仍有效时才能说明已完成工程交付，模型不得替用户验收。
+- **仓库写任务**：编辑前运行 `node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 准备 --cwd "<项目路径>" --intent "<目标>" --acceptance "<验收>" --scope "<授权路径>"`。同一项目只有一个写任务时可用 Local/主工作区；并行写任务必须各自独占 Worktree（Codex 桌面端用任务专属 managed Worktree，其他宿主用 detached worktree），linked/detached worktree 还必须传入 `--integration-target "<目标分支>"`。保存 `taskId`，按回执 Scope 与 `filesToRead` 实施最小 ChangeSet；worktree 任务先提交再运行 `交付`，其状态进入 `ready_to_integrate` 后，由单一集成者将 `resultCommit` 集成到目标分支并运行 `集成 --task-id "<taskId>" --cwd "<目标工作区>"`。`needs_rework` 暂不继续时运行 `保存` 释放工作树，`恢复` 时重新竞争写权限。只有状态为 `waiting_acceptance` 且当前门禁仍有效时才能说明“本轮已交付”；这不是用户显式验收，模型不得伪造 `accepted`。
+- 对话后续：有精确 `continuation.taskId + deliveryId` 时，下一消息前调用一次 `后续`。kind：追问 `related-question`；原问题仍有缺陷 `defect-return`；新增目标 `scope-extension`；非正式肯定 `positive-acknowledgement`；独立新话题 `topic-advance`；不确定或同时含追问时用 `related-question`。追问只记首次。无 continuation 不猜 Task；不存正文、不跑工程检查、不自动建 Task。
 - **写任务对齐**：准备前先读项目事实、目标代码与相关测试并输出简短目标卡；Quick/局部明确任务可 direct，Controlled/Structural 或不同业务结果的实质方案必须先确认或获得明确委托；根因未知先只读探索。对齐、重对齐与交付映射规则见 `20-能力模块/clarify-requirements/CONTRACT.md`。
 - **外部写入或高风险动作**：Push、发布、部署、迁移、远程删除、生产数据修改等必须另获用户明确授权；安全、认证、隐私、迁移和不可逆动作还要覆盖拒绝路径、失败停止条件和可执行回滚。
 
@@ -17,16 +18,16 @@
 - 默认采用满足目标与 Acceptance 的最小充分变更，优先复用现有结构；仅正确性、一致性或验收确实要求时才扩大方案，邻近问题只报告。
 - 不猜项目、Scope、权限或外部授权；保留用户已有改动。
 - Evidence 必须绑定 Task、ChangeSet、输入周期、Acceptance 和 Covers；输入改变后旧 Evidence 失效，相同输入失败不得机械重跑。
-- 自检不能冒充独立审查，只有用户可以最终验收。
+- 自检不能冒充独立审查；`accepted` 只有用户显式通过才能产生，`closed` 只表示对话自然收口。
 - 交付前按真实 ChangeSet 声明 `specImpact=none|updated|decision-required`；后两者必须满足规格或 Decision 门禁。
 
 ## 浏览器验证硬门禁
 
-- 普通交付的冒烟验证最多 4 条核心链路，目标 60 秒内完成；单条最长 15 秒，整批执行预算 2 分钟，外层进程必须设置 3 分钟不可放宽的硬超时。
-- 任一用例失败或超时立即停止整批并诊断首个失败；禁止自动重试，禁止超过 1 秒的固定等待，必须使用状态或事件条件等待。
-- 连续 30 秒无有效输出立即终止进程；执行期间至少每 30 秒报告已完成数、失败数和当前阻塞点，不得静默等待。
-- 超过 4 条、预计超过 2 分钟或全量运行历史用例均视为回归测试；不得在普通交付中自动运行，必须拆为单独任务并在启动前取得用户明确授权。
-- 终止、失败、未执行和被熔断的用例必须如实报告；其他检查通过不得替代浏览器验证通过。仓库具备浏览器测试配置时，必须同时在测试运行器或外层命令中固化上述超时和熔断，不能只依赖本文件。
+- 普通交付冒烟最多 4 条核心链路，目标 60 秒；单条最长 15 秒，整批预算 2 分钟，外层硬超时 3 分钟且不可放宽。
+- 首个失败或超时立即停止并诊断；不自动重试，固定等待不超过 1 秒，只按状态或事件等待。
+- 连续 30 秒无有效输出即终止；至少每 30 秒报告完成数、失败数和阻塞点。
+- 超过 4 条、预计超过 2 分钟或全量历史用例即为回归测试；普通交付不运行，须拆为独立任务并先获用户明确授权。
+- 如实报告终止、失败、未执行和熔断；其他检查不能替代浏览器验证。若仓库有浏览器测试配置，Runner 或外层命令也须固化上述超时和熔断。
 
 ## 按需规则
 

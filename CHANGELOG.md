@@ -1,6 +1,14 @@
 # CHANGELOG
 
-## Unreleased
+## V2.3.0
+
+### 对话驱动交付闭环
+
+- 将公开交付状态从 `ready_for_acceptance` 调整为 `delivered`：工程门禁通过即可说明“本轮已交付”，不再要求用户为每轮修改形式化确认。
+- 新增精确 continuation 和五类轻量后续事件；相关询问保持已交付，缺陷退回进入返工，范围扩展、非正式肯定或话题推进形成 `closed`，而 `accepted` 仍只能由用户显式产生。
+- Task Schema 升级到 V10，分别统计显式验收、对话自然收口和单轮闭环；不保存消息正文，不扫描最新 Task，不因后续提问重跑测试，也不推断首次修复成功。
+
+### 内核减重与可信性修复
 
 - 删除项目业务工作站的中央能力、自动上下文路由、CLI、模板和宿主 Skill；项目中已有的 `.ai/workstations/` 可继续作为普通文档保留。
 - 删除 10 个未注册、不可由宿主发现的内部 `SKILL.md`，将实际能力明确为 Quality Profile → Contract/Canonical 路由；新增 `--quality-profile`，旧 `--skill` 仅作兼容别名。

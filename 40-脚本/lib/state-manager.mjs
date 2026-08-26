@@ -4,10 +4,10 @@ import path from 'node:path';
 import { atomicWriteJson, appendJsonLineLocked, withFileLock } from './atomic-file.mjs';
 import { SYSTEM_ROOT, normalizePath } from './registry.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
-import { applyOutcomeMetricEvent, createOutcomeMetrics, normalizeOutcomeMetrics } from './outcome-metrics.mjs';
+import { applyOutcomeMetricEvent, createOutcomeMetrics, normalizeConversationOutcome, normalizeOutcomeMetrics } from './outcome-metrics.mjs';
 
-const CURRENT_SCHEMA = 9;
-const TERMINAL = new Set(['accepted','cancelled']);
+const CURRENT_SCHEMA = 10;
+const TERMINAL = new Set(['accepted','closed','cancelled']);
 const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
 const TRANSITIONS = {
   prepared: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
@@ -18,7 +18,7 @@ const TRANSITIONS = {
   saved: new Set(['implementing','verifying','cancelled']),
   needs_rework: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','blocked','saved','cancelled']),
   ready_to_integrate: new Set(['verifying','waiting_acceptance','needs_rework','cancelled']),
-  waiting_acceptance: new Set(['implementing','verifying','accepted','needs_rework','saved','cancelled'])
+  waiting_acceptance: new Set(['implementing','verifying','accepted','closed','needs_rework','saved','cancelled'])
 };
 
 function paths(stateRoot) {
@@ -100,8 +100,14 @@ function readRaw(file) {
 }
 
 function currentTask(raw) {
-  const upgraded = [6, 7, 8].includes(raw.schemaVersion)
-    ? { ...raw, schemaVersion:CURRENT_SCHEMA, integration:raw.integration ?? null }
+  const upgraded = [6, 7, 8, 9].includes(raw.schemaVersion)
+    ? {
+      ...raw,
+      schemaVersion:CURRENT_SCHEMA,
+      integration:raw.integration ?? null,
+      conversationOutcome:normalizeConversationOutcome(raw.conversationOutcome),
+      closedAt:raw.closedAt ?? null,
+    }
     : raw;
   if (upgraded.schemaVersion !== CURRENT_SCHEMA) {
     throw new Error(`不支持的 Task Schema: ${raw.schemaVersion ?? 'unknown'}；历史版本请使用对应系统读取`);
@@ -109,6 +115,8 @@ function currentTask(raw) {
   return {
     ...upgraded,
     outcomeMetrics: normalizeOutcomeMetrics(upgraded.outcomeMetrics, { createdAt:upgraded.createdAt }),
+    conversationOutcome: normalizeConversationOutcome(upgraded.conversationOutcome),
+    closedAt: upgraded.closedAt ?? null,
   };
 }
 
@@ -116,6 +124,9 @@ function validateTransition(from, to, event) {
   if (from === to) return;
   if (!TRANSITIONS[from]?.has(to)) throw new Error(`非法状态转换: ${from} → ${to}`);
   if (to === 'accepted' && event !== 'user-accept') throw new Error('accepted 只能由用户验收产生');
+  if (to === 'closed' && !['conversation-topic-advance', 'conversation-positive-acknowledgement', 'conversation-scope-extension'].includes(event)) {
+    throw new Error('closed 只能由合法对话收口事件产生');
+  }
   if (to === 'cancelled' && event !== 'user-cancel') throw new Error('cancelled 只能由用户取消产生');
 }
 
@@ -167,9 +178,11 @@ export function createTask(input = {}) {
       at: now,
       initialUserDecisionCount: ['confirmed', 'delegated'].includes(alignmentMode) ? 1 : 0,
     }),
+    conversationOutcome: null,
     createdAt: now,
     updatedAt: now,
-    acceptedAt: null
+    acceptedAt: null,
+    closedAt: null,
   };
   const write = () => {
     assertWorkspaceAvailable(value, input.baseline?.gitRoot);
@@ -243,6 +256,7 @@ export function updateTask(input = {}) {
       });
       if (TERMINAL.has(target)) {
         if (target === 'accepted') next.acceptedAt = next.acceptedAt ?? next.updatedAt;
+        if (target === 'closed') next.closedAt = next.closedAt ?? next.updatedAt;
         appendJsonLineLocked(value.history, next, value.historyLock);
         fs.rmSync(file, { force: true });
         return { task: next, filePath: null, stateRoot: value.root };

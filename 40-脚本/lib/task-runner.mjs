@@ -45,13 +45,26 @@ import { createTask, readTask, findTask, updateTask, listTasks } from './state-m
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 import { addIntentSpecificationHints, buildSpecState, revalidateSpecState, stableSpecReviewState } from './spec-service.mjs';
-import { normalizeReturnReasonCategory } from './outcome-metrics.mjs';
+import {
+  beginConversationDelivery,
+  FOLLOW_UP_KINDS,
+  normalizeConversationOutcome,
+  normalizeReturnReasonCategory,
+  observeConversationFollowUp,
+} from './outcome-metrics.mjs';
 
 function defaultAcceptanceCovers(classification) {
   const kinds = new Set(classification.artifactKinds ?? []);
   if (kinds.size === 1 && kinds.has('documentation')) return ['documentation'];
   if (kinds.has('operations')) return classification.controlMode === 'quick' ? ['documentation'] : ['target-environment'];
   return ['behavior'];
+}
+
+function nextConversationDelivery(previous) {
+  return beginConversationDelivery(previous, {
+    deliveryId: crypto.randomUUID(),
+    deliveredAt: new Date().toISOString(),
+  });
 }
 
 export function inferAcceptanceCovers(description, classification) {
@@ -737,6 +750,9 @@ export function deliverTask(options = {}) {
         lastInputChange: null
       };
       next.deliveryDecision = decision;
+      if (status === 'waiting_acceptance') {
+        next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
+      }
       if (next.integration?.required) {
         next.integration = {
           ...next.integration,
@@ -859,7 +875,6 @@ export function realignTask(options = {}) {
   const scope = task.authorization.scope[0];
   const acceptance = acceptanceItems([
     ...nextAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
-    ...nextAlignment.protectedBehaviors.map((description) => ({ description, source: 'protected-behavior' })),
     ...referenceBehaviorAcceptanceItems(nextAlignment.preservation),
   ], task.classification);
   const base = buildAlignedGoal(nextAlignment, acceptance, scope);
@@ -993,6 +1008,7 @@ export function revalidateIntegration(options = {}) {
       };
       next.verification = { ...next.verification, budget:execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
       next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
+      next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
       if (next.classification.continuity === 'handoff-required') {
         next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
       }
@@ -1069,6 +1085,7 @@ export function confirmIntegration(options = {}) {
       };
       next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
       next.verification = { ...next.verification, budget:execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
+      next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
       if (next.classification.continuity === 'handoff-required') {
         next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
       }
@@ -1175,6 +1192,94 @@ export function acceptTask(options = {}) {
       return next;
     }
   });
+}
+
+const CLOSING_FOLLOW_UP_EVENTS = {
+  'scope-extension': 'conversation-scope-extension',
+  'positive-acknowledgement': 'conversation-positive-acknowledgement',
+  'topic-advance': 'conversation-topic-advance',
+};
+
+function normalizedObservationId(value) {
+  const observationId = String(value ?? '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(observationId)) {
+    throw new Error('observation-id 必须是 1～200 位不透明标识，只能包含字母、数字、点、下划线、冒号或连字符');
+  }
+  return observationId;
+}
+
+export function recordTaskFollowUp(options = {}) {
+  const current = findTask({ stateRoot: options.stateRoot, taskId: options.taskId });
+  const task = current.task;
+  const conversationOutcome = normalizeConversationOutcome(task.conversationOutcome);
+  if (!conversationOutcome) throw new Error('任务没有可关联的交付 continuation');
+  const deliveryId = String(options.deliveryId ?? '').trim();
+  if (!deliveryId || deliveryId !== conversationOutcome.deliveryId) {
+    throw new Error('delivery-id 与当前交付不匹配，旧交付或其他 Task 不能回写');
+  }
+  const kind = String(options.kind ?? '').trim();
+  if (!FOLLOW_UP_KINDS.has(kind)) throw new Error(`后续类型无效: ${kind || 'unknown'}`);
+  const observationId = normalizedObservationId(options.observationId);
+  const existing = [conversationOutcome.firstFollowUp, conversationOutcome.terminalFollowUp]
+    .find((item) => item?.observationId === observationId);
+  if (existing) {
+    if (existing.kind !== kind) throw new Error('同一 observation-id 不能记录为不同后续类型');
+    return {
+      ...current,
+      recorded: false,
+      idempotent: true,
+      followUp: { kind, observationId },
+    };
+  }
+  if (current.source === 'history' || task.status === 'closed') throw new Error('任务已经根据后续对话收口');
+  if (task.status !== 'waiting_acceptance') throw new Error(`任务当前不能记录交付后续: ${task.status}`);
+  if (kind === 'related-question' && conversationOutcome.firstFollowUp) {
+    return {
+      ...current,
+      recorded: false,
+      idempotent: false,
+      followUp: { kind, observationId, ignored: 'first-follow-up-already-recorded' },
+    };
+  }
+
+  const closingEvent = CLOSING_FOLLOW_UP_EVENTS[kind];
+  const transitionTo = kind === 'defect-return'
+    ? 'needs_rework'
+    : closingEvent
+      ? 'closed'
+      : 'waiting_acceptance';
+  const event = kind === 'defect-return'
+    ? 'conversation-defect-return'
+    : closingEvent ?? 'conversation-related-question';
+  const updated = updateTask({
+    stateRoot: options.stateRoot,
+    taskId: task.taskId,
+    expectedRevision: task.stateRevision,
+    transitionTo,
+    event,
+    mutate(next) {
+      next.conversationOutcome = observeConversationFollowUp(next.conversationOutcome, {
+        kind,
+        observationId,
+        observedAt: new Date().toISOString(),
+        terminal: kind !== 'related-question',
+      });
+      if (kind === 'defect-return') {
+        next.deliveryDecision = { decision: 'needs_rework', reasons: ['conversation-defect-return'] };
+      }
+      return next;
+    },
+  });
+  return {
+    ...updated,
+    recorded: true,
+    idempotent: false,
+    followUp: {
+      kind,
+      observationId,
+      ...(kind === 'scope-extension' ? { parentTaskId: task.taskId, relation: 'scope-extension' } : {}),
+    },
+  };
 }
 
 export function saveTask(options = {}) {
