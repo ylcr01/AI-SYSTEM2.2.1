@@ -6,9 +6,9 @@
 
 - **普通对话**：不依赖仓库事实时直接回答，不建 Task、不运行工程脚本。
 - **只读工程分析**：先运行 `node "$env:AI_RD_OS_ROOT\40-脚本\build-context.mjs" --cwd "<项目路径>" --intent "<目标>"`，读取轻量结果的 `executionTarget`、`classification`、配置摘要和 `filesToRead`；仅在身份、路由或依赖诊断时追加 `--full`，不得修改仓库。
-- **仓库写任务**：编辑前运行 `node "$env:AI_RD_OS_ROOT\40-脚本\task.mjs" 准备 --cwd "<项目路径>" --intent "<目标>" --acceptance "<验收>" --scope "<授权路径>"`。主工作区只允许一个写 Task；并行写各自独占 Worktree（Codex managed，其他宿主 detached），linked/detached 必须传 `--integration-target`。按回执 Scope 与 `filesToRead` 实施最小 ChangeSet。Worktree 先提交再交付；`ready_to_integrate` 由单一集成者集成 `resultCommit` 并运行 `集成`。`needs_rework` 暂停用 `保存`，继续用 `恢复` 重新竞争写锁。仅 `waiting_acceptance` 且门禁有效时可称“本轮已交付”；这不是用户显式验收，不得伪造 `accepted`。
+- **仓库写任务**：Codex 默认 managed Worktree；Local 仅限用户明确要求且 `预检` 可用。编辑前运行 `task.mjs 准备`；重复 `--scope` 授权精确路径，Goal Card/Context 前预检并在原子创建时复核。linked/detached 声明 `--integration-target` 并先提交再交付。仅有效 `waiting_acceptance` 可称“本轮已交付”。
 - **对话后续**：仅有精确 `continuation.taskId + deliveryId` 时，下一消息前调用一次 `后续`：追问 `related-question`、缺陷 `defect-return`、新增目标 `scope-extension`、非正式肯定 `positive-acknowledgement`、独立话题 `topic-advance`；不确定或含追问用 `related-question`。追问只记首次；无 continuation 不猜 Task，不存正文、不跑检查、不自动建 Task。
-- **写任务对齐**：准备前先读项目事实、目标代码与相关测试并输出简短目标卡；Quick/局部明确任务可 direct，Controlled/Structural 或不同业务结果的实质方案必须先确认或获得明确委托；根因未知先只读探索。对齐、重对齐与交付映射规则见 `20-能力模块/clarify-requirements/CONTRACT.md`。
+- **写任务对齐**：先预检工作树，再读目标代码与相关测试并输出简短目标卡；Quick/局部任务可 direct，Controlled/Structural 或不同业务结果的方案须确认或明确委托；根因未知先只读探索。详见 `20-能力模块/clarify-requirements/CONTRACT.md`。
 - **外部写入或高风险动作**：Push、发布、部署、迁移、远程删除、生产数据修改等必须另获用户明确授权；安全、认证、隐私、迁移和不可逆动作还要覆盖拒绝路径、失败停止条件和可执行回滚。
 
 ## 可信边界
@@ -16,6 +16,8 @@
 - 权威顺序：用户目标与授权 → 当前代码、配置、Manifest 和 Git 状态 → 已确认模块规格 → 项目 Contract/Canonical → 绑定底座 → 中央资料 → 历史代码。代码与规格冲突时不得静默选择。
 - 模型先按上述权威顺序消除不确定性；仅当未确认事项的多种合理解释会改变业务结果、授权 Scope、外部影响或风险等级时才向用户确认，其余低风险、可逆、不改变业务语义的细节按项目惯例自主处理。
 - 默认采用满足目标与 Acceptance 的最小充分变更，优先复用现有结构；仅正确性、一致性或验收确实要求时才扩大方案，邻近问题只报告。
+- Acceptance 只写结果，不写命令、通用检查或“系统全量门禁”；Planner 前只写“生成并执行最小验证计划”。普通交付仅运行定点检查和缺失 Cover；全量回归须独立 Task 和明确授权。
+- `package.json` 不按路径升级；改元数据不升级，新增/删除、未知差异或其他字段按 build-contract 升级。
 - 默认使用有界 `rg`、选段、`git diff --stat/--numstat` 和进程内聚合；不加载整份 Task JSON、整段对话历史、完整成功日志或大 Diff。确需诊断时再升级；裁剪不得隐藏首个失败、失败/跳过/终止、Evidence、Blocker 和新鲜度事实。
 - 不猜项目、Scope、权限或外部授权；保留用户已有改动。
 - Evidence 必须绑定 Task、ChangeSet、输入周期、Acceptance 和 Covers；输入改变后旧 Evidence 失效，相同输入失败不得机械重跑。

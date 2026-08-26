@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { parseArgs, listArg, requiredArg } from './lib/args.mjs';
 import {
+  preflightWorkspace,
   prepareTask,
   deliverTask,
   realignTask,
@@ -26,6 +27,7 @@ const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', imp
 
 const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
+  ['preflight', '预检'],
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
   ['realign', '重新对齐'],
   ['follow-up', '后续'],
@@ -244,7 +246,8 @@ function output(result) {
 function help() {
   if (args.full !== true) {
     console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
-  准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+  预检 [--cwd <path>]（只读、立即检查该工作树是否可开始写任务）
+  准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
   交付 --task-id <id>
   后续 --task-id <id> --delivery-id <id> --observation-id <id>
@@ -261,7 +264,8 @@ function help() {
     return;
   }
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
-  准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>]
+  预检|preflight [--cwd <path>] [--state-root <path>]（不加载工程上下文、不创建 Task）
+  准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复；不支持逗号或 glob）]
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
        [--quality-profile <name>（兼容旧 --skill，可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
@@ -306,7 +310,12 @@ function goalCardFileArg({ required = false } = {}) {
 }
 
 try {
-  if (action === '准备') {
+  if (action === '预检') {
+    output(preflightWorkspace({
+      stateRoot: args['state-root'],
+      cwd: args.cwd ?? process.cwd(),
+    }));
+  } else if (action === '准备') {
     output(prepareTask({
       stateRoot: args['state-root'],
       cwd: args.cwd ?? process.cwd(),

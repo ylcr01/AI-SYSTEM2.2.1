@@ -1,6 +1,6 @@
 ---
 id: clarify-requirements
-version: 3
+version: 4
 status: active
 artifactKinds: [requirements, product]
 ---
@@ -37,9 +37,10 @@ Quick 或单一可观察结果的局部任务不需要 Goal Card 文件；小型
 3. Expected Outcomes 写 1~4 条用户可观察或工程可验证的结果。
 4. Protected Behaviors 只加入与本次变更邻近、确实可能被破坏的行为，来源优先：用户明确要求 > 现有测试 > 直接调用方 > 项目事实 > Spec/Contract，禁止凭空发明。
 5. 每条 Acceptance 必须可判断、可验证、与 Goal 直接相关；不写“代码优雅 / 质量高 / 性能好”等不可判定句，代码质量由质量基线处理。
-6. Non-goals 只有容易发生 Scope 膨胀时才写。
-7. Assumptions 只允许低风险、可逆、不改变业务语义的假设。
-8. 只有存在两种以上合理解释，且会改变最终业务结果、数据、权限、兼容、Scope 或外部影响时才问用户，其他情况模型自行处理。
+6. Acceptance 只描述目标结果，不写测试命令、检查名称、静态完整性或“系统全量门禁通过”；只有用户目标本身就是验证工具或发布门禁时，检查结果才可作为 Outcome。验证方法记录在 Task Check / Check Manifest，不得覆盖 Goal Card 的结果语义。
+7. Non-goals 只有容易发生 Scope 膨胀时才写。
+8. Assumptions 只允许低风险、可逆、不改变业务语义的假设。
+9. 只有存在两种以上合理解释，且会改变最终业务结果、数据、权限、兼容、Scope 或外部影响时才问用户，其他情况模型自行处理。
 
 ### Goal Card 的严格 Preservation 扩展
 
@@ -111,3 +112,4 @@ AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Contex
 - 不确定旧行为先查代码、调用方、测试、规格/Contract、Reference 与项目事实；只有无法解决且会改变业务结果时才问用户，多个问题尽量一次确认；行为等价范围内的内部实现优化无需询问。
 - 具体 Acceptance 用系统执行的 `--task-check-file` 明确证明；新 Task Check 的每个 case 必须绑定 Acceptance、Cover、测试文件和精确用例名，零命中、skip/todo 或无法解析的用例结果不能形成证明。每个 case 只能贡献自身声明的 `Acceptance × Cover`，不得把同一 Check 内其他 case 的 Acceptance 与 Cover 合并成交叉归因；宽泛全量 Check 不自动绑定多个 Acceptance。Schema 1 的退出码协议可继续用于不绑定 Acceptance 的全局检查，但显式绑定 Acceptance 的旧 Manifest 或 Evidence 必须失败关闭并重新交付。
 - 自动验证先要求 Task Check 完整覆盖当前缺失的 `Acceptance × Cover`；映射不完整时只返回缺口，不先执行通用命令。映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers；任一检查失败时整批不产生部分成功 Evidence，不为此新增检查类型。
+- 验证分三层：第一层是绑定具体 `Acceptance × Cover` 的定点 Task Check；第二层是只补真实 ChangeSet 所缺 Cover 的静态完整性或局部工程检查；第三层是全量历史回归。普通交付默认只运行前两层的最小充分集合；第三层必须拆为独立回归 Task 并获得用户明确授权。Planner 尚未生成真实计划前，进度只能写“生成并执行最小验证计划”，不得预告“系统全量门禁”。

@@ -137,6 +137,9 @@ test('基线指纹稳定且随 Scope 或语义变化', () => {
   const second = computeAlignmentFingerprint({ goal, acceptance, scope });
   assert.equal(first, second);
   assert.notEqual(first, computeAlignmentFingerprint({ goal, acceptance, scope: { ...scope, path: 'src' } }));
+  const multiple = [{ ...scope, path: 'src' }, { ...scope, path: 'tests' }];
+  assert.equal(computeAlignmentFingerprint({ goal, acceptance, scope: multiple }), computeAlignmentFingerprint({ goal, acceptance, scope: [...multiple].reverse() }));
+  assert.notEqual(first, computeAlignmentFingerprint({ goal, acceptance, scope: multiple }));
   const changed = buildAlignedGoal(normalizeAlignment({ ...DIRECT_ALIGNMENT, expectedOutcomes: ['另一结果'] }), acceptance, scope);
   assert.notEqual(first, computeAlignmentFingerprint({ goal: changed, acceptance, scope }));
 });

@@ -39,11 +39,11 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 
 - Acceptance 只有被定点检查显式绑定时才算被证明；通用检查和外部导入结果不能自动冒充验收证据。
 - 新 Task Check 使用用例级 Schema 2，只接受受控 Runner；每个 case 显式绑定 Acceptance、Cover、测试文件和精确用例名。Runner 必须返回真实命中、通过、失败、skip/todo 结果，Check Manifest 同时绑定用例声明、Runner 协议与输入哈希。
-- 默认验证先完整映射 Acceptance，映射缺失时不执行通用命令；映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，同一批检查失败时不保留部分成功 Evidence。
+- 默认验证先完整映射 Acceptance，映射缺失时不执行通用命令；映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，同一批检查失败时不保留部分成功 Evidence。全量历史回归不属于普通交付，必须另建 Task 并明确授权。
 - Task 写作态、已交付和历史记录分层保存；默认回执只展示四种用户状态。`delivered` 只表示本轮工程交付通过，`closed` 只表示后续对话自然收口，`accepted` 仍只能由用户显式产生。
 - 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主只在下一条消息中据此记录相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
-- 并行任务独占 Worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- Codex 桌面端写任务默认使用独立 managed Worktree；Local 仅在用户明确要求且只读预检确认可用时使用。其他宿主默认使用 detached worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
 - Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
 
 详细规则以 [`AGENTS.md`](AGENTS.md)、[`20-能力模块/clarify-requirements/CONTRACT.md`](20-能力模块/clarify-requirements/CONTRACT.md) 和 [`70-文档/20-可信门禁.md`](70-文档/20-可信门禁.md) 为准；维护者可运行 `task.mjs --help --full` 查看机器协议。
@@ -72,6 +72,8 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>"
 ### 执行写任务
 
 ```powershell
+node ./40-脚本/task.mjs 预检 --cwd <项目路径>
+
 node ./40-脚本/task.mjs 准备 --cwd <项目路径> --intent "<目标>" --acceptance "<验收>" --scope "."
 
 node ./40-脚本/task.mjs 交付 --task-id <编号>
@@ -80,6 +82,8 @@ node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
 宿主会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件，也不需要为每次交付单独回复“验收通过”。显式说“验收通过”时仍记录为 `accepted`；自然转入新话题只记录为 `closed`。
+
+`预检` 只读且不加载工程上下文、不创建 Task；`准备` 仍会自动再预检，并在最终原子创建时复核。多个精确授权路径可重复传入 `--scope`，无需扩大成共同父目录。
 
 ### 并行 Worktree
 

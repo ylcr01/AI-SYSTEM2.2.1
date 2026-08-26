@@ -6,7 +6,7 @@
   },
   "checks": [
     {
-      "name": "system-integrity",
+      "name": "static-integrity",
       "command": "node",
       "args": [
         "40-脚本/check-system.mjs"

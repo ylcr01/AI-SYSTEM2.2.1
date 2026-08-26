@@ -5,7 +5,8 @@ import { buildContext } from './context-builder.mjs';
 import {
   captureBaseline,
   computeChangeSet,
-  normalizeScope,
+  inspectPackageManifestChanges,
+  normalizeScopes,
   assertChangeSetWithinScope,
   userChangesRemainIsolated,
   normalizeIntegrationTarget,
@@ -16,6 +17,7 @@ import {
   verifyCommitIntegrated,
   deletePendingIntegrationRef
 } from './git-state.mjs';
+import { findGitRoot } from './registry.mjs';
 import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, evaluateDeliveryEligibility, canRerunVerification } from './task-policy.mjs';
 import { createEvidence, evidenceSummary } from './evidence.mjs';
 import { planChecks, executeCheckPlan, loadChecks, loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest } from './check-planner.mjs';
@@ -41,7 +43,7 @@ import {
 } from './behavior-preservation.mjs';
 import { loadChangeRationale, validateChangeRationale, changeRationaleSummary } from './change-rationale.mjs';
 import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, reviewHasBlockingFindings } from './review.mjs';
-import { createTask, readTask, findTask, updateTask, listTasks } from './state-manager.mjs';
+import { createTask, readTask, findTask, updateTask, listTasks, inspectWorkspaceAvailability } from './state-manager.mjs';
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
 import { addIntentSpecificationHints, buildSpecState, revalidateSpecState, stableSpecReviewState } from './spec-service.mjs';
@@ -245,10 +247,20 @@ function reviewContext(task, changeSet, pack) {
   };
 }
 
+export function preflightWorkspace(options = {}) {
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  const gitRoot = findGitRoot(cwd);
+  if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');
+  const result = inspectWorkspaceAvailability({ stateRoot:options.stateRoot, gitRoot, taskId:options.taskId });
+  if (!result.available) throw new Error(result.diagnostic);
+  return result;
+}
+
 export function prepareTask(options = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const intent = String(options.intent ?? '').trim();
   if (!intent) throw new Error('准备任务必须提供 Intent');
+  preflightWorkspace({ stateRoot:options.stateRoot, cwd });
   const providedAlignment = loadAlignmentFile(options.alignmentFile);
   if (providedAlignment && normalizeUserText(providedAlignment.originalRequest) !== normalizeUserText(intent)) {
     throw new Error('alignment-original-request-mismatch: Alignment originalRequest 必须与 --intent 当前用户请求原文一致');
@@ -310,7 +322,7 @@ export function prepareTask(options = {}) {
   const gitRoot = built.context.gitRoot;
   if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');
   addIntentSpecificationHints(built, gitRoot, intent);
-  const scope = normalizeScope(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
+  const scopes = normalizeScopes(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
   if (providedAlignment?.preservation?.referenceRoots?.length) {
     const inventory = buildReferenceInventory({
@@ -341,16 +353,16 @@ export function prepareTask(options = {}) {
     : null;
   const budget = createBudget({ mode: initial.controlMode, limitMs: options.budgetMs });
   const goal = providedAlignment
-    ? buildAlignedGoal(providedAlignment, acceptance, scope)
+    ? buildAlignedGoal(providedAlignment, acceptance, scopes)
     : initial.controlMode === 'quick'
-      ? buildAlignedGoal(synthesizeQuickAlignment({ intent, acceptance: options.acceptance, nonGoals: options.nonGoals }), acceptance, scope)
+      ? buildAlignedGoal(synthesizeQuickAlignment({ intent, acceptance: options.acceptance, nonGoals: options.nonGoals }), acceptance, scopes)
       : { summary: intent, nonGoals: options.nonGoals ?? [], assumptions: [], openQuestions: [] };
   return createTask({
     stateRoot: options.stateRoot,
     goal,
     acceptance,
     authorization: {
-      scope: [scope],
+      scope: scopes,
       allowedExistingChanges: options.allowedExistingChanges ?? [],
       externalActions: [],
       explicitReviewRequirement: options.explicitReviewRequirement ?? null
@@ -386,9 +398,9 @@ export function deliverTask(options = {}) {
   }
   const current = readTask({ stateRoot: options.stateRoot, taskId: options.taskId });
   const task = current.task;
-  const scope = task.authorization.scope[0];
+  const scopes = task.authorization.scope;
   const before = computeChangeSet(task.baseline);
-  const scopeValidation = assertChangeSetWithinScope(before, scope);
+  const scopeValidation = assertChangeSetWithinScope(before, scopes);
   const isolation = userChangesRemainIsolated(task.baseline, before, task.authorization.allowedExistingChanges ?? []);
   const persistentBlockers = withoutDerivedBlockers(task.blockers ?? []);
   if (!isolation.ok) {
@@ -416,11 +428,16 @@ export function deliverTask(options = {}) {
       }
     });
   }
-  const classification = reclassifyFromChangeSet(task.classification, before, { forcedMode: options.forceMode, forceReason: options.forceReason });
+  const packageManifestChanges = inspectPackageManifestChanges(task.baseline, before);
+  const classification = reclassifyFromChangeSet(task.classification, before, {
+    forcedMode: options.forceMode,
+    forceReason: options.forceReason,
+    packageManifestChanges,
+  });
   const finalAlignment = evaluateFinalAlignment({ goal: task.goal, classification });
   const alignmentEscalation = finalAlignment.required && finalAlignment.reason === 'alignment-risk-escalation';
   const alignmentMissing = finalAlignment.required && finalAlignment.reason === 'alignment-required';
-  const fingerprintCheck = validateAlignmentFingerprint({ goal: task.goal, acceptance: task.acceptance, scope });
+  const fingerprintCheck = validateAlignmentFingerprint({ goal: task.goal, acceptance: task.acceptance, scope:scopes });
   const acceptance = acceptanceForClassification(task.acceptance, classification);
   const inputCycle = Number(task.verification?.inputCycle ?? 0);
 
@@ -872,12 +889,12 @@ export function realignTask(options = {}) {
       throw new Error(`realignment-reference-files-foreign: ${attribution.foreign.join(', ')}`);
     }
   }
-  const scope = task.authorization.scope[0];
+  const scopes = task.authorization.scope;
   const acceptance = acceptanceItems([
     ...nextAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
     ...referenceBehaviorAcceptanceItems(nextAlignment.preservation),
   ], task.classification);
-  const base = buildAlignedGoal(nextAlignment, acceptance, scope);
+  const base = buildAlignedGoal(nextAlignment, acceptance, scopes);
   const nextGoal = {
     ...base,
     alignment: {
@@ -1098,7 +1115,7 @@ function revalidateForAcceptance(task) {
   const integrated = assertIntegratedTaskFresh(task);
   const changeSet = integrated ? task.changeSet : computeChangeSet(task.baseline);
   if (!integrated && changeSet.fingerprint !== task.changeSet?.fingerprint) throw new Error('交付后的目标文件已经变化，必须重新验证和交付');
-  const scopeValidation = assertChangeSetWithinScope(changeSet, task.authorization.scope[0]);
+  const scopeValidation = assertChangeSetWithinScope(changeSet, task.authorization.scope);
   const isolation = userChangesRemainIsolated(task.baseline, changeSet, task.authorization.allowedExistingChanges ?? []);
   const finalAlignment = evaluateFinalAlignment({
     goal: task.goal,
@@ -1110,7 +1127,7 @@ function revalidateForAcceptance(task) {
   const fingerprintCheck = validateAlignmentFingerprint({
     goal: task.goal,
     acceptance: task.acceptance,
-    scope: task.authorization.scope[0]
+    scope: task.authorization.scope
   });
   if (!fingerprintCheck.ok) {
     throw new Error(`验收前目标结构门禁已失效: ${fingerprintCheck.reason}`);

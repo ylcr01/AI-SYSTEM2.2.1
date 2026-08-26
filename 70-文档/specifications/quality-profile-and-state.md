@@ -2,7 +2,7 @@
 moduleId: MOD-AIRD-QUALITY-STATE
 title: 质量资料路由与 Task 真实性
 status: active
-lastVerifiedTaskId: task-20260826031056890-d7d4dbb6
+lastVerifiedTaskId: task-20260826043047537-8392f7fa
 lastVerifiedCommit: null
 ---
 
@@ -23,6 +23,9 @@ lastVerifiedCommit: null
 | Contract | 领域工程不变量和验证边界 |
 | Canonical | 经登记且处于 Active 生命周期的结构样板 |
 | dry-run | 只报告迁移动作和冲突，不创建备份、不改写或移动记录 |
+| Worktree 预检 | 在 Goal Card、Context 和 Baseline 之前只读检查同一 Git 工作树是否已有写 Task；不创建 Task，也不替代最终原子复核 |
+| 精确 Scope 并集 | 通过重复 `--scope` 声明的文件或目录集合；每个 ChangeSet 文件必须位于至少一个 Scope 内 |
+| 定点 / 静态 / 回归 | 分别指绑定 Acceptance 的 Task Check、补缺失 Cover 的局部完整性检查、需独立授权的全量历史测试 |
 | 决定覆盖率 | 有明确用户首轮验收结论的已跟踪 Task 数除以全部已跟踪 Task 数；未知样本不得进入通过率分母 |
 | 本轮已交付 | 当前 ChangeSet 已通过工程门禁并进入 `waiting_acceptance`；不等于用户显式验收 |
 | 对话自然收口 | 后续为范围扩展、非正式肯定或独立话题推进，Task 进入 `closed`；不写入用户验收结论 |
@@ -42,6 +45,10 @@ lastVerifiedCommit: null
 | BR-AIRD-EVIDENCE-001 | Evidence 要求按每条 Acceptance 的业务语义推断；纯文档、运行行为、用户界面、数据迁移、拒绝/失败处理路径和目标环境分别路由，显式 `requiredCovers` 不得被任务级分类覆盖 | 文档检查误证业务行为、负向结果只用正向测试证明，或无关浏览器流程被强制执行 | `product`/`requirements` 标签本身不等于 documentation；未授权、拒绝、无效，或异常/失败的处理与回滚语义要求 `negative-path` |
 | BR-AIRD-EVIDENCE-002 | 新建 Task Check 必须使用用例级 Schema 2；每个 case 绑定 Acceptance、Cover、测试文件和精确 Node 测试名。只有实际命中数等于声明值、全部执行通过且没有 skip/todo 时才能形成 Acceptance Evidence；Runner 结果无法解析时失败关闭。Schema 1 退出码协议仅可重放不绑定 Acceptance 的全局检查，显式绑定 Acceptance 时必须失败关闭并重新交付。验证规划先完整覆盖缺失的 `Acceptance × Cover`，缺失时零命令执行；完整后通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，整批失败不保留部分 Evidence | 测试文件或进程退出码为 0，但目标业务用例没有真正执行；通用回归重复运行却仍不能闭合 Acceptance；较早通过的检查掩盖同批后续失败 | Check Manifest 固化 cases、Runner/结果协议版本和归一化的测试文件哈希；计划直接根据显式 Acceptance 贡献与尚缺 Required Covers 选择检查 |
 | BR-AIRD-METRICS-001 | 首轮显式验收摘要必须同时报告 decided、unknown、rate 和 coverage；对话摘要必须分开报告 tracked、implicit closures、single-turn 和各类 follow-up；交付迭代必须报告多次交付 Task、额外交付次数和首交付后的真实重对齐。返工只计同一 Task 内显式用户退回，对话缺陷退回不得改写旧验收指标；旧记录缺少对话事实时保持 unknown | 小量已决定样本被表达成整体稳定结果，或自然换话题被伪造成显式验收/首次修复成功 | 小样本和无可比基线仍需保留警告；系统不生成 `firstPassResolved` |
+| BR-AIRD-WORKSPACE-001 | Codex 写任务默认独占 managed Worktree；`准备` 在读取 Goal Card 和工程 Context 前只读预检工作树占用，正式创建和任何非写态重新进入写态时仍在工作树原子锁内复核 | 冲突发现过晚造成无效分析，或只靠预检产生竞争窗口 | Local 仅在用户明确要求且预检可用时使用；预检不写状态、不创建或删除 Worktree |
+| BR-AIRD-SCOPE-001 | 重复 `--scope` 形成精确授权并集，逗号拼接和 glob 仍拒绝；ChangeSet 只要落在任一 Scope 内即合法，全部 Scope 外的文件必须失败关闭 | 为授权少数文件被迫扩大到共同父目录，或多 Scope 绕过路径逃逸保护 | 每个 Scope 独立执行 Git Root、真实路径和符号链接边界检查；单 Scope 保持兼容 |
+| BR-AIRD-RISK-001 | `package.json` 路径本身只是风险候选；真实差异仅涉及约定元数据字段或为语义无变化时不升级，新增/删除、不可读或 scripts、依赖及其他顶层运行/构建字段变化时升级为 build-contract 并要求 package 完整性 | 版本号更新误触发 Controlled，或真实依赖/脚本变化漏过门禁 | 基线已有脏 Manifest 时无法可靠重建差异，必须保守升级 |
+| BR-AIRD-VERIFY-001 | Acceptance 只表达结果，不包含命令、通用检查或“系统全量门禁”；Planner 基于真实 ChangeSet 先选定点 Task Check，再只补缺失 Cover 的静态/局部检查。全量历史回归不在普通交付执行，必须拆为独立 Task 并获得明确授权 | 验证手段覆盖真实 Goal、局部任务被伪装成系统级检查，或无关全量回归拖慢交付 | 计划生成前只能表述“生成并执行最小验证计划”；检查名称必须反映真实层级 |
 
 ## 4. 状态迁移
 
@@ -75,3 +82,7 @@ lastVerifiedCommit: null
 | BR-AIRD-EVIDENCE-001 | 任务级标签误分每条验收 | Integration | `60-测试/integration/task-runner.test.mjs` | covered |
 | BR-AIRD-EVIDENCE-002 | 零命中、skip/todo、错选或结果协议失真被误判为通过 | Core/Integration/Scenario | `60-测试/core/check-planner.test.mjs`; `60-测试/integration/check-planner.test.mjs`; `60-测试/integration/task-runner.test.mjs`; `60-测试/scenarios/cli.test.mjs`; `60-测试/scenarios/trust-gates.test.mjs` | covered |
 | BR-AIRD-METRICS-001 | 未知验收或返工边界被隐藏 | Unit/Scenario | `60-测试/core/outcome-metrics.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
+| BR-AIRD-WORKSPACE-001 | 占用检查迟到或原子复核丢失 | Core/Integration/Scenario | `60-测试/core/state-manager.test.mjs`; `60-测试/integration/task-runner.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
+| BR-AIRD-SCOPE-001 | 精确授权被扩大或越界未拒绝 | Core/Integration/Scenario | `60-测试/core/alignment.test.mjs`; `60-测试/integration/git-state.test.mjs`; `60-测试/integration/task-runner.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
+| BR-AIRD-RISK-001 | Manifest 元数据误升级或运行契约漏升级 | Core/Integration | `60-测试/core/task-policy.test.mjs`; `60-测试/integration/git-state.test.mjs`; `60-测试/integration/task-runner.test.mjs` | covered |
+| BR-AIRD-VERIFY-001 | Acceptance 被验证手段覆盖或普通交付运行全量回归 | Core/Integration | `60-测试/core/instruction-entry.test.mjs`; `60-测试/core/task-policy.test.mjs`; `60-测试/integration/task-runner.test.mjs` | covered |
