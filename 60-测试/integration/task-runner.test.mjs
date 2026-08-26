@@ -13,7 +13,7 @@ test('目标证明失败时先停止且不执行后续通用检查',t=>{const re
 test('目标证明覆盖 behavior 后跳过宽泛检查但保留独立 typecheck',t=>{const repo=gitRepo(t,{checks:[{name:'redundant-behavior',command:process.execPath,args:['-e','process.exit(8)'],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'},{name:'required-typecheck',command:process.execPath,args:['-e','process.exit(0)'],profiles:['standard'],covers:['typecheck'],sideEffect:'none',estimatedCost:'low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);fs.writeFileSync(path.join(repo,'target.ts'),'baseline\n');for(const args of [['add','.'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','typescript baseline']]){const result=spawnSync('git',['-C',repo,...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);}const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.ts'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');assert.deepEqual(delivered.task.verification.checkManifest.checks.map(item=>item.name),['target-acceptance','required-typecheck']);assert.equal(delivered.task.evidence.some(item=>item.source?.command==='redundant-behavior'),false);});
 test('显式 Independent Review 必须 passed 且无 Blocking Finding',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',explicitReviewRequirement:{kind:'independent-agent',minimumDecision:'passed'}});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(first.task.status,'reviewing');const pack=first.task.reviewPackage;const review=createReviewRecord({kind:'independent-agent',taskId:first.task.taskId,changeFingerprint:first.task.changeSet.fingerprint,packageFingerprint:pack.packageFingerprint,implementer:{actor:'a',session:'s1'},reviewer:{actor:'b',session:'s2',provenance:{provider:'test'}},decision:'passed',createdAt:new Date(Date.parse(pack.createdAt)+1000).toISOString()});const file=path.join(stateRoot,'review.json');fs.writeFileSync(file,JSON.stringify(review));const second=deliverTask({stateRoot,taskId:first.task.taskId,reviewFile:file});assert.equal(second.task.status,'waiting_acceptance');});
 test('Handoff-required 交付生成新鲜 Handoff，保存后可恢复',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',handoffRequired:true});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.handoff);const root2=tempDir(t);const p2=prepareTask({cwd:repo,stateRoot:root2,intent:'修复另一个普通功能',acceptance:['功能正确'],scope:'.'});const saved=saveTask({stateRoot:root2,taskId:p2.task.taskId});assert.equal(saved.task.status,'saved');const resumed=resumeTask({stateRoot:root2,taskId:p2.task.taskId});assert.ok(['implementing','verifying'].includes(resumed.task.status));});
-test('瞬态 Handoff 和隔离 Blocker 在事实恢复后自动清理',t=>{
+test('瞬态 Handoff、隔离和 Rationale Blocker 在事实恢复后自动清理',t=>{
   const repo=gitRepo(t),stateRoot=tempDir(t),target=path.join(repo,'target.txt');
   const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});
   saveTask({stateRoot,taskId:prepared.task.taskId});
@@ -32,6 +32,18 @@ test('瞬态 Handoff 和隔离 Blocker 在事实恢复后自动清理',t=>{
   const secondResumed=resumeTask({stateRoot:secondRoot,taskId:second.task.taskId});
   assert.deepEqual(secondResumed.task.blockers,[]);
   assert.notEqual(deliverTask({stateRoot:secondRoot,taskId:second.task.taskId}).task.status,'blocked');
+
+  const thirdRepo=gitRepo(t),thirdRoot=tempDir(t),third=prepareTask({cwd:thirdRepo,stateRoot:thirdRoot,intent:'修复第三个功能',acceptance:['功能正确'],scope:'.'});
+  const thirdFile=path.join(thirdRoot,'进行中',`${third.task.taskId}.json`),thirdRaw=JSON.parse(fs.readFileSync(thirdFile,'utf8'));
+  thirdRaw.blockers=['Change Rationale 未映射或无效: 旧 ChangeSet'];fs.writeFileSync(thirdFile,JSON.stringify(thirdRaw));
+  fs.writeFileSync(path.join(thirdRepo,'target.txt'),'third task change\n');
+  assert.equal(deliverTask({stateRoot:thirdRoot,taskId:third.task.taskId,taskCheckFile:taskCheck(t,thirdRepo)}).task.status,'waiting_acceptance');
+
+  const fourthRepo=gitRepo(t),fourthRoot=tempDir(t),fourth=prepareTask({cwd:fourthRepo,stateRoot:fourthRoot,intent:'修复第四个功能',acceptance:['功能正确'],scope:'.'});
+  saveTask({stateRoot:fourthRoot,taskId:fourth.task.taskId});
+  const fourthFile=path.join(fourthRoot,'进行中',`${fourth.task.taskId}.json`),fourthRaw=JSON.parse(fs.readFileSync(fourthFile,'utf8'));
+  fourthRaw.blockers=['实际 ChangeSet 风险高于 direct 准备判断，必须重新对齐或获得用户明确委托'];fs.writeFileSync(fourthFile,JSON.stringify(fourthRaw));
+  assert.deepEqual(resumeTask({stateRoot:fourthRoot,taskId:fourth.task.taskId}).task.blockers,fourthRaw.blockers);
 });
 
 test('预算耗尽的 Task 只能按原因有界续期',t=>{

@@ -153,6 +153,10 @@ function withoutDerivedBlockers(blockers = []) {
     && item !== 'Handoff 或 ChangeSet 已变化，必须重新验证');
 }
 
+function withoutRecomputedDeliveryBlockers(blockers = []) {
+  return withoutDerivedBlockers(blockers).filter((item) => !/^(?:实际 ChangeSet 风险高于|最终分类为 Controlled\/Structural|Alignment 结构指纹失效|Change Rationale 未映射或无效:)/u.test(String(item)));
+}
+
 function scopeAndDiffEvidence(task, changeSet, inputCycle) {
   return createEvidence({
     kind: 'tool',
@@ -390,7 +394,7 @@ export function deliverTask(options = {}) {
   const before = computeChangeSet(task.baseline);
   const scopeValidation = assertChangeSetWithinScope(before, scope);
   const isolation = userChangesRemainIsolated(task.baseline, before, task.authorization.allowedExistingChanges ?? []);
-  const persistentBlockers = withoutDerivedBlockers(task.blockers ?? []);
+  const persistentBlockers = withoutRecomputedDeliveryBlockers(task.blockers ?? []);
   if (!isolation.ok) {
     return updateTask({
       stateRoot: options.stateRoot,
