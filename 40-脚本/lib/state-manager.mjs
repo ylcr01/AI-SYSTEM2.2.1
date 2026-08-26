@@ -99,8 +99,12 @@ function readRaw(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function currentTask(raw) {
-  const upgraded = [6, 7, 8, 9].includes(raw.schemaVersion)
+function currentTask(raw, options = {}) {
+  const legacy = [6, 7, 8, 9].includes(raw.schemaVersion);
+  if (legacy && options.allowLegacy !== true) {
+    throw new Error(`活动 Task Schema ${raw.schemaVersion} 必须先运行迁移状态`);
+  }
+  const upgraded = legacy
     ? {
       ...raw,
       schemaVersion:CURRENT_SCHEMA,
@@ -207,7 +211,7 @@ export function readTask(input = {}) {
 export function readHistory(input = {}) {
   const value = paths(input.stateRoot);
   if (!fs.existsSync(value.history)) return [];
-  return fs.readFileSync(value.history, 'utf8').split(/\r?\n/u).filter(Boolean).map((line) => currentTask(JSON.parse(line)));
+  return fs.readFileSync(value.history, 'utf8').split(/\r?\n/u).filter(Boolean).map((line) => currentTask(JSON.parse(line), { allowLegacy:true }));
 }
 
 export function findTask(input = {}) {
@@ -338,9 +342,15 @@ function stateMigrationPlan(value) {
     try {
       const content = fs.readFileSync(record.file, 'utf8');
       const raw = JSON.parse(content);
-      const task = currentTask(raw);
+      const task = currentTask(raw, { allowLegacy:true });
       const parsed = { ...record, content, raw, task, fingerprint:contentFingerprint(content) };
       records.push(parsed);
+      try {
+        const fd = fs.openSync(record.file, 'r+');
+        fs.closeSync(fd);
+      } catch (error) {
+        blockers.push({ code:'migration-source-not-writable', taskId:task.taskId, file:record.name, source:record.source, diagnostic:error.code ?? error.message });
+      }
       const values = byTaskId.get(task.taskId) ?? [];
       values.push(parsed);
       byTaskId.set(task.taskId, values);
@@ -402,6 +412,21 @@ function publicMigrationAction(action) {
   };
 }
 
+function rewriteMigratedTask(file, task, backupFile) {
+  try {
+    const fd = fs.openSync(file, 'w');
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify(task, null, 2)}\n`, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (error) {
+    fs.copyFileSync(backupFile, file);
+    throw error;
+  }
+}
+
 export function migrateState(input = {}) {
   const value = paths(input.stateRoot);
   const apply = input.apply === true;
@@ -451,7 +476,10 @@ export function migrateState(input = {}) {
       fs.copyFileSync(action.sourceFile, backupFile, fs.constants.COPYFILE_EXCL);
     }
     for (const action of plan.actions) {
-      atomicWriteJson(action.destinationFile, action.task, value.pending);
+      const bucketName = action.sourceBucket === 'active' ? '进行中' : '待验收';
+      const backupFile = path.join(backupRoot, bucketName, path.basename(action.sourceFile));
+      if (action.destinationFile === action.sourceFile) rewriteMigratedTask(action.destinationFile, action.task, backupFile);
+      else atomicWriteJson(action.destinationFile, action.task, value.pending);
       if (action.destinationFile !== action.sourceFile) fs.rmSync(action.sourceFile, { force:true });
     }
     return {

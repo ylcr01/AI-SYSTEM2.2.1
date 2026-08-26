@@ -89,6 +89,8 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(compactResult.status, 0, compactResult.stderr);
   const compact = JSON.parse(compactResult.stdout);
   assert.equal(compact.view, 'summary');
+  assert.match(compact.contextFingerprint, /^[a-f0-9]{64}$/u);
+  assert.equal(compact.contextUnchanged, false);
   assert.equal(path.basename(compact.context.gitRoot), path.basename(repo));
   assert.equal(fs.existsSync(compact.context.gitRoot), true);
   assert.ok(compact.filesToRead.some(file => file.endsWith('AGENTS.md')));
@@ -96,6 +98,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.ok(Array.isArray(compact.readPlan));
   assert.equal(compact.readPlan.length, compact.filesToRead.length);
   assert.ok(compact.readPlan.some(item => item.path.endsWith('AGENTS.md') && item.reason && item.authority === 'project'));
+  assert.ok(compact.readPlan.every(item => /^[a-f0-9]{64}$/u.test(item.fingerprint)));
   assert.ok(compact.readPlan.every(item => compact.filesToRead.includes(item.path)));
   assert.ok(!compact.readPlan.some(item => item.path.endsWith('package.json')));
   assert.equal(compact.quality.pass?.timing, 'before-delivery');
@@ -108,6 +111,18 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal('quality' in compact, true);
   assert.equal(compact.quality.baseline?.id, 'implementation-quality-baseline');
   assert.ok(compact.quality.contracts.every(item => !('path' in item) && !('files' in item)));
+
+  const unchangedResult = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '分析 Web 页面当前实现',
+    '--known-context-fingerprint', compact.contextFingerprint,
+  ], { cwd: ROOT });
+  assert.equal(unchangedResult.status, 0, unchangedResult.stderr);
+  const unchanged = JSON.parse(unchangedResult.stdout);
+  assert.equal(unchanged.contextUnchanged, true);
+  assert.deepEqual(unchanged.filesToRead, []);
+  assert.deepEqual(unchanged.readPlan, []);
+  assert.equal(unchanged.projection.filesToRead.suppressedUnchanged, true);
 
   const fullResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
@@ -153,6 +168,43 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   ], { cwd: ROOT });
   assert.equal(dependencyResult.status, 0, dependencyResult.stderr);
   assert.ok(JSON.parse(dependencyResult.stdout).filesToRead.some(file => file.endsWith('package.json')));
+
+  fs.writeFileSync(path.join(repo, 'AGENTS.md'), '# changed\n');
+  const changedResult = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '分析 Web 页面当前实现',
+    '--known-context-fingerprint', compact.contextFingerprint,
+  ], { cwd: ROOT });
+  assert.equal(changedResult.status, 0, changedResult.stderr);
+  const changed = JSON.parse(changedResult.stdout);
+  assert.equal(changed.contextUnchanged, false);
+  assert.notEqual(changed.contextFingerprint, compact.contextFingerprint);
+  assert.ok(changed.filesToRead.some(file => file.endsWith('AGENTS.md')));
+});
+
+test('run-checks 默认隐藏成功日志并保留首个失败，--full 可显式展开',t=>{
+  const repo=tempDir(t),config=path.join(repo,'.ai','checks.json');
+  fs.mkdirSync(path.dirname(config),{recursive:true});
+  const writeCheck=(script)=>fs.writeFileSync(config,JSON.stringify({schemaVersion:4,packageFallback:{mode:'none'},checks:[{
+    name:'target',command:process.execPath,args:['-e',script],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none',
+  }]}));
+  writeCheck("process.stdout.write('SUCCESS-DETAIL')");
+  const compact=runNode(RUN_CHECKS,['--cwd',repo,'--covers','behavior','--execute'],{cwd:ROOT});
+  assert.equal(compact.status,0,compact.stderr);
+  const compactValue=JSON.parse(compact.stdout);
+  assert.equal(compactValue.firstFailure,null);
+  assert.equal('stdout' in compactValue.results[0],false);
+  assert.doesNotMatch(compact.stdout,/SUCCESS-DETAIL/u);
+  const full=runNode(RUN_CHECKS,['--cwd',repo,'--covers','behavior','--execute','--full'],{cwd:ROOT});
+  assert.equal(full.status,0,full.stderr);
+  assert.match(full.stdout,/SUCCESS-DETAIL/u);
+
+  writeCheck("process.stderr.write('FAILURE-DETAIL');process.exit(3)");
+  const failed=runNode(RUN_CHECKS,['--cwd',repo,'--covers','behavior','--execute'],{cwd:ROOT});
+  assert.notEqual(failed.status,0);
+  const failedValue=JSON.parse(failed.stdout);
+  assert.equal(failedValue.firstFailure.name,'target');
+  assert.match(failedValue.firstFailure.stderr.text,/FAILURE-DETAIL/u);
 });
 
 test('系统入口已由宿主加载时不进入 filesToRead', () => {
@@ -221,7 +273,21 @@ test('Task CLI 默认只展示四态结果，--full 保留完整 Task', t => {
     '--state-root', stateRoot,
   ], { cwd: ROOT });
   assert.equal(compactShown.status, 0, compactShown.stderr);
-  assert.equal('baseline' in JSON.parse(compactShown.stdout), false);
+  const compactTask = JSON.parse(compactShown.stdout);
+  assert.equal('baseline' in compactTask, false);
+  assert.deepEqual(compactTask.projection.acceptance, { total:1, shown:1, truncated:false });
+
+  const activeTaskFile = path.join(stateRoot, '进行中', `${receipt.taskId}.json`);
+  const expandedTask = JSON.parse(fs.readFileSync(activeTaskFile, 'utf8'));
+  expandedTask.changeSet = {
+    files:Array.from({ length:75 }, (_, index) => ({ path:`src/file-${index}.js`, status:'M' })),
+  };
+  fs.writeFileSync(activeTaskFile, JSON.stringify(expandedTask));
+  const boundedShown = runNode(TASK, ['查看', '--task-id', receipt.taskId, '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(boundedShown.status, 0, boundedShown.stderr);
+  const boundedReceipt = JSON.parse(boundedShown.stdout);
+  assert.equal(boundedReceipt.changes.length, 20);
+  assert.deepEqual(boundedReceipt.projection.changes, { total:75, shown:20, truncated:true });
 
   const fullShown = runNode(TASK, [
     '查看',

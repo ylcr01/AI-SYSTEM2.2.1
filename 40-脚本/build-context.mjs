@@ -1,5 +1,6 @@
 import { parseArgs, listArg } from './lib/args.mjs';
 import { buildContext } from './lib/context-builder.mjs';
+import { fileSha256, payloadHash } from './lib/evidence.mjs';
 
 function readPlanFor(result) {
   const factByPath = new Map((result.facts ?? []).map(fact => [fact.path, fact]));
@@ -23,14 +24,14 @@ function readPlanFor(result) {
   const qualityByPath = new Map(qualityEntries.map(item => [item.path, item]));
   return (result.filesToRead ?? []).map(file => {
     const fact = factByPath.get(file);
-    if (fact) return { path: file, reason: fact.reason, authority: fact.authority };
+    if (fact) return { path: file, reason: fact.reason, authority: fact.authority, fingerprint: fileSha256(file) };
     const quality = qualityByPath.get(file);
-    if (quality) return { path: file, reason: quality.reason, authority: quality.authority };
-    return { path: file, reason: '任务相关资料', authority: 'derived' };
+    if (quality) return { path: file, reason: quality.reason, authority: quality.authority, fingerprint: fileSha256(file) };
+    return { path: file, reason: '任务相关资料', authority: 'derived', fingerprint: fileSha256(file) };
   });
 }
 
-function compactContext(result) {
+function compactContext(result, options = {}) {
   const context = result.context ?? {};
   const compactIdentity = {
     kind: context.kind,
@@ -43,10 +44,29 @@ function compactContext(result) {
     templateId: context.template?.id,
   };
 
+  const readPlan = readPlanFor(result);
+  const contextFingerprint = payloadHash({
+    context: compactIdentity,
+    executionTarget: result.executionTarget,
+    classification: result.classification,
+    manifests: result.manifests,
+    configuration: result.configuration,
+    quality: {
+      baseline: result.quality?.baseline,
+      profiles: result.quality?.profiles,
+      contracts: (result.quality?.contracts ?? []).map(({ id, version, source }) => ({ id, version, source })),
+      exemplars: (result.quality?.exemplars ?? []).map(({ id, version, source }) => ({ id, version, source })),
+    },
+    readPlan: readPlan.map(({ path, fingerprint }) => ({ path, fingerprint })),
+  });
+  const contextUnchanged = Boolean(options.knownContextFingerprint)
+    && options.knownContextFingerprint === contextFingerprint;
   const compact = {
     schemaVersion: 1,
     view: 'summary',
     contextSchemaVersion: result.schemaVersion,
+    contextFingerprint,
+    contextUnchanged,
     context: Object.fromEntries(
       Object.entries(compactIdentity).filter(([, value]) => value !== undefined && value !== null && value !== ''),
     ),
@@ -79,10 +99,21 @@ function compactContext(result) {
       })),
     },
     configuration: result.configuration ?? [],
-    filesToRead: result.filesToRead ?? [],
-    readPlan: readPlanFor(result),
+    filesToRead: contextUnchanged ? [] : result.filesToRead ?? [],
+    readPlan: contextUnchanged ? [] : readPlan,
     warnings: [...(result.warnings ?? [])],
   };
+
+  if (contextUnchanged) {
+    compact.projection = {
+      filesToRead: {
+        total: readPlan.length,
+        shown: 0,
+        truncated: false,
+        suppressedUnchanged: true,
+      },
+    };
+  }
 
   if (result.role) compact.role = result.role;
   if ((context.moduleCandidates?.length ?? 0) > 1) {
@@ -103,11 +134,13 @@ try {
       ...listArg(args['quality-profile']),
       ...listArg(args.skill),
     ])],
-    tracked: args.ephemeral !== true,
+    tracked: args.tracked === true,
     handoffRequired: args.handoff === true,
   });
 
-  console.log(JSON.stringify(args.full === true ? result : compactContext(result), null, 2));
+  console.log(JSON.stringify(args.full === true
+    ? result
+    : compactContext(result, { knownContextFingerprint: args['known-context-fingerprint'] }), null, 2));
 } catch (error) {
   console.error(`上下文构建失败: ${error.message}`);
   process.exitCode = 1;

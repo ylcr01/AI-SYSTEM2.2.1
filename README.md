@@ -28,12 +28,13 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → build-context → 读取最小相关事实
-主工作区写任务  → 正在处理 → 本轮已交付 → 显式验收 / 对话自然收口 / 返工
+局部低风险修改  → build-context → 最小 Diff + 定点检查 → 报告真实结果
+正式写 Task     → 正在处理 → 本轮已交付 → 显式验收 / 对话自然收口 / 返工
 并行 Worktree   → 正在处理（含集成与目标 HEAD 重验）→ 本轮已交付 → 显式验收 / 对话自然收口 / 返工
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
-可信内核只硬控可以机器确认的事实：Goal、项目身份、Scope、用户已有改动、ChangeSet、Evidence、检查输入、Worktree 集成新鲜度和用户最终验收。模型仍负责理解、设计、实现和代码质量。
+低风险局部修改不进入持久化控制面；模型负责理解、实现、最小 Diff 和定点检查。正式 Task 只硬控可以机器确认的 Goal、项目身份、Scope、用户已有改动、ChangeSet、Evidence、检查输入、Worktree 集成新鲜度和用户最终验收。
 
 ## 当前可信边界
 
@@ -45,6 +46,8 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
 - 并行任务独占 Worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
 - Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
+- 默认回执对 ChangeSet、缺口和诊断列表限量展开，并报告 `total`、`shown`、`truncated`；直接检查不展开成功日志，显式 `--full` 才读取完整记录。
+- `build-context` 返回读取计划的内容指纹；同一输入再次调用时传入 `--known-context-fingerprint <上次指纹>`，未变化则返回空读取计划，项目事实变化后自动恢复完整计划。
 
 详细规则以 [`AGENTS.md`](AGENTS.md)、[`20-能力模块/clarify-requirements/CONTRACT.md`](20-能力模块/clarify-requirements/CONTRACT.md) 和 [`70-文档/20-可信门禁.md`](70-文档/20-可信门禁.md) 为准；维护者可运行 `task.mjs --help --full` 查看机器协议。
 
@@ -69,7 +72,16 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>"
 
 默认返回轻量上下文；只有身份、路由或依赖诊断需要完整信息时才追加 `--full`。
 
-### 执行写任务
+重复请求同一上下文时可避免再次读取未变化资料：
+
+```powershell
+node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>" `
+  --known-context-fingerprint <上次返回的 contextFingerprint>
+```
+
+### 执行修改
+
+先读取轻量上下文。结果为 `continuity=ephemeral` 时，宿主直接实施最小 Diff，并只运行目标测试或受影响检查，不创建 Task。`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入、跨仓或 Worktree 才进入正式 Task：
 
 ```powershell
 node ./40-脚本/task.mjs 准备 --cwd <项目路径> --intent "<目标>" --acceptance "<验收>" --scope "."
@@ -79,7 +91,7 @@ node ./40-脚本/task.mjs 交付 --task-id <编号>
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
-宿主会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件，也不需要为每次交付单独回复“验收通过”。显式说“验收通过”时仍记录为 `accepted`；自然转入新话题只记录为 `closed`。
+正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态；正式 Task 中显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
 
 ### 并行 Worktree
 
@@ -131,6 +143,8 @@ node ./40-脚本/task.mjs 评估摘要 --from 2026-08-01 --to 2026-08-31
 系统不建设常驻验证器、密码学签名、企业审批流、通用沙箱或自动 Agent 编排平台。新机制必须由真实返工、误解、错误证明或状态失真驱动，并证明净收益。
 
 ## 验证
+
+普通交付不运行下列全套档位；只执行受影响的定点检查。以下命令用于系统维护、独立回归或发布验证：
 
 ```powershell
 node ./40-脚本/check-system.mjs

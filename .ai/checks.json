@@ -39,8 +39,6 @@
         "core"
       ],
       "profiles": [
-        "standard",
-        "controlled",
         "release"
       ],
       "covers": [
@@ -49,7 +47,7 @@
       ],
       "sideEffect": "none",
       "estimatedCost": "low",
-      "timeoutMs": 120000,
+      "timeoutMs": 60000,
       "acceptanceMode": "none"
     },
     {
@@ -73,7 +71,7 @@
       ],
       "sideEffect": "none",
       "estimatedCost": "medium",
-      "timeoutMs": 180000,
+      "timeoutMs": 120000,
       "acceptanceMode": "none"
     }
   ]

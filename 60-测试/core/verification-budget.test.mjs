@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBudget, consumeBudget, extendBudget, budgetDecision, remainingBudget } from '../../40-脚本/lib/verification-budget.mjs';
 
+test('默认预算限制普通任务一分钟并收缩受控与发布上限', () => {
+  assert.equal(createBudget({ mode:'quick' }).limitMs, 30_000);
+  assert.equal(createBudget({ mode:'standard' }).limitMs, 60_000);
+  assert.equal(createBudget({ mode:'controlled' }).limitMs, 300_000);
+  assert.equal(createBudget({ mode:'release' }).limitMs, 900_000);
+});
+
 test('验证预算针对整个输入周期累计', () => {
   let budget = createBudget({ mode: 'standard', limitMs: 100 });
   budget = consumeBudget(budget, 60);

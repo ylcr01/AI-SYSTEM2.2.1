@@ -456,18 +456,61 @@ function executeOne(check, cwd, timeoutMs) {
   return output;
 }
 
+export function checkExecutionFingerprint(check, options = {}) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    cwd: path.resolve(options.cwd ?? '.'),
+    command: check.command,
+    args: check.args ?? [],
+    runner: check.runner ?? null,
+    adapterVersion: check.adapterVersion ?? null,
+    resultProtocol: check.resultProtocol ?? null,
+    config: check.config ?? null,
+    testFiles: check.testFiles ?? [],
+    cases: check.cases ?? [],
+    sideEffect: check.sideEffect ?? 'workspace',
+    timeoutMs: Number(check.timeoutMs ?? 600000),
+  })).digest('hex');
+}
+
+function reuseExecution(previous, check, executionFingerprint) {
+  return {
+    ...previous,
+    name: check.name,
+    covers: check.covers ?? [],
+    source: check.source,
+    sideEffect: check.sideEffect,
+    acceptanceMode: check.acceptanceMode,
+    acceptanceIds: check.acceptanceIds ?? [],
+    cases: check.cases ?? [],
+    testFiles: check.testFiles ?? [],
+    artifacts: check.artifacts ?? [],
+    durationMs: 0,
+    executionFingerprint,
+    reused: true,
+    reusedFrom: previous.name,
+  };
+}
+
 export function executeCheckPlan(plan, options = {}) {
   if ((plan.checks ?? []).some((check) => check.sideEffect === 'external')) throw new Error('自动检查禁止执行外部写入');
   let budget = createBudget(options.budget ?? { mode: plan.profile });
   const results = [];
+  const executions = new Map();
   for (const check of plan.checks ?? []) {
+    const executionFingerprint = checkExecutionFingerprint(check, { cwd: options.cwd });
+    const previous = executions.get(executionFingerprint);
+    if (previous) {
+      results.push(reuseExecution(previous, check, executionFingerprint));
+      continue;
+    }
     const decision = budgetDecision(budget);
     if (!decision.allowed) return { ok: false, status: 'unavailable', stopReason: 'budget', results, budget };
     const remainingMs = remainingBudget(budget);
     const checkTimeoutMs = Number(check.timeoutMs ?? 600000);
     const budgetLimited = remainingMs <= checkTimeoutMs;
     const timeout = Math.max(1, Math.min(checkTimeoutMs, remainingMs));
-    const result = executeOne(check, options.cwd, timeout);
+    const result = { ...executeOne(check, options.cwd, timeout), executionFingerprint, reused: false, reusedFrom: null };
+    executions.set(executionFingerprint, result);
     budget = consumeBudget(budget, result.durationMs);
     results.push(result);
     if (result.status !== 0 || result.error) {
@@ -477,5 +520,12 @@ export function executeCheckPlan(plan, options = {}) {
     }
   }
   const ok = results.length === (plan.checks ?? []).length && results.every((item) => item.status === 0 && !item.error);
-  return { ok, status: ok ? 'passed' : 'unavailable', results, budget };
+  return {
+    ok,
+    status: ok ? 'passed' : 'unavailable',
+    results,
+    budget,
+    executedCount: results.filter((item) => item.reused !== true).length,
+    reusedCount: results.filter((item) => item.reused === true).length,
+  };
 }

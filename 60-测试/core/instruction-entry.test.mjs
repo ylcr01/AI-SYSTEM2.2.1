@@ -21,6 +21,7 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /AI_RD_OS_ROOT/u);
   assert.match(result.stdout, /AGENTS\.md/u);
+  assert.match(result.stdout, /lightweight direct changes separately from formal Tasks/u);
   assert.match(result.stdout, /Scope\/Evidence/u);
   assert.match(result.stdout, /waiting_acceptance/u);
   assert.match(result.stdout, /exact prior `continuation`/u);
@@ -56,6 +57,9 @@ test('系统入口保持轻量并将低频规则按需路由', () => {
   assert.match(agents, /git diff --stat\/--numstat/u);
   assert.match(agents, /不加载整份 Task JSON/u);
   assert.match(agents, /裁剪不得隐藏首个失败/u);
+  assert.match(agents, /continuity=ephemeral/u);
+  assert.match(agents, /不创建 Task/u);
+  assert.doesNotMatch(agents, /仓库写任务必须先准备/u);
   assert.equal(fs.existsSync(path.join(ROOT, '70-文档', '25-按需任务规则.md')), true);
 });
 

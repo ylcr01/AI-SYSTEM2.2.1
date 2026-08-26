@@ -1,8 +1,8 @@
 export const DEFAULT_BUDGETS = Object.freeze({
-  quick:60_000,
-  standard:300_000,
-  controlled:900_000,
-  release:1_800_000,
+  quick:30_000,
+  standard:60_000,
+  controlled:300_000,
+  release:900_000,
 });
 
 function defaultLimit(mode) {

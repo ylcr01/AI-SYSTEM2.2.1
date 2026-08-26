@@ -3,6 +3,23 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 test('计划选择最低成本且能补充 Covers 的检查',()=>{const plan=planChecks({profile:'standard',requiredCovers:['behavior','typecheck'],checks:[{name:'all',command:'node',args:[],profiles:['standard'],covers:['behavior','typecheck'],sideEffect:'none',estimatedCost:'high'},{name:'behavior',command:'node',args:[],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'low'},{name:'types',command:'node',args:[],profiles:['standard'],covers:['typecheck'],sideEffect:'none',estimatedCost:'low'}]});assert.deepEqual(plan.checks.map(x=>x.name),['behavior','types']);assert.deepEqual(plan.missingCovers,[]);});
 test('自动计划禁止外部写入',()=>{assert.throws(()=>executeCheckPlan({profile:'controlled',checks:[{name:'deploy',command:'node',args:[],sideEffect:'external'}]},{cwd:process.cwd(),budget:{mode:'controlled',limitMs:1000,spentMs:0}}),/禁止执行外部写入/);});
 
+test('同批相同执行身份只启动一次进程并复用结果',t=>{
+  const root=tempDir(t),counter=path.join(root,'count.txt');
+  const script="const fs=require('node:fs');const f=process.argv[1];const n=fs.existsSync(f)?Number(fs.readFileSync(f,'utf8')):0;fs.writeFileSync(f,String(n+1));";
+  const shared={command:process.execPath,args:['-e',script,counter],sideEffect:'workspace',timeoutMs:5000};
+  const result=executeCheckPlan({profile:'standard',checks:[
+    {name:'behavior',covers:['behavior'],...shared},
+    {name:'typecheck',covers:['typecheck'],...shared},
+  ]},{cwd:root,budget:{mode:'standard',limitMs:5000,spentMs:0}});
+  assert.equal(result.ok,true,JSON.stringify(result,null,2));
+  assert.equal(fs.readFileSync(counter,'utf8'),'1');
+  assert.equal(result.executedCount,1);
+  assert.equal(result.reusedCount,1);
+  assert.equal(result.results[1].reused,true);
+  assert.equal(result.results[1].reusedFrom,'behavior');
+  assert.equal(result.results[0].executionFingerprint,result.results[1].executionFingerprint);
+});
+
 test('进程被剩余总预算截断时归类为预算耗尽',()=>{
   const result=executeCheckPlan({profile:'standard',checks:[{name:'slow',command:'node',args:['-e','setTimeout(()=>{},200)'],sideEffect:'none',timeoutMs:1000}]},{cwd:process.cwd(),budget:{mode:'standard',limitMs:20,spentMs:0}});
   assert.equal(result.status,'unavailable');

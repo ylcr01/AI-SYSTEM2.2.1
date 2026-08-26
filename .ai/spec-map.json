@@ -17,7 +17,9 @@
       "specificationIds": [
         "BR-AIRD-QUALITY-001",
         "BR-AIRD-QUALITY-002",
-        "BR-AIRD-QUALITY-003"
+        "BR-AIRD-QUALITY-003",
+        "BR-AIRD-ROUTE-001",
+        "BR-AIRD-OUTPUT-001"
       ],
       "testFiles": [
         "60-测试/integration/context-quality.test.mjs",
@@ -51,6 +53,7 @@
         "40-脚本/lib/check-planner.mjs",
         "40-脚本/lib/task-runner.mjs",
         "40-脚本/lib/outcome-metrics.mjs",
+        "40-脚本/run-checks.mjs",
         "40-脚本/task.mjs"
       ],
       "keywords": ["重新对齐", "Acceptance Evidence", "决定覆盖率", "outcome-metrics"],

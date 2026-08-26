@@ -185,6 +185,9 @@ export function buildContext(options = {}) {
       classification.structureImpact === 'structural'
         ? '读取一个主要 Contract 和最多一个 Active Canonical'
         : '保持局部，不默认加载 Contract/Canonical',
+      classification.continuity === 'ephemeral'
+        ? '轻量直达：不建立持久化 Task；实施最小 Diff，运行受影响的定点检查并报告真实结果'
+        : '正式闭环：编辑前准备 Task；保留 Scope、Evidence、外部授权和集成真实性门禁',
       '代码实现完成后按 lightweight quality baseline 做一次交付前 Quality Pass：更简单方案、命名、职责与副作用位置、改动范围、明显性能退化、遗漏的 Protected Behavior 或边界；只修复目标相关问题，自检不替代 Evidence 或独立 Review',
       '机器配置使用已解析摘要；仅在路由或依赖诊断时读取原文',
       '项目事实冲突时不机械套用中央默认',

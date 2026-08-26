@@ -54,12 +54,13 @@ export function classifyTask(input = {}) {
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
   const structural=STRUCTURAL_WORDS.test(text);
   const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
+  const formalTracking=input.tracked===true||intentRisk||structural;
   const preservation=inferPreservation(text);
   return {
     controlMode,
     recommendedControlMode:controlMode,
     structureImpact:structural?'structural':controlMode==='quick'?'none':'local',
-    continuity:input.handoffRequired?'handoff-required':input.tracked===false?'ephemeral':'tracked',
+    continuity:input.handoffRequired?'handoff-required':formalTracking?'tracked':'ephemeral',
     artifactKinds,
     preservationMode:preservation.mode,
     preservationReasons:preservation.reasons,

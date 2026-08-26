@@ -88,6 +88,41 @@ function compactOutcomes(task) {
   }));
 }
 
+const RECEIPT_LIMITS = Object.freeze({
+  changes: 20,
+  defaultItems: 10,
+});
+
+function bounded(items, limit, map = item => item) {
+  const source = Array.isArray(items) ? items : [];
+  const projected = source.slice(0, limit).map(map);
+  return {
+    items: projected,
+    summary: { total: source.length, shown: projected.length, truncated: source.length > projected.length },
+  };
+}
+
+function assignBounded(receipt, key, items, limit = RECEIPT_LIMITS.defaultItems, map) {
+  const projection = bounded(items, limit, map);
+  receipt[key] = projection.items;
+  receipt.projection ??= {};
+  receipt.projection[key] = projection.summary;
+  return projection.items;
+}
+
+function compactStandalone(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const compact = { ...value };
+  for (const [key, limit] of Object.entries({ diagnostics:10, planned:10, applied:10, blockers:10 })) {
+    if (!Array.isArray(value[key])) continue;
+    const projection = bounded(value[key], limit);
+    compact[key] = projection.items;
+    compact.projection ??= {};
+    compact.projection[key] = projection.summary;
+  }
+  return compact;
+}
+
 function compactTask(task, result = null) {
   const publicState = publicTaskStateForTask(task);
   const receipt = {
@@ -99,8 +134,8 @@ function compactTask(task, result = null) {
   };
 
   if (task.goal?.summary) receipt.goal = task.goal.summary;
-  if (task.goal?.expectedOutcomes) receipt.expectedOutcomes = task.goal.expectedOutcomes;
-  if (task.goal?.protectedBehaviors) receipt.protectedBehaviors = task.goal.protectedBehaviors;
+  if (task.goal?.expectedOutcomes) assignBounded(receipt, 'expectedOutcomes', task.goal.expectedOutcomes);
+  if (task.goal?.protectedBehaviors) assignBounded(receipt, 'protectedBehaviors', task.goal.protectedBehaviors);
   if (task.status === 'waiting_acceptance' && task.conversationOutcome?.deliveryId) {
     receipt.continuation = {
       taskId: task.taskId,
@@ -116,23 +151,24 @@ function compactTask(task, result = null) {
   }
 
   if (action === '准备' || action === '查看') {
-    receipt.acceptance = (task.acceptance ?? []).map(({ id, description }) => ({
+    assignBounded(receipt, 'acceptance', task.acceptance, RECEIPT_LIMITS.defaultItems, ({ id, description }) => ({
       id,
       description,
     }));
     receipt.scope = (task.authorization?.scope ?? []).map(item => item.path);
-    receipt.filesToRead = task.context?.filesToRead ?? [];
+    assignBounded(receipt, 'filesToRead', task.context?.filesToRead);
   }
-  receipt.outcomes = compactOutcomes(task);
-  const verifiedCount = receipt.outcomes.filter(item => item.status === 'verified').length;
+  const allOutcomes = compactOutcomes(task);
+  assignBounded(receipt, 'outcomes', allOutcomes);
+  const verifiedCount = allOutcomes.filter(item => item.status === 'verified').length;
   receipt.result = {
     verifiedOutcomes: verifiedCount,
-    totalOutcomes: receipt.outcomes.length,
-    allOutcomesVerified: receipt.outcomes.length > 0 && verifiedCount === receipt.outcomes.length,
+    totalOutcomes: allOutcomes.length,
+    allOutcomesVerified: allOutcomes.length > 0 && verifiedCount === allOutcomes.length,
   };
 
   if (task.changeSet) {
-    receipt.changes = (task.changeSet.files ?? []).map(({ path, status }) => ({ path, status }));
+    assignBounded(receipt, 'changes', task.changeSet.files, RECEIPT_LIMITS.changes, ({ path, status }) => ({ path, status }));
   }
 
   if (task.integration) {
@@ -145,7 +181,7 @@ function compactTask(task, result = null) {
 
   if (task.verification) {
     if ((task.verification.acceptanceGaps?.length ?? 0) > 0) {
-      receipt.gaps = task.verification.acceptanceGaps.map(gap => ({
+      assignBounded(receipt, 'gaps', task.verification.acceptanceGaps, RECEIPT_LIMITS.defaultItems, gap => ({
         outcomeId: gap.acceptanceId,
         description: gap.description,
         missingEvidence: (gap.missingCovers ?? []).map(evidenceLabel),
@@ -177,8 +213,8 @@ function compactTask(task, result = null) {
     };
   }
 
-  if ((task.blockers?.length ?? 0) > 0) receipt.blockers = task.blockers;
-  if ((task.residualRisks?.length ?? 0) > 0) receipt.residualRisks = task.residualRisks;
+  if ((task.blockers?.length ?? 0) > 0) assignBounded(receipt, 'blockers', task.blockers);
+  if ((task.residualRisks?.length ?? 0) > 0) assignBounded(receipt, 'residualRisks', task.residualRisks);
 
   const stopReason = String(task.verification?.stopReason ?? '');
   const missingAcceptance = task.verification?.missingAcceptance ?? [];
@@ -237,7 +273,7 @@ function output(result) {
   if (args.full === true) value = result?.task ?? result;
   else if (result?.task) value = compactTask(result.task, result);
   else if (Array.isArray(result?.tasks)) value = compactTaskList(result);
-  else value = result;
+  else value = compactStandalone(result);
   console.log(JSON.stringify(value, null, 2));
 }
 
@@ -295,7 +331,7 @@ function help() {
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
-普通问答不建 Task；只读分析走 build-context；仓库写任务必须先准备、后交付，最终验收只能由用户执行。`);
+普通问答不建 Task；仓库工作先走 build-context。continuity=ephemeral 的局部修改直接做最小 Diff 与定点检查；Tracked、Controlled、Structural、规格、外部写入或 Worktree 才准备 Task。最终验收只能由用户执行。`);
 }
 
 function goalCardFileArg({ required = false } = {}) {
@@ -319,7 +355,6 @@ try {
         ...listArg(args['quality-profile']),
         ...listArg(args.skill),
       ])],
-      tracked: args.ephemeral !== true,
       handoffRequired: args.handoff === true,
       specImpact: args['spec-impact'],
       specImpactReason: args['spec-impact-reason'],

@@ -2,9 +2,25 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { loadChecks, loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest, planChecks } from '../../40-脚本/lib/check-planner.mjs';
 import { evaluateAdapterResult } from '../../40-脚本/lib/check-adapters.mjs';
 import { tempDir } from '../helpers.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+test('项目默认计划不为 Standard 选择宽泛测试，Controlled 只选择一个行为分组',()=>{
+  const checks=loadChecks(ROOT);
+  const standard=planChecks({cwd:ROOT,profile:'standard',requiredCovers:['behavior'],checks});
+  assert.deepEqual(standard.checks.map(item=>item.name),[]);
+  assert.deepEqual(standard.missingCovers,['behavior']);
+  const controlled=planChecks({cwd:ROOT,profile:'controlled',requiredCovers:['behavior','negative-path'],checks});
+  assert.deepEqual(controlled.checks.map(item=>item.name),['integration-tests']);
+  assert.deepEqual(controlled.missingCovers,[]);
+  const release=planChecks({cwd:ROOT,profile:'release',requiredCovers:['unit','integration'],checks});
+  assert.deepEqual(release.checks.map(item=>item.name),['core-tests','integration-tests']);
+  assert.deepEqual(release.missingCovers,[]);
+});
 
 function writeTaskChecks(t, checks, schemaVersion = 2) {
   const file = path.join(tempDir(t), 'task-checks.json');
