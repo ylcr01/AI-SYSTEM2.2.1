@@ -37,11 +37,15 @@ function inferPreservation(text) {
 }
 
 function inferScopeRisk(scope) {
-  const normalized = String(scope ?? '').trim().replaceAll('\\', '/');
-  if (!normalized || normalized === '.') return [];
-  return HARD_RISK_PATTERNS
-    .filter(([, pattern]) => pattern.test(normalized) || pattern.test(`${normalized}/`))
-    .map(([reason]) => `scope-${reason}:${normalized}`);
+  const values = Array.isArray(scope) ? scope : [scope];
+  return [...new Set(values.flatMap((value) => {
+    const normalized = String(value ?? '').trim().replaceAll('\\', '/');
+    if (!normalized || normalized === '.') return [];
+    return HARD_RISK_PATTERNS
+      .filter(([reason, pattern]) => !(reason === 'build-contract' && /(^|\/)package\.json$/iu.test(normalized))
+        && (pattern.test(normalized) || pattern.test(`${normalized}/`)))
+      .map(([reason]) => `scope-${reason}:${normalized}`);
+  }))];
 }
 
 export function classifyTask(input = {}) {
@@ -69,8 +73,17 @@ export function classifyTask(input = {}) {
 }
 
 export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
+  const packageManifestChanges = Array.isArray(input.packageManifestChanges) ? input.packageManifestChanges : null;
+  const packageManifestByPath = new Map((packageManifestChanges ?? []).map((item) => [item.path, item]));
   const reasons=[];
-  for(const file of changeSet?.files??[]) for(const [reason,pattern] of HARD_RISK_PATTERNS) if(pattern.test(file.path)) reasons.push(`${reason}:${file.path}`);
+  for(const file of changeSet?.files??[]) for(const [reason,pattern] of HARD_RISK_PATTERNS) {
+    if(!pattern.test(file.path))continue;
+    if(reason==='build-contract'&&/(^|\/)package\.json$/iu.test(file.path)){
+      const manifest=packageManifestByPath.get(file.path);
+      if(manifest?.metadataOnly===true)continue;
+    }
+    reasons.push(`${reason}:${file.path}`);
+  }
   const unique=[...new Set(reasons)];
   const runtimeChanged=(changeSet?.files??[]).some(file=>!/\.(md|mdx|rst|adoc)$/iu.test(file.path));
   const semanticDocument=(classification.artifactKinds??[]).some(kind=>['product','requirements'].includes(kind));
@@ -90,7 +103,7 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
     if(order[input.forcedMode]<order[controlMode]) throw new Error('forcedMode 只能向上加强，不能降低真实 Control Mode');
     controlMode=input.forcedMode;
   }
-  return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,reclassificationReasons:unique,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
+  return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,reclassificationReasons:unique,packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
 }
 
 export function determineEvidenceRequirements(input = {}) {
@@ -102,7 +115,14 @@ export function determineEvidenceRequirements(input = {}) {
   const joined=paths.join(' ');
   if(/\.(ts|tsx|vue)$/iu.test(joined))covers.add('typecheck');
   if(/(migrations?|database|schema)/iu.test(joined)){covers.add('data');covers.add('rollback');}
-  if(/package\.json|lock\.yaml|lock\.json|Dockerfile|vite\.config|webpack\.config|tsconfig|pom\.xml|build\.gradle/iu.test(joined))covers.add('package');
+  const packagePaths=paths.filter((item)=>(/(^|\/)package\.json$/iu).test(item));
+  const manifestChanges=input.classification?.packageManifestChanges;
+  const packageIntegrityRequired=Array.isArray(manifestChanges)
+    ? manifestChanges.some((item)=>item.requiresPackageIntegrity!==false)
+    : packagePaths.length>0;
+  const otherBuildContract=paths.some((item)=>!/(^|\/)package\.json$/iu.test(item)
+    && /lock\.yaml|lock\.json|Dockerfile|vite\.config|webpack\.config|tsconfig|pom\.xml|build\.gradle/iu.test(item));
+  if(packageIntegrityRequired||otherBuildContract)covers.add('package');
   if(input.observableBrowserBehavior===true)covers.add('browser');
   if(input.classification?.structureImpact==='structural')covers.add('architecture');
   if(input.classification?.artifactKinds?.includes('documentation'))covers.add('documentation');

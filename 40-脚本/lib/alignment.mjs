@@ -162,6 +162,9 @@ export function evaluateFinalAlignment({ goal, classification }) {
 }
 
 export function computeAlignmentFingerprint({ goal, acceptance, scope }) {
+  const scopeValue = Array.isArray(scope)
+    ? (scope.length === 1 ? scope[0]?.path ?? null : scope.map((item) => item?.path ?? null).sort())
+    : scope?.path ?? null;
   const canonical = {
     originalRequest: goal?.originalRequest ?? null,
     summary: goal?.summary ?? null,
@@ -174,7 +177,7 @@ export function computeAlignmentFingerprint({ goal, acceptance, scope }) {
       requiredCovers: item.requiredCovers ?? null,
       source: item.source ?? null,
     })),
-    scope: scope?.path ?? null,
+    scope: scopeValue,
     mode: goal?.alignment?.mode ?? null,
     delegatedTopics: goal?.alignment?.delegatedTopics ?? [],
     preservation: goal?.preservation

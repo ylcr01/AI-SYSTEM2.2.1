@@ -26,6 +26,8 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--goal-card-file/u);
   assert.match(full.stdout, /--reason-category/u);
   assert.match(full.stdout, /--quality-profile/u);
+  assert.match(full.stdout, /预检\|preflight/u);
+  assert.match(full.stdout, /--scope.*可重复/u);
   assert.match(full.stdout, /follow-up.*--delivery-id/u);
   assert.match(full.stdout, /不保存消息正文/u);
   assert.doesNotMatch(full.stdout, /--allow-primary-write/u);
@@ -35,6 +37,26 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(result.stdout, /继续验证.*--additional-budget-ms/u);
   assert.match(full.stdout, /重验集成/u);
   assert.match(full.stdout, /迁移状态.*--apply/u);
+});
+
+test('CLI 预检只读且重复 --scope 保留精确授权', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  fs.mkdirSync(path.join(repo, 'src'));
+  const available = runNode(TASK, ['预检', '--cwd', repo, '--state-root', stateRoot], { cwd:ROOT });
+  assert.equal(available.status, 0, available.stderr);
+  assert.deepEqual(JSON.parse(available.stdout), {
+    schemaVersion:1, readOnly:true, available:true, gitRoot:fs.realpathSync.native(repo), conflict:null, diagnostic:null,
+  });
+  const prepared = runNode(TASK, [
+    '准备', '--cwd', repo, '--intent', '修改两个局部路径', '--acceptance', '功能正确',
+    '--scope', 'src', '--scope', 'tests', '--scope', 'src', '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const receipt = JSON.parse(prepared.stdout);
+  assert.deepEqual(receipt.scope, ['src', 'tests']);
+  const blocked = runNode(TASK, ['preflight', '--cwd', repo, '--state-root', stateRoot], { cwd:ROOT });
+  assert.notEqual(blocked.status, 0);
+  assert.match(blocked.stderr, new RegExp(receipt.taskId, 'u'));
 });
 
 test('CLI 状态迁移默认 dry-run，显式 apply 才写入', t => {

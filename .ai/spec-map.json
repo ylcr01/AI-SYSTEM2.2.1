@@ -51,7 +51,14 @@
     {
       "id": "ai-rd-os-task-truthfulness",
       "paths": [
+        ".ai/checks.json",
+        "AGENTS.md",
+        "README.md",
         "40-脚本/lib/check-planner.mjs",
+        "40-脚本/lib/alignment.mjs",
+        "40-脚本/lib/git-state.mjs",
+        "40-脚本/lib/state-manager.mjs",
+        "40-脚本/lib/task-policy.mjs",
         "40-脚本/lib/task-runner.mjs",
         "40-脚本/lib/outcome-metrics.mjs",
         "40-脚本/run-checks.mjs",
@@ -64,9 +71,18 @@
         "TR-AIRD-REALIGN-001",
         "BR-AIRD-EVIDENCE-001",
         "BR-AIRD-EVIDENCE-002",
-        "BR-AIRD-METRICS-001"
+        "BR-AIRD-METRICS-001",
+        "BR-AIRD-WORKSPACE-001",
+        "BR-AIRD-SCOPE-001",
+        "BR-AIRD-RISK-001",
+        "BR-AIRD-VERIFY-001"
       ],
       "testFiles": [
+        "60-测试/core/alignment.test.mjs",
+        "60-测试/core/instruction-entry.test.mjs",
+        "60-测试/core/state-manager.test.mjs",
+        "60-测试/core/task-policy.test.mjs",
+        "60-测试/integration/git-state.test.mjs",
         "60-测试/integration/alignment-realign.test.mjs",
         "60-测试/integration/task-runner.test.mjs",
         "60-测试/core/outcome-metrics.test.mjs",

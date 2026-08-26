@@ -40,7 +40,7 @@ Local/主工作区  → 只读分析或单一集成者串行集成
 
 - Acceptance 只有被定点检查显式绑定时才算被证明；通用检查和外部导入结果不能自动冒充验收证据。
 - 新 Task Check 使用用例级 Schema 2，只接受受控 Runner；每个 case 显式绑定 Acceptance、Cover、测试文件和精确用例名。Runner 必须返回真实命中、通过、失败、skip/todo 结果，Check Manifest 同时绑定用例声明、Runner 协议与输入哈希。
-- 默认验证先完整映射 Acceptance，映射缺失时不执行通用命令；映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，同一批检查失败时不保留部分成功 Evidence。
+- 默认验证先完整映射 Acceptance，映射缺失时不执行通用命令；映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，同一批检查失败时不保留部分成功 Evidence。全量历史回归不属于普通交付，必须另建 Task 并明确授权。
 - Task 写作态、已交付和历史记录分层保存；默认回执只展示四种用户状态。`delivered` 只表示本轮工程交付通过，`closed` 只表示后续对话自然收口，`accepted` 仍只能由用户显式产生。
 - 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主只在下一条消息中据此记录相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
@@ -86,10 +86,12 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>" `
 先为每个写任务建立专属 Worktree。Codex 桌面端优先选择 managed Worktree；若宿主未能创建或识别，则使用下方 detached Worktree fallback，不能改在 Local 中执行。
 
 ```powershell
+node ./40-脚本/task.mjs 预检 --cwd <项目路径>
+
 git worktree add --detach <任务路径> <起点>
 
 node ./40-脚本/task.mjs 准备 --cwd <任务路径> --intent "<目标>" `
-  --acceptance "<验收>" --scope "." --integration-target main
+  --acceptance "<验收>" --scope "src" --scope "tests" --integration-target main
 
 node ./40-脚本/task.mjs 交付 --task-id <编号>
 
@@ -97,6 +99,8 @@ node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
 正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态。主 Local checkout 只用于只读分析和串行集成，正式 Task 在主 checkout 准备会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
+
+`预检` 只读且不加载工程上下文、不创建 Task；`准备` 会再次预检，并在最终原子创建时复核。多个精确授权路径可重复传入 `--scope`，无需扩大成共同父目录。
 
 ### Worktree 交付与串行集成
 

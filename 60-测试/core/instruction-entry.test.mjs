@@ -79,3 +79,14 @@ test('系统入口固化浏览器冒烟预算和熔断规则', () => {
   assert.match(agents, /拆为独立任务并先获用户明确授权/u);
   assert.match(agents, /Runner 或外层命令也须固化上述超时和熔断/u);
 });
+
+test('系统入口固化 Worktree 默认值与最小验证分层', () => {
+  const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
+  assert.match(agents, /Codex 默认 managed Worktree/u);
+  assert.match(agents, /Goal Card\/Context 前预检并在原子创建时复核/u);
+  assert.match(agents, /重复 `--scope` 授权精确路径/u);
+  assert.match(agents, /Acceptance 只写结果/u);
+  assert.match(agents, /生成并执行最小验证计划/u);
+  assert.match(agents, /全量回归须独立 Task/u);
+  assert.match(agents, /package\.json.*不按路径升级/u);
+});

@@ -48,10 +48,10 @@ function nearestExisting(value) {
 }
 
 export function normalizeScope(executionTarget, scopeValue, gitRoot) {
-  if (Array.isArray(scopeValue)) throw new Error('授权 Scope 只能指定一个路径；多个文件或目录请改用共同父目录');
+  if (Array.isArray(scopeValue)) throw new Error('授权 Scope 只能指定一个路径；多个文件或目录请重复传入 --scope');
   const rawScope = String(scopeValue ?? '.').trim();
-  if (/[,，]/u.test(rawScope)) throw new Error('授权 Scope 不接受逗号拼接；多个文件或目录请改用共同父目录');
-  if (/[*?\[\]{}]/u.test(rawScope)) throw new Error('授权 Scope 不支持 glob；请改用明确的共同父目录');
+  if (/[,，]/u.test(rawScope)) throw new Error('授权 Scope 不接受逗号拼接；多个文件或目录请重复传入 --scope');
+  if (/[*?\[\]{}]/u.test(rawScope)) throw new Error('授权 Scope 不支持 glob；请重复传入明确路径');
   const root = normalizePath(gitRoot); const target = normalizePath(executionTarget);
   if (!pathContains(root, target)) throw new Error('执行目标不在 Git Root 内');
   const candidate = path.isAbsolute(rawScope)
@@ -63,6 +63,13 @@ export function normalizeScope(executionTarget, scopeValue, gitRoot) {
   if (!pathContains(root, realParent)) throw new Error('授权 Scope 通过符号链接越出 Git Root');
   if (fs.existsSync(candidate) && !pathContains(root, normalizePath(candidate))) throw new Error('授权 Scope 通过符号链接越出 Git Root');
   return { base:'git-root', path:path.relative(root, candidate).replaceAll('\\','/') || '.', absolute:path.resolve(candidate) };
+}
+
+export function normalizeScopes(executionTarget, scopeValue, gitRoot) {
+  const values = Array.isArray(scopeValue) ? scopeValue : [scopeValue ?? '.'];
+  if (!values.length) values.push('.');
+  const scopes = values.map((value) => normalizeScope(executionTarget, value, gitRoot));
+  return [...new Map(scopes.map((scope) => [scope.path, scope])).values()];
 }
 
 export function scopeAbsolute(scope, gitRoot) {
@@ -113,6 +120,63 @@ export function computeChangeSet(baseline) {
   const uncommittedTaskChanges = JSON.stringify(currentEntries) !== JSON.stringify(baseline.files ?? []);
   return {schemaVersion:4,gitRoot:root,baselineHead:baseline.head,currentHead,files:changes,uncommittedTaskChanges,
     fingerprint:fingerprint(changes,{head:currentHead}),computedAt:new Date().toISOString()};
+}
+
+const PACKAGE_METADATA_FIELDS = new Set([
+  'name', 'version', 'description', 'private', 'keywords', 'license',
+  'author', 'contributors', 'homepage', 'bugs', 'funding',
+]);
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function changedTopLevelFields(before, after) {
+  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  return [...keys].filter((key) => stableJson(before?.[key]) !== stableJson(after?.[key])).sort();
+}
+
+export function inspectPackageManifestChanges(baseline, changeSet) {
+  const dirtyAtBaseline = new Set((baseline?.files ?? []).map((item) => item.path));
+  return (changeSet?.files ?? [])
+    .filter((item) => /(^|\/)package\.json$/iu.test(item.path))
+    .map((item) => {
+      const base = { path:item.path, status:item.status ?? null, changedFields:[] };
+      if (dirtyAtBaseline.has(item.path)) {
+        return { ...base, risk:'unknown', metadataOnly:false, requiresPackageIntegrity:true, reason:'dirty-at-baseline' };
+      }
+      if (/^A|^\?\?/u.test(item.status ?? '')) {
+        return { ...base, risk:'runtime-contract', metadataOnly:false, requiresPackageIntegrity:true, reason:'manifest-added' };
+      }
+      if (/^D/u.test(item.status ?? '')) {
+        return { ...base, risk:'runtime-contract', metadataOnly:false, requiresPackageIntegrity:true, reason:'manifest-deleted' };
+      }
+      try {
+        const before = JSON.parse(gitRawStrict(changeSet.gitRoot, ['show', `${baseline.head}:${item.path}`]));
+        const currentFile = path.join(changeSet.gitRoot, item.path);
+        const after = JSON.parse(fs.readFileSync(currentFile, 'utf8'));
+        if (!before || typeof before !== 'object' || Array.isArray(before)
+          || !after || typeof after !== 'object' || Array.isArray(after)) {
+          throw new Error('package manifest must be an object');
+        }
+        const changedFields = changedTopLevelFields(before, after);
+        const metadataOnly = changedFields.every((field) => PACKAGE_METADATA_FIELDS.has(field));
+        return {
+          ...base,
+          changedFields,
+          risk:metadataOnly ? 'metadata-only' : 'runtime-contract',
+          metadataOnly,
+          requiresPackageIntegrity:!metadataOnly,
+          reason:metadataOnly ? (changedFields.length ? 'metadata-only' : 'semantic-noop') : 'runtime-field-changed',
+        };
+      } catch {
+        return { ...base, risk:'unknown', metadataOnly:false, requiresPackageIntegrity:true, reason:'manifest-unreadable' };
+      }
+    });
 }
 
 export function normalizeIntegrationTarget(value) {
@@ -221,9 +285,11 @@ export function deletePendingIntegrationRef(gitRoot, ref, expectedCommit) {
 }
 
 export function validateChangeSetScope(changeSet, scope) {
-  const base=scopeAbsolute(scope,changeSet.gitRoot);
-  const violations=(changeSet.files??[]).filter(item=>!pathContains(base,path.resolve(changeSet.gitRoot,item.path)));
-  return {ok:violations.length===0,scope:base,violations};
+  const values=Array.isArray(scope)?scope:[scope];
+  if(!values.length)throw new Error('至少需要一个授权 Scope');
+  const bases=values.map(item=>scopeAbsolute(item,changeSet.gitRoot));
+  const violations=(changeSet.files??[]).filter(item=>!bases.some(base=>pathContains(base,path.resolve(changeSet.gitRoot,item.path))));
+  return {ok:violations.length===0,scope:bases[0],scopes:bases,violations};
 }
 export function assertChangeSetWithinScope(changeSet,scope){const result=validateChangeSetScope(changeSet,scope);if(!result.ok)throw new Error(`ChangeSet 越出授权范围: ${result.violations.map(x=>x.path).join(', ')}`);return result;}
 
