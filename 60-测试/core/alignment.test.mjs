@@ -53,7 +53,11 @@ test('对齐文件规范化去空去重并支持字符串数组', () => {
   assert.equal(alignment.originalRequest, '修复分页');
   assert.deepEqual(alignment.expectedOutcomes, ['请求用 page=1']);
   assert.deepEqual(alignment.protectedBehaviors, ['保持 URL 参数']);
-  assert.deepEqual(alignment.acceptance, ['测试通过', '组合测试通过']);
+  assert.deepEqual(alignment.acceptance, ['测试通过；组合测试通过']);
+  assert.deepEqual(normalizeAlignment({
+    ...DIRECT_ALIGNMENT,
+    acceptance: '测试通过；组合测试通过',
+  }).acceptance, ['测试通过', '组合测试通过']);
   assert.deepEqual(alignment.alignment.reasonCodes, ['local-scope']);
 });
 
@@ -143,7 +147,7 @@ test('对齐文件不是有效 JSON 时明确报错', (t) => {
   assert.throws(() => loadAlignmentFile(file), /不是有效 JSON/u);
 });
 
-test('Standard 带对齐文件准备时保存语义基线并转换保护行为', (t) => {
+test('Standard 带对齐文件准备时保存语义基线且不把普通保护行为扩展为验收项', (t) => {
   const repo = gitRepo(t);
   const file = writeAlignment(t, DIRECT_ALIGNMENT);
   const prepared = prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: DIRECT_ALIGNMENT.originalRequest, alignmentFile: file, scope: '.' });
@@ -153,7 +157,8 @@ test('Standard 带对齐文件准备时保存语义基线并转换保护行为',
   assert.ok(prepared.task.goal.alignment.baselineFingerprint);
   assert.equal('anchor' in prepared.task, false);
   const protectedItem = prepared.task.acceptance.find((item) => item.description === '刷新带 page 参数的 URL 仍加载指定页');
-  assert.equal(protectedItem.source, 'protected-behavior');
+  assert.equal(protectedItem, undefined);
+  assert.deepEqual(prepared.task.goal.protectedBehaviors, ['刷新带 page 参数的 URL 仍加载指定页']);
   assert.equal(prepared.task.acceptance.find((item) => item.description === '新增组合测试通过').source, 'requested-outcome');
 });
 

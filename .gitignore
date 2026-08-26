@@ -10,3 +10,5 @@ coverage/
 *.log
 *.local.*
 .playwright-mcp/
+/work/project-check-audit/
+/work/project-check-audit-state/

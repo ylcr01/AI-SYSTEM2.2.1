@@ -48,6 +48,7 @@
     {
       "id": "ai-rd-os-task-truthfulness",
       "paths": [
+        "40-脚本/lib/check-planner.mjs",
         "40-脚本/lib/task-runner.mjs",
         "40-脚本/lib/outcome-metrics.mjs",
         "40-脚本/task.mjs"
@@ -58,6 +59,7 @@
         "BR-AIRD-REALIGN-001",
         "TR-AIRD-REALIGN-001",
         "BR-AIRD-EVIDENCE-001",
+        "BR-AIRD-EVIDENCE-002",
         "BR-AIRD-METRICS-001"
       ],
       "testFiles": [

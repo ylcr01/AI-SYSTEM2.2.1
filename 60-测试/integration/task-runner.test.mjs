@@ -1,12 +1,15 @@
 // BR-AIRD-EVIDENCE-001
-import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { prepareTask,deliverTask,acceptTask,saveTask,resumeTask,continueVerification,confirmIntegration,revalidateIntegration,inferAcceptanceCovers } from '../../40-脚本/lib/task-runner.mjs';import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';import { updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { gitRepo,tempDir } from '../helpers.mjs';
-test('Standard 任务完成自动验证、交付和用户验收',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.evidence.some(x=>x.covers.includes('behavior')));const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});assert.equal(accepted.task.status,'accepted');});
-test('自动检查生成的 Evidence 自动进入 systemEvidenceHashes',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');const behaviorEvidence=delivered.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(behaviorEvidence);assert.ok(delivered.task.verification.systemEvidenceHashes.includes(behaviorEvidence.payloadHash));assert.ok(delivered.task.evidence.filter(x=>x.covers.includes('scope')).every(x=>delivered.task.verification.systemEvidenceHashes.includes(x.payloadHash)));});
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { prepareTask,deliverTask,acceptTask,saveTask,resumeTask,continueVerification,confirmIntegration,revalidateIntegration,inferAcceptanceCovers } from '../../40-脚本/lib/task-runner.mjs';import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';import { updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { gitRepo,taskCheck,tempDir } from '../helpers.mjs';
+test('Standard 任务完成自动验证、交付和用户验收',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.evidence.some(x=>x.covers.includes('behavior')));const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});assert.equal(accepted.task.status,'accepted');});
+test('自动检查生成的 Evidence 自动进入 systemEvidenceHashes',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');const behaviorEvidence=delivered.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(behaviorEvidence);assert.ok(delivered.task.verification.systemEvidenceHashes.includes(behaviorEvidence.payloadHash));assert.ok(delivered.task.evidence.filter(x=>x.covers.includes('scope')).every(x=>delivered.task.verification.systemEvidenceHashes.includes(x.payloadHash)));});
 test('纯文档任务进入 Quick，但通用文档检查不能自动证明 Acceptance',t=>{const repo=gitRepo(t,{checks:[{name:'docs',command:process.execPath,args:['-e','process.exit(0)'],profiles:['quick','standard'],covers:['documentation'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'更新入口规则',acceptance:['规则满足验收条件'],scope:'.'});fs.writeFileSync(path.join(repo,'README.md'),'# updated\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.classification.controlMode,'quick');assert.deepEqual(delivered.task.acceptance[0].requiredCovers,['documentation']);assert.equal(delivered.task.verification.requiredCovers.includes('behavior'),false);assert.ok(delivered.task.verification.missingAcceptance.includes('A1'));});
 test('验收证据按每条语义推断',()=>{const classification={controlMode:'standard',artifactKinds:['code']};assert.deepEqual(['README 文档说明已同步','用户在页面可见处理结果','历史状态迁移失败时可以回滚','结果指标显示已决定数量','局部任务不加载 Contract 或 Canonical','未授权用户必须被拒绝','无效数量不能修改库存','支付失败问题已修复'].map(item=>inferAcceptanceCovers(item,classification)),[['documentation'],['behavior','browser'],['behavior','data','rollback','negative-path'],['behavior'],['behavior'],['behavior','negative-path'],['behavior','negative-path'],['behavior']]);});
 test('没有语义 Evidence 时不能进入等待验收',t=>{const repo=gitRepo(t,{checks:[]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,autoChecks:false});assert.equal(delivered.task.status,'verifying');});
-test('显式 Independent Review 必须 passed 且无 Blocking Finding',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',explicitReviewRequirement:{kind:'independent-agent',minimumDecision:'passed'}});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(first.task.status,'reviewing');const pack=first.task.reviewPackage;const review=createReviewRecord({kind:'independent-agent',taskId:first.task.taskId,changeFingerprint:first.task.changeSet.fingerprint,packageFingerprint:pack.packageFingerprint,implementer:{actor:'a',session:'s1'},reviewer:{actor:'b',session:'s2',provenance:{provider:'test'}},decision:'passed',createdAt:new Date(Date.parse(pack.createdAt)+1000).toISOString()});const file=path.join(stateRoot,'review.json');fs.writeFileSync(file,JSON.stringify(review));const second=deliverTask({stateRoot,taskId:first.task.taskId,reviewFile:file});assert.equal(second.task.status,'waiting_acceptance');});
-test('Handoff-required 交付生成新鲜 Handoff，保存后可恢复',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',handoffRequired:true});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.handoff);const root2=tempDir(t);const p2=prepareTask({cwd:repo,stateRoot:root2,intent:'修复另一个普通功能',acceptance:['功能正确'],scope:'.'});const saved=saveTask({stateRoot:root2,taskId:p2.task.taskId});assert.equal(saved.task.status,'saved');const resumed=resumeTask({stateRoot:root2,taskId:p2.task.taskId});assert.ok(['implementing','verifying'].includes(resumed.task.status));});
+test('缺少完整 Task Check 时不执行无法闭合验收的通用命令',t=>{const repo=gitRepo(t,{checks:[{name:'broad-failure',command:process.execPath,args:['-e','process.exit(9)'],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.verification.stopReason,'missing-acceptance-checks');assert.equal(delivered.task.verification.firstFailure,null);assert.equal(delivered.task.verification.checkManifest,null);assert.deepEqual(delivered.task.verification.missingAcceptance,['A1']);});
+test('目标证明失败时先停止且不执行后续通用检查',t=>{const repo=gitRepo(t,{checks:[{name:'typecheck-after-proof',command:process.execPath,args:['-e','process.exit(7)'],profiles:['standard'],covers:['typecheck'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);fs.writeFileSync(path.join(repo,'target.ts'),'baseline\n');fs.writeFileSync(path.join(repo,'tests','acceptance.test.mjs'),"import assert from 'node:assert/strict';import test from 'node:test';test('A1 proof',()=>assert.fail('proof failed'));\n");for(const args of [['add','.'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','proof baseline']]){const result=spawnSync('git',['-C',repo,...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);}const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.ts'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'needs_rework');assert.equal(delivered.task.verification.firstFailure.name,'target-acceptance');assert.notEqual(delivered.task.verification.firstFailure.name,'typecheck-after-proof');});
+test('目标证明覆盖 behavior 后跳过宽泛检查但保留独立 typecheck',t=>{const repo=gitRepo(t,{checks:[{name:'redundant-behavior',command:process.execPath,args:['-e','process.exit(8)'],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'},{name:'required-typecheck',command:process.execPath,args:['-e','process.exit(0)'],profiles:['standard'],covers:['typecheck'],sideEffect:'none',estimatedCost:'low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);fs.writeFileSync(path.join(repo,'target.ts'),'baseline\n');for(const args of [['add','.'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','typescript baseline']]){const result=spawnSync('git',['-C',repo,...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);}const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.ts'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');assert.deepEqual(delivered.task.verification.checkManifest.checks.map(item=>item.name),['target-acceptance','required-typecheck']);assert.equal(delivered.task.evidence.some(item=>item.source?.command==='redundant-behavior'),false);});
+test('显式 Independent Review 必须 passed 且无 Blocking Finding',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',explicitReviewRequirement:{kind:'independent-agent',minimumDecision:'passed'}});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(first.task.status,'reviewing');const pack=first.task.reviewPackage;const review=createReviewRecord({kind:'independent-agent',taskId:first.task.taskId,changeFingerprint:first.task.changeSet.fingerprint,packageFingerprint:pack.packageFingerprint,implementer:{actor:'a',session:'s1'},reviewer:{actor:'b',session:'s2',provenance:{provider:'test'}},decision:'passed',createdAt:new Date(Date.parse(pack.createdAt)+1000).toISOString()});const file=path.join(stateRoot,'review.json');fs.writeFileSync(file,JSON.stringify(review));const second=deliverTask({stateRoot,taskId:first.task.taskId,reviewFile:file});assert.equal(second.task.status,'waiting_acceptance');});
+test('Handoff-required 交付生成新鲜 Handoff，保存后可恢复',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.',handoffRequired:true});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.handoff);const root2=tempDir(t);const p2=prepareTask({cwd:repo,stateRoot:root2,intent:'修复另一个普通功能',acceptance:['功能正确'],scope:'.'});const saved=saveTask({stateRoot:root2,taskId:p2.task.taskId});assert.equal(saved.task.status,'saved');const resumed=resumeTask({stateRoot:root2,taskId:p2.task.taskId});assert.ok(['implementing','verifying'].includes(resumed.task.status));});
 test('瞬态 Handoff 和隔离 Blocker 在事实恢复后自动清理',t=>{
   const repo=gitRepo(t),stateRoot=tempDir(t),target=path.join(repo,'target.txt');
   const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});
@@ -16,7 +19,7 @@ test('瞬态 Handoff 和隔离 Blocker 在事实恢复后自动清理',t=>{
   assert.equal(resumed.task.status,'verifying');
   assert.deepEqual(resumed.task.blockers,[]);
   assert.equal(resumed.task.verification.stopReason,'handoff-stale');
-  assert.equal(deliverTask({stateRoot,taskId:prepared.task.taskId}).task.status,'waiting_acceptance');
+  assert.equal(deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)}).task.status,'waiting_acceptance');
 
   const secondRoot=tempDir(t),second=prepareTask({cwd:repo,stateRoot:secondRoot,intent:'修复另一个功能',acceptance:['功能正确'],scope:'.'});
   fs.writeFileSync(target,'overwritten user change\n');
@@ -48,20 +51,20 @@ test('预算耗尽的 Task 只能按原因有界续期',t=>{
   assert.equal(continued.task.verification.budget.extensions.length,1);
 });
 test('检查被剩余预算截断后可有界续期并完成交付',t=>{
-  const repo=gitRepo(t,{checks:[{name:'slow',command:process.execPath,args:['-e','setTimeout(()=>{},60)'],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t);
+  const repo=gitRepo(t,{checks:[{name:'slow',command:process.execPath,args:['-e','setTimeout(()=>{},60)'],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);
   const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通功能',acceptance:['功能正确'],scope:'.',budgetMs:20});
   fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');
-  const exhausted=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  const exhausted=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});
   assert.equal(exhausted.task.status,'saved');
   assert.equal(exhausted.task.verification.stopReason,'budget');
   assert.equal(exhausted.task.verification.lastFailureFingerprint,null);
-  continueVerification({stateRoot,taskId:prepared.task.taskId,additionalBudgetMs:200,reason:'完成被总预算截断的检查'});
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  continueVerification({stateRoot,taskId:prepared.task.taskId,additionalBudgetMs:2000,reason:'完成被总预算截断的检查'});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});
   assert.equal(delivered.task.status,'waiting_acceptance');
 });
-test('相同输入失败禁止机械重跑，只有真实 ChangeSet 变化后可继续',t=>{const repo=gitRepo(t,{checks:[{name:'environment',command:process.execPath,args:['-e',"if(process.env.READY !== '1'){process.stderr.write('START-'+ 'x'.repeat(6000));process.exit(1)}"],profiles:['standard','controlled'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通服务功能',acceptance:['服务正常'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'changed\n');const old=process.env.READY;process.env.READY='0';try{const failed=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(failed.task.status,'needs_rework');assert.equal(failed.task.verification.firstFailure.name,'environment');assert.equal(failed.task.verification.firstFailure.command,process.execPath);assert.equal(failed.task.verification.firstFailure.exitCode,1);assert.ok(failed.task.verification.firstFailure.output.length<=5000);assert.equal(failed.task.verification.firstFailure.output.includes('START-'),false);assert.equal(failed.task.verification.firstFailure.truncated,true);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId}),/禁止机械重复/);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'服务已启动'}),/禁止手工声明/u);process.env.READY='1';fs.writeFileSync(target,'changed again\n');const passed=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(passed.task.status,'waiting_acceptance');assert.equal(passed.task.verification.firstFailure,null);}finally{if(old===undefined)delete process.env.READY;else process.env.READY=old;}});
-test('真实 ChangeSet 变化后旧 system hash 与旧 Evidence 失效',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(first.task.status,'waiting_acceptance');const oldBehavior=first.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(oldBehavior);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'输入已变化'}),/禁止手工声明/u);fs.writeFileSync(target,'changed again\n');const second=deliverTask({stateRoot,taskId:prepared.task.taskId,autoChecks:false});assert.equal(second.task.status,'verifying');assert.equal(second.task.evidence.some(x=>x.payloadHash===oldBehavior.payloadHash),false);assert.equal(second.task.verification.systemEvidenceHashes.includes(oldBehavior.payloadHash),false);assert.ok(second.task.verification.missingAcceptance.includes('A1'));});
-test('Check 修改输入后清理失效 system hashes',t=>{const repo=gitRepo(t,{checks:[{name:'mutator',command:process.execPath,args:['-e',"require('node:fs').writeFileSync('target.txt','mutated')"],profiles:['standard','controlled'],covers:['behavior'],sideEffect:'workspace',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.verification.stopReason,'check-mutated-input');assert.equal(delivered.task.evidence.some(x=>x.covers.includes('behavior')),false);assert.deepEqual(delivered.task.verification.systemEvidenceHashes,[]);});
+test('相同输入失败禁止机械重跑，只有真实 ChangeSet 变化后可继续',t=>{const repo=gitRepo(t,{checks:[{name:'environment',command:process.execPath,args:['-e',"if(process.env.READY !== '1'){process.stderr.write('START-'+ 'x'.repeat(6000));process.exit(1)}"],profiles:['standard','controlled'],covers:['typecheck'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'验证普通服务功能',acceptance:['服务正常'],scope:'.'});const target=path.join(repo,'target.ts');fs.writeFileSync(target,'changed\n');const taskCheckFile=taskCheck(t,repo);const old=process.env.READY;process.env.READY='0';try{const failed=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile});assert.equal(failed.task.status,'needs_rework');assert.equal(failed.task.verification.firstFailure.name,'environment');assert.equal(failed.task.verification.firstFailure.command,process.execPath);assert.equal(failed.task.verification.firstFailure.exitCode,1);assert.ok(failed.task.verification.firstFailure.output.length<=5000);assert.equal(failed.task.verification.firstFailure.output.includes('START-'),false);assert.equal(failed.task.verification.firstFailure.truncated,true);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile}),/禁止机械重复/);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'服务已启动'}),/禁止手工声明/u);process.env.READY='1';fs.writeFileSync(target,'changed again\n');const passed=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile});assert.equal(passed.task.status,'waiting_acceptance');assert.equal(passed.task.verification.firstFailure,null);}finally{if(old===undefined)delete process.env.READY;else process.env.READY=old;}});
+test('真实 ChangeSet 变化后旧 system hash 与旧 Evidence 失效',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'changed\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(first.task.status,'waiting_acceptance');const oldBehavior=first.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(oldBehavior);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,inputChange:'environment',inputChangeReason:'输入已变化'}),/禁止手工声明/u);fs.writeFileSync(target,'changed again\n');const second=deliverTask({stateRoot,taskId:prepared.task.taskId,autoChecks:false});assert.equal(second.task.status,'verifying');assert.equal(second.task.evidence.some(x=>x.payloadHash===oldBehavior.payloadHash),false);assert.equal(second.task.verification.systemEvidenceHashes.includes(oldBehavior.payloadHash),false);assert.ok(second.task.verification.missingAcceptance.includes('A1'));});
+test('Check 修改输入后清理失效 system hashes',t=>{const repo=gitRepo(t,{checks:[{name:'mutator',command:process.execPath,args:['-e',"require('node:fs').writeFileSync('target.ts','mutated')"],profiles:['standard','controlled'],covers:['typecheck'],sideEffect:'workspace',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'none'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.ts'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.verification.stopReason,'check-mutated-input');assert.equal(delivered.task.evidence.some(x=>x.covers.includes('behavior')),false);assert.deepEqual(delivered.task.verification.systemEvidenceHashes,[]);});
 
 test('隔离失败立即阻断且不执行检查、规格或 Review',t=>{
   const marker=path.join(tempDir(t),'check-ran');
@@ -109,19 +112,21 @@ test('同一工作树拒绝并行 Task，不同 worktree 允许准备',t=>{
 });
 
 test('detached worktree 成果必须提交，目标 HEAD 变化后重验才能验收',t=>{
-  const repo=gitRepo(t,{checks:[{name:'target-behavior',command:process.execPath,args:['-e',"const fs=require('node:fs');if(fs.readFileSync('target.txt','utf8').trim()!=='integrated')process.exit(1)"],profiles:['standard','controlled','release'],covers:['behavior','negative-path'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'explicit',acceptanceIds:['A1']}]}),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'worktree');
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'worktree');
   const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
   const added=spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'});
   assert.equal(added.status,0,added.stderr);
   const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
   fs.writeFileSync(path.join(worktree,'target.txt'),'integrated\n');
-  const uncommitted=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  fs.writeFileSync(path.join(worktree,'tests','acceptance.test.mjs'),"import assert from 'node:assert/strict';\nimport fs from 'node:fs';\nimport test from 'node:test';\ntest('A1 proof',()=>assert.equal(fs.readFileSync('target.txt','utf8').trim(),'integrated'));\n");
+  const taskCheckFile=taskCheck(t,worktree);
+  const uncommitted=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile});
   assert.equal(uncommitted.task.status,'verifying');
   assert.ok(uncommitted.task.deliveryDecision.reasons.includes('uncommitted-task-changes'));
-  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','agent result']]){
+  for(const args of [['add','target.txt','tests/acceptance.test.mjs'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','agent result']]){
     const result=spawnSync('git',['-C',worktree,...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);
   }
-  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile});
   assert.equal(delivered.task.status,'ready_to_integrate');
   assert.equal(delivered.task.integration.target,target);
   assert.ok(delivered.task.integration.resultCommit);
@@ -222,7 +227,7 @@ function writeRationale(t, task, changeSet, files) {
 
 test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
   const repo = preservationRepo(t, []);
-  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), "const test=require('node:test');test('目标功能正确',()=>{});\n");
+  fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), "const test=require('node:test');test('目标功能正确',()=>{});test('另一目标功能正确',()=>{});\n");
   for (const args of [['add', '.'], ['-c', 'user.email=t@e.c', '-c', 'user.name=T', 'commit', '-m', 'test']]) {
     const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
     if (result.status !== 0) throw new Error(result.stderr);
@@ -247,10 +252,16 @@ test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
     checks: [{
       name: 'target-A1',
       runner: 'node-test',
-      cases: [{
-        id: 'target-feature', acceptanceIds: ['A1'], covers: ['behavior'],
-        testFile: 'tests/target.test.js', testName: '目标功能正确',
-      }],
+      cases: [
+        {
+          id: 'target-feature', acceptanceIds: ['A1'], covers: ['behavior'],
+          testFile: 'tests/target.test.js', testName: '目标功能正确',
+        },
+        {
+          id: 'other-feature', acceptanceIds: ['A2'], covers: ['behavior'],
+          testFile: 'tests/target.test.js', testName: '另一目标功能正确',
+        },
+      ],
       estimatedCost: 'very-low',
       timeoutMs: 5000,
     }],
@@ -261,10 +272,10 @@ test('Task Check 精确归因 Acceptance 并生成 system Evidence', (t) => {
     rationaleFile: writeRationale(t, prepared.task, changeSet, ['target.txt']),
     taskCheckFile,
   });
-  assert.equal(delivered.task.status, 'verifying');
-  assert.ok(delivered.task.verification.missingAcceptance.includes('A2'));
+  assert.equal(delivered.task.status, 'waiting_acceptance');
+  assert.equal(delivered.task.verification.missingAcceptance.includes('A2'), false);
   assert.equal(delivered.task.verification.missingAcceptance.includes('A1'), false);
-  const checkEvidence = delivered.task.evidence.find((item) => item.source?.testFiles?.length);
+  const checkEvidence = delivered.task.evidence.find((item) => item.source?.testFiles?.length && item.acceptanceIds.includes('A1'));
   assert.ok(checkEvidence);
   assert.equal(checkEvidence.source.type, 'command');
   assert.equal(checkEvidence.source.actor, 'ai-system');
@@ -279,6 +290,7 @@ test('多个用例的 Acceptance 和 Cover 保持逐 case 归因', (t) => {
   fs.writeFileSync(path.join(repo, 'tests', 'target.test.js'), [
     "const test=require('node:test');",
     "test('主流程通过',()=>{});",
+    "test('主流程拒绝路径通过',()=>{});",
     "test('另一验收的拒绝路径通过',()=>{});",
     '',
   ].join('\n'));
@@ -305,17 +317,19 @@ test('多个用例的 Acceptance 和 Cover 保持逐 case 归因', (t) => {
       name: 'case-boundaries', runner: 'node-test',
       cases: [
         { id: 'a1-behavior', acceptanceIds: ['A1'], covers: ['behavior'], testFile: 'tests/target.test.js', testName: '主流程通过' },
+        { id: 'a1-negative', acceptanceIds: ['A1'], covers: ['negative-path'], testFile: 'tests/target.test.js', testName: '主流程拒绝路径通过' },
         { id: 'a2-negative', acceptanceIds: ['A2'], covers: ['negative-path'], testFile: 'tests/target.test.js', testName: '另一验收的拒绝路径通过' },
       ],
       estimatedCost: 'very-low', timeoutMs: 5000,
     }] }, 'case-boundaries.json'),
   });
-  assert.equal(delivered.task.status, 'verifying');
-  assert.ok(delivered.task.verification.missingAcceptance.includes('A1'));
+  assert.equal(delivered.task.status, 'waiting_acceptance');
+  assert.deepEqual(delivered.task.verification.missingAcceptance, []);
   const caseEvidence = delivered.task.evidence.filter((item) => item.source?.cases?.length);
-  assert.equal(caseEvidence.length, 2);
-  assert.equal(caseEvidence.some((item) => item.acceptanceIds.includes('A1') && item.covers.includes('negative-path')), false);
-  assert.deepEqual(caseEvidence.find((item) => item.acceptanceIds.includes('A1')).covers, ['behavior']);
+  assert.equal(caseEvidence.length, 3);
+  assert.deepEqual(caseEvidence.find((item) => item.acceptanceIds.includes('A1') && item.covers.includes('behavior')).covers, ['behavior']);
+  assert.deepEqual(caseEvidence.find((item) => item.acceptanceIds.includes('A1') && item.covers.includes('negative-path')).acceptanceIds, ['A1']);
+  assert.deepEqual(caseEvidence.find((item) => item.acceptanceIds.includes('A2')).acceptanceIds, ['A2']);
 });
 
 test('Task Check 零命中、skip 和 todo 均不能证明 Acceptance', (t) => {
@@ -354,7 +368,7 @@ test('Task Check 零命中、skip 和 todo 均不能证明 Acceptance', (t) => {
   }
 });
 
-test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
+test('重构遗漏 R4 时不执行部分证明并保持全部行为缺口可见', (t) => {
   const broad = [{
     name: 'broad-green',
     command: process.execPath,
@@ -401,8 +415,8 @@ test('重构遗漏 R4 时 verifying 且 missingBehaviorIds 含 R4', (t) => {
   assert.ok(delivered.task.verification.missingAcceptance.includes(ids.R4));
   assert.deepEqual(delivered.task.verification.preservationCoverage, {
     behaviorCount: 5,
-    verifiedBehaviorCount: 4,
-    missingBehaviorIds: ['R4'],
+    verifiedBehaviorCount: 0,
+    missingBehaviorIds: ['R1', 'R2', 'R3', 'R4', 'R5'],
     complete: false,
   });
 });
@@ -421,9 +435,19 @@ test('内部实现不同但行为全验证时 complete 且允许交付', (t) => 
   fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'export function rewrittenCancel() { return 0; }\n');
   const changeSet = computeChangeSet(prepared.task.baseline);
   const ids = Object.fromEntries(prepared.task.acceptance.map((item) => [item.referenceBehaviorId, item.id]));
+  const requestedId = prepared.task.acceptance.find((item) => !item.referenceBehaviorId).id;
   const taskCheckFile = writeJson(t, {
     schemaVersion: 2,
-    checks: ['R1', 'R2', 'R3', 'R4', 'R5'].map((id) => ({
+    checks: [{
+      name: 'requested-outcome',
+      runner: 'node-test',
+      cases: [{
+        id: 'requested-outcome', acceptanceIds: [requestedId], covers: ['behavior'],
+        testFile: 'tests/acceptance.test.mjs', testName: 'A1 proof',
+      }],
+      estimatedCost: 'very-low',
+      timeoutMs: 5000,
+    }, ...['R1', 'R2', 'R3', 'R4', 'R5'].map((id) => ({
       name: `bind-${id}`,
       runner: 'node-test',
       cases: [{
@@ -432,7 +456,7 @@ test('内部实现不同但行为全验证时 complete 且允许交付', (t) => 
       }],
       estimatedCost: 'very-low',
       timeoutMs: 5000,
-    })),
+    }))],
   }, 'task-checks.json');
   const delivered = deliverTask({
     stateRoot,

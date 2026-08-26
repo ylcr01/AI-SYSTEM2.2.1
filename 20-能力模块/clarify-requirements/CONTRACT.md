@@ -92,7 +92,7 @@ AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Contex
 ## 目标对齐
 
 - 区分四类事实：用户原话（`originalRequest`，原样保留）、项目事实、已确认决定（`confirmedDecisions`）、低风险假设（`assumptions`，可被事实推翻，不是硬约束）。
-- Goal 用一句话表达；Expected Outcome 必须可观察；Protected Behavior 是不得破坏的现有行为，准备时自动转为 Acceptance 并标记来源，没有 Evidence 的保护行为不能视为已保持。准备前在进度中输出 3～5 行简短目标卡，只固定“做成什么、不破坏什么、怎样算完成”，不展开详细实现步骤。
+- Goal 用一句话表达；Expected Outcome 必须可观察；普通 Protected Behavior 是实现与 Quality Pass 的约束，不自动扩展为独立 Acceptance。只有严格 Preservation 中已盘点的 Reference Behavior 自动成为 Acceptance 并要求逐项 Evidence。准备前在进度中输出 3～5 行简短目标卡，只固定“做成什么、不破坏什么、怎样算完成”，不展开详细实现步骤。
 - `direct`：目标清楚、Scope 局部、Acceptance 可从需求与项目事实直接形成、无项目事实冲突、无需用户实质决定；Controlled/Structural 任务禁止 direct；reasonCodes 可选，仅作内部诊断，不强求凑齐固定依据。使用 direct 前反向检查是否存在另一种同样合理但会产生不同用户结果的解释，存在则转为 confirmed。初始分类已经是 Structural，或是非纯文档的 Controlled 任务时，缺少 confirmed/delegated Goal Card 必须在 `准备` 阶段直接拒绝，不能先创建 Task、实施完成后再要求对齐；初始低风险任务只有在真实 ChangeSet 升级风险时才进入交付阶段重新对齐。
 - `confirmed`：用户确认了 Goal、最终效果或关键方案，必须记录 `decisionNote`；`delegated`：用户明确委托，必须记录 `delegatedTopics` 与边界，不能绕过现有 Scope、外部写入、数据迁移与不可逆动作门禁。
 - 执行中只有 Goal、Outcome、Acceptance、Scope、已确认决定或风险发生实质变化时才暂停重新对齐；普通实现变化、假设被低风险推翻不触发。
@@ -110,3 +110,4 @@ AI-SYSTEM 内核不做全库语义搜索，只提醒加载顺序与已有 Contex
 - 未经用户批准的 `allowedDifferences` 默认是缺陷，且存在 allowedDifferences 时不得使用 direct Alignment。
 - 不确定旧行为先查代码、调用方、测试、规格/Contract、Reference 与项目事实；只有无法解决且会改变业务结果时才问用户，多个问题尽量一次确认；行为等价范围内的内部实现优化无需询问。
 - 具体 Acceptance 用系统执行的 `--task-check-file` 明确证明；新 Task Check 的每个 case 必须绑定 Acceptance、Cover、测试文件和精确用例名，零命中、skip/todo 或无法解析的用例结果不能形成证明。每个 case 只能贡献自身声明的 `Acceptance × Cover`，不得把同一 Check 内其他 case 的 Acceptance 与 Cover 合并成交叉归因；宽泛全量 Check 不自动绑定多个 Acceptance。Schema 1 的退出码协议可继续用于不绑定 Acceptance 的全局检查，但显式绑定 Acceptance 的旧 Manifest 或 Evidence 必须失败关闭并重新交付。
+- 自动验证先要求 Task Check 完整覆盖当前缺失的 `Acceptance × Cover`；映射不完整时只返回缺口，不先执行通用命令。映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers；任一检查失败时整批不产生部分成功 Evidence，不为此新增检查类型。

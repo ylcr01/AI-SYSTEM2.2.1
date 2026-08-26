@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest, planChecks } from '../../40-脚本/lib/check-planner.mjs';
+import { loadChecks, loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest, planChecks } from '../../40-脚本/lib/check-planner.mjs';
 import { evaluateAdapterResult } from '../../40-脚本/lib/check-adapters.mjs';
 import { tempDir } from '../helpers.mjs';
 
@@ -185,6 +185,8 @@ test('Check Manifest 固化 Runner 与测试文件哈希并可重放', (t) => {
   const replay = checksFromManifest(manifest, { gitRoot: ctx.gitRoot });
   assert.equal(replay[0].adapterVersion, 2);
   assert.equal(replay[0].resultProtocol, 'node-test-cases-v1');
+  fs.writeFileSync(path.join(ctx.gitRoot, 'tests', 'target.test.js'), '// target\r\n');
+  assert.doesNotThrow(() => checksFromManifest(manifest, { gitRoot: ctx.gitRoot }));
   fs.writeFileSync(path.join(ctx.gitRoot, 'tests', 'target.test.js'), '// changed\n');
   assert.throws(() => checksFromManifest(manifest, { gitRoot: ctx.gitRoot }), /测试输入已变化/u);
 });
@@ -241,6 +243,79 @@ test('用例级规划不把不同 case 的 Acceptance 和 Cover 做笛卡尔积'
   assert.deepEqual(plan.missingAcceptance, ['A1']);
 });
 
+test('Acceptance 证明优先于低成本通用检查并消除同 Cover 重复', () => {
+  const acceptance = [{ id: 'A1', requiredCovers: ['behavior'] }];
+  const plan = planChecks({
+    profile: 'standard',
+    requiredCovers: ['behavior', 'typecheck'],
+    acceptance,
+    acceptanceCoverage: {},
+    checks: [
+      {
+        name: 'broad-behavior', command: 'node', args: [], profiles: ['standard'],
+        covers: ['behavior'], sideEffect: 'none', estimatedCost: 'very-low', acceptanceMode: 'none',
+      },
+      {
+        name: 'target-proof', command: 'node', args: [], profiles: ['standard'],
+        covers: ['behavior'], sideEffect: 'none', estimatedCost: 'high', acceptanceMode: 'explicit',
+        acceptanceIds: ['A1'], cases: [{ acceptanceIds: ['A1'], covers: ['behavior'] }],
+      },
+      {
+        name: 'typecheck', command: 'node', args: [], profiles: ['standard'],
+        covers: ['typecheck'], sideEffect: 'none', estimatedCost: 'low', acceptanceMode: 'none',
+      },
+    ],
+  });
+  assert.deepEqual(plan.checks.map((item) => item.name), ['target-proof', 'typecheck']);
+  assert.deepEqual(plan.missingAcceptanceCovers, []);
+  assert.deepEqual(plan.missingCovers, []);
+});
+
+test('证明优先沿用现有 Check Manifest Schema 且不引入检查类型', (t) => {
+  const ctx = context(t);
+  const checks = loadTaskChecks(writeTaskChecks(t, [VALID_CHECK]), ctx);
+  const plan = planChecks({
+    profile: 'standard', requiredCovers: ['behavior'], acceptance: ctx.acceptance,
+    acceptanceCoverage: {}, checks,
+  });
+  const manifest = createCheckManifest(plan, { gitRoot: ctx.gitRoot });
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.checks.length, 1);
+  assert.equal('purpose' in manifest.checks[0], false);
+  assert.deepEqual(plan.checks.map((item) => item.name), [VALID_CHECK.name]);
+});
+
+test('Acceptance 映射不完整时不规划通用检查', () => {
+  const acceptance = [
+    { id: 'A1', requiredCovers: ['behavior'] },
+    { id: 'A2', requiredCovers: ['behavior'] },
+  ];
+  const plan = planChecks({
+    profile: 'standard',
+    requiredCovers: ['behavior', 'typecheck'],
+    acceptance,
+    acceptanceCoverage: {},
+    checks: [
+      {
+        name: 'a1-proof', command: 'node', args: [], profiles: ['standard'],
+        covers: ['behavior'], sideEffect: 'none', estimatedCost: 'low', acceptanceMode: 'explicit',
+        acceptanceIds: ['A1'], cases: [{ acceptanceIds: ['A1'], covers: ['behavior'] }],
+      },
+      {
+        name: 'broad-behavior', command: 'node', args: [], profiles: ['standard'],
+        covers: ['behavior'], sideEffect: 'none', estimatedCost: 'very-low', acceptanceMode: 'none',
+      },
+      {
+        name: 'typecheck', command: 'node', args: [], profiles: ['standard'],
+        covers: ['typecheck'], sideEffect: 'none', estimatedCost: 'very-low', acceptanceMode: 'none',
+      },
+    ],
+  });
+  assert.deepEqual(plan.checks.map((item) => item.name), ['a1-proof']);
+  assert.deepEqual(plan.missingAcceptanceCovers, [{ acceptanceId: 'A2', cover: 'behavior' }]);
+  assert.deepEqual(plan.missingCovers, ['typecheck']);
+});
+
 test('node-test 用例事件无法解析时失败关闭', () => {
   const result = evaluateAdapterResult({
     runner: 'node-test',
@@ -253,4 +328,30 @@ test('node-test 用例事件无法解析时失败关闭', () => {
   assert.match(result.error, /无法解析/u);
   assert.equal(result.caseSummary.malformedEvents, 1);
   assert.equal(result.caseResults[0].status, 'failed');
+});
+
+test('项目通用检查不得绑定任务 Acceptance', (t) => {
+  const root = tempDir(t);
+  fs.mkdirSync(path.join(root, '.ai'), { recursive: true });
+  const base = {
+    name: 'project-behavior',
+    command: process.execPath,
+    args: ['-e', 'process.exit(0)'],
+    profiles: ['standard'],
+    covers: ['behavior'],
+    sideEffect: 'none',
+  };
+  fs.writeFileSync(path.join(root, '.ai', 'checks.json'), JSON.stringify({
+    schemaVersion: 4,
+    checks: [{ ...base, acceptanceMode: 'explicit', acceptanceIds: ['A1'] }],
+  }));
+  assert.throws(() => loadChecks(root), /通用检查，不能绑定任务 Acceptance/u);
+
+  fs.writeFileSync(path.join(root, '.ai', 'checks.json'), JSON.stringify({
+    schemaVersion: 4,
+    checks: [{ ...base, acceptanceMode: 'matching-covers' }],
+  }));
+  const [check] = loadChecks(root);
+  assert.equal(check.acceptanceMode, 'none');
+  assert.deepEqual(check.acceptanceIds, []);
 });

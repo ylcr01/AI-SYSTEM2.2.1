@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { prepareTask, deliverTask } from '../../40-脚本/lib/task-runner.mjs';
-import { gitRepo, tempDir } from '../helpers.mjs';
+import { gitRepo, taskCheck, tempDir } from '../helpers.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -16,7 +16,7 @@ test('无规格映射且 specImpact=none 时详细规格与 Review 退出主路�
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', acceptance: ['行为正确'], scope: '.', specImpact: 'none' });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
   assert.equal(delivered.task.specTraceability, null);
   assert.equal(delivered.task.specConsistency, null);
@@ -44,7 +44,7 @@ test('交付自动保存 changed-file 到规格 ID 的追踪结果', (t) => {
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复订单取消判断', acceptance: ['取消行为正确'], scope: '.' });
   fs.writeFileSync(path.join(repo, 'src', 'order', 'cancel.js'), 'export const allowed = true;\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
   assert.deepEqual(delivered.task.specTraceability.affectedSpecificationIds, ['BR-ORD-001']);
   assert.ok(delivered.task.specConsistency.issues.some((item) => item.id === 'SPEC_IMPACT_UNDECLARED'));
@@ -108,7 +108,7 @@ sourceTaskId: ${prepared.task.taskId}
 ---
 # 异步处理
 `);
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
   assert.equal(delivered.task.specConsistency.ok, true);
 });

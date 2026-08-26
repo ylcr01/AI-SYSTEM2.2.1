@@ -5,7 +5,7 @@ import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { prepareTask, deliverTask } from '../../40-脚本/lib/task-runner.mjs';
 import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';
-import { gitRepo, tempDir } from '../helpers.mjs';
+import { gitRepo, taskCheck, tempDir } from '../helpers.mjs';
 
 const DIRECT_ALIGNMENT = {
   originalRequest: '修复普通功能',
@@ -75,6 +75,25 @@ function writeRationale(t, task, changeSet, items) {
   return writeJson(t, { schemaVersion: 1, taskId: task.taskId, changeFingerprint: changeSet.fingerprint, items }, 'rationale.json');
 }
 
+test('普通 Protected Behavior 不扩展验收门禁，数组验收项保持原子性', (t) => {
+  const repo = gitRepo(t);
+  const stateRoot = tempDir(t);
+  const alignment = {
+    ...DIRECT_ALIGNMENT,
+    acceptance: ['主流程完成；失败边界清晰'],
+    protectedBehaviors: ['旧接口保持不变'],
+  };
+  const prepared = prepareTask({
+    cwd: repo,
+    stateRoot,
+    intent: alignment.originalRequest,
+    alignmentFile: writeJson(t, alignment, 'alignment.json'),
+    scope: '.',
+  });
+  assert.deepEqual(prepared.task.acceptance.map((item) => item.description), alignment.acceptance);
+  assert.deepEqual(prepared.task.goal.protectedBehaviors, alignment.protectedBehaviors);
+});
+
 test('对齐 Standard 任务带全量映射交付进入等待验收', (t) => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
@@ -84,6 +103,7 @@ test('对齐 Standard 任务带全量映射交付进入等待验收', (t) => {
   const delivered = deliverTask({
     stateRoot,
     taskId: prepared.task.taskId,
+    taskCheckFile: taskCheck(t, repo),
     rationaleFile: writeRationale(t, prepared.task, changeSet, [{ files: ['target.txt'], supports: ['A1'], reason: '实现功能' }]),
   });
   assert.equal(delivered.task.status, 'waiting_acceptance');
@@ -95,7 +115,7 @@ test('对齐 Standard 任务缺少 rationale 不再被阻止交付', (t) => {
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', alignmentFile: writeJson(t, DIRECT_ALIGNMENT, 'alignment.json'), scope: '.' });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
 });
 
@@ -108,6 +128,7 @@ test('对齐 Standard 任务的可选无效 rationale 不阻止交付', (t) => {
   const delivered = deliverTask({
     stateRoot,
     taskId: prepared.task.taskId,
+    taskCheckFile: taskCheck(t, repo),
     rationaleFile: writeRationale(t, prepared.task, changeSet, [{ files: ['other.txt'], supports: ['A1'], reason: '错误映射' }]),
   });
   assert.equal(delivered.task.status, 'waiting_acceptance');
@@ -220,6 +241,7 @@ for (const mode of ['confirmed', 'delegated']) {
     const delivered = deliverTask({
       stateRoot,
       taskId: prepared.task.taskId,
+      taskCheckFile: taskCheck(t, repo, { covers: ['behavior', 'negative-path'] }),
       rationaleFile: writeRationale(t, prepared.task, changeSet, [{ files: ['src/auth/check.js'], supports: ['A1'], reason: '实现权限校验' }]),
     });
     assert.equal(delivered.task.classification.controlMode, 'controlled');
@@ -482,7 +504,7 @@ test('无对齐文件的旧 Standard 交付不受 rationale 门禁影响', (t) =
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', acceptance: ['功能正确'], scope: '.' });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
 });
 

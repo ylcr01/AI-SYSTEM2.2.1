@@ -6,7 +6,7 @@ import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { prepareTask, deliverTask, realignTask, acceptTask } from '../../40-脚本/lib/task-runner.mjs';
 import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';
-import { gitRepo, tempDir } from '../helpers.mjs';
+import { gitRepo, taskCheck, tempDir } from '../helpers.mjs';
 
 const DIRECT_ALIGNMENT = {
   originalRequest: '修复普通功能',
@@ -118,7 +118,7 @@ function deliveredDirectTask(t) {
     changeFingerprint: changeSet.fingerprint,
     items: [{ files: ['target.txt'], supports: ['A1'], reason: '实现功能' }],
   }, 'rationale.json');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, rationaleFile });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, rationaleFile, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
   return { repo, stateRoot, task: delivered.task };
 }
@@ -189,7 +189,7 @@ test('已结束任务不能重新对齐', (t) => {
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', acceptance: ['功能正确'], scope: '.' });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   const accepted = acceptTask({ stateRoot, taskId: prepared.task.taskId, decision: '通过' });
   assert.equal(accepted.task.status, 'accepted');
   assert.throws(() => realignTask({
@@ -321,6 +321,6 @@ test('无对齐文件的旧任务仍可交付，不受重新对齐影响', (t) =
   const stateRoot = tempDir(t);
   const prepared = prepareTask({ cwd: repo, stateRoot, intent: '修复普通功能', acceptance: ['功能正确'], scope: '.' });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'changed\n');
-  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId });
+  const delivered = deliverTask({ stateRoot, taskId: prepared.task.taskId, taskCheckFile: taskCheck(t, repo) });
   assert.equal(delivered.task.status, 'waiting_acceptance');
 });

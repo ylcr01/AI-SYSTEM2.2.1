@@ -72,8 +72,12 @@ export function inferAcceptanceCovers(description, classification) {
 }
 
 function acceptanceItems(value, classification) {
-  const values = Array.isArray(value) ? value : [value].filter(Boolean);
-  const items = values.flatMap((item) => typeof item === 'string' ? String(item).split(/[;；\n]/u) : [item]).filter(Boolean);
+  const arrayInput = Array.isArray(value);
+  const values = arrayInput ? value : [value].filter(Boolean);
+  const items = (arrayInput
+    ? values
+    : values.flatMap((item) => typeof item === 'string' ? String(item).split(/[;；\n]/u) : [item]))
+    .filter(Boolean);
   const normalized = items.length ? items : ['完成用户目标并提供可信证据'];
   return normalized.map((item, index) => typeof item === 'string'
     ? { id: `A${index + 1}`, description: item.trim(), requiredCovers: inferAcceptanceCovers(item, classification), requiredCoversInferred: true, status: 'open' }
@@ -279,7 +283,6 @@ export function prepareTask(options = {}) {
   const acceptance = providedAlignment
     ? acceptanceItems([
       ...providedAlignment.acceptance.map((description) => ({ description, source: 'requested-outcome' })),
-      ...providedAlignment.protectedBehaviors.map((description) => ({ description, source: 'protected-behavior' })),
       ...referenceItems,
     ], initial)
     : acceptanceItems(options.acceptance, initial);
@@ -460,43 +463,57 @@ export function deliverTask(options = {}) {
       acceptanceCoverage: summary.acceptanceCoverage,
       checks
     });
-    const failureFingerprint = stableFailureFingerprint(changeSet.fingerprint, plan.fingerprint, inputCycle);
-    checkManifest = createCheckManifest(plan, { gitRoot: changeSet.gitRoot });
-    const rerun = canRerunVerification({
-      previousFailure: lastFailure === failureFingerprint,
-      diagnosticRetry: options.diagnosticRetry === true,
-      diagnosticRetryUsed
-    });
-    if (!rerun.allowed) {
-      throw new Error(rerun.reason === 'diagnostic-retry-already-used'
-        ? '相同输入已经使用过一次诊断性重试'
-        : '验证输入没有变化，禁止机械重复失败检查');
-    }
-    checkExecution = executeCheckPlan(plan, {
-      cwd: changeSet.gitRoot,
-      budget: task.verification.budget,
-      inputCycle
-    });
-    const after = computeChangeSet(task.baseline);
-    if (after.fingerprint !== before.fingerprint) {
-      changeSet = after;
-      checkExecution = { ...checkExecution, ok: false, status: 'unavailable', stopReason: 'check-mutated-input', failure: '自动检查改变了任务输入，原 Evidence 已失效' };
-      evidence = [];
-      systemCreatedHashes.clear();
-    } else if (options.diagnosticRetry === true && checkExecution.status === 'passed') {
-      checkExecution = { ...checkExecution, ok: false, status: 'unavailable', stopReason: 'diagnostic-only', failure: '诊断性重试通过不能直接成为稳定 Evidence' };
-      diagnosticRetryUsed = true;
-      lastFailure = failureFingerprint;
+    if (plan.missingAcceptanceCovers.length) {
+      checkManifest = null;
+      lastFailure = null;
+      checkExecution = {
+        ok: false,
+        status: 'unavailable',
+        stopReason: 'missing-acceptance-checks',
+        results: [],
+        budget: task.verification.budget,
+      };
     } else {
-      const checkEvidence = checkExecution.results
-        .filter((item) => item.status === 0 && !item.error)
-        .flatMap((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance));
-      for (const item of checkEvidence) systemCreatedHashes.add(item.payloadHash);
-      evidence.push(...checkEvidence);
-      if (!checkExecution.ok) {
-        lastFailure = checkExecution.stopReason === 'budget' ? null : failureFingerprint;
-        if (options.diagnosticRetry === true) diagnosticRetryUsed = true;
-      } else lastFailure = null;
+      const failureFingerprint = stableFailureFingerprint(changeSet.fingerprint, plan.fingerprint, inputCycle);
+      checkManifest = createCheckManifest(plan, { gitRoot: changeSet.gitRoot });
+      const rerun = canRerunVerification({
+        previousFailure: lastFailure === failureFingerprint,
+        diagnosticRetry: options.diagnosticRetry === true,
+        diagnosticRetryUsed
+      });
+      if (!rerun.allowed) {
+        throw new Error(rerun.reason === 'diagnostic-retry-already-used'
+          ? '相同输入已经使用过一次诊断性重试'
+          : '验证输入没有变化，禁止机械重复失败检查');
+      }
+      checkExecution = executeCheckPlan(plan, {
+        cwd: changeSet.gitRoot,
+        budget: task.verification.budget,
+        inputCycle
+      });
+      const after = computeChangeSet(task.baseline);
+      if (after.fingerprint !== before.fingerprint) {
+        changeSet = after;
+        checkExecution = { ...checkExecution, ok: false, status: 'unavailable', stopReason: 'check-mutated-input', failure: '自动检查改变了任务输入，原 Evidence 已失效' };
+        evidence = [];
+        systemCreatedHashes.clear();
+      } else if (options.diagnosticRetry === true && checkExecution.status === 'passed') {
+        checkExecution = { ...checkExecution, ok: false, status: 'unavailable', stopReason: 'diagnostic-only', failure: '诊断性重试通过不能直接成为稳定 Evidence' };
+        diagnosticRetryUsed = true;
+        lastFailure = failureFingerprint;
+      } else {
+        const checkEvidence = checkExecution.ok
+          ? checkExecution.results
+            .filter((item) => item.status === 0 && !item.error)
+            .flatMap((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance))
+          : [];
+        for (const item of checkEvidence) systemCreatedHashes.add(item.payloadHash);
+        evidence.push(...checkEvidence);
+        if (!checkExecution.ok) {
+          lastFailure = checkExecution.stopReason === 'budget' ? null : failureFingerprint;
+          if (options.diagnosticRetry === true) diagnosticRetryUsed = true;
+        } else lastFailure = null;
+      }
     }
   }
   systemEvidenceHashes = computeSystemEvidenceHashes();
@@ -592,7 +609,9 @@ export function deliverTask(options = {}) {
   let decision;
   if (checkExecution?.stopReason === 'budget') decision = { decision: 'saved', reasons: ['budget'] };
   else if (checkExecution?.stopReason === 'check-mutated-input') decision = { decision: 'verifying', reasons: ['check-mutated-input'] };
-  else if (checkExecution && !checkExecution.ok) decision = { decision: 'needs_rework', reasons: [checkExecution.stopReason ?? checkExecution.status] };
+  else if (checkExecution && !checkExecution.ok && checkExecution.stopReason !== 'missing-acceptance-checks') {
+    decision = { decision: 'needs_rework', reasons: [checkExecution.stopReason ?? checkExecution.status] };
+  }
   else if (specState.specConsistency && !specState.specConsistency.ok) decision = { decision: 'needs_rework', reasons: ['spec-consistency', ...specState.specConsistency.blockingIssues.map((item) => item.id)] };
   else {
     decision = evaluateDeliveryEligibility({
@@ -643,6 +662,14 @@ export function deliverTask(options = {}) {
   }
   const status = decision.decision;
   const firstFailure = firstFailureDiagnostic(checkExecution);
+  const decisionGateReason = [
+    'alignment-risk-escalation',
+    'alignment-required',
+    'alignment-fingerprint-mismatch',
+    'spec-consistency',
+    'change-rationale-unmapped',
+    'change-rationale-required',
+  ].find((reason) => decision.reasons.includes(reason));
   const pendingRef = status === 'ready_to_integrate'
     ? createPendingIntegrationRef(changeSet.gitRoot, task.taskId, integrationCandidate.resultCommit)
     : task.integration?.pendingRef ?? null;
@@ -697,7 +724,9 @@ export function deliverTask(options = {}) {
         untrustedTechnicalEvidence: summary.untrustedTechnicalEvidence ?? [],
         preservationCoverage,
         firstFailure,
-        stopReason: checkExecution?.stopReason
+        stopReason: checkExecution?.stopReason === 'missing-acceptance-checks' && decisionGateReason
+          ? decisionGateReason
+          : checkExecution?.stopReason
           ?? (alignmentEscalation ? 'alignment-risk-escalation'
             : alignmentMissing ? 'alignment-required'
             : !fingerprintCheck.ok ? 'alignment-fingerprint-mismatch'

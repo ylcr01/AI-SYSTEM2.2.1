@@ -16,6 +16,13 @@ function validateCheck(check, source) {
   if (!check || typeof check.name !== 'string' || typeof check.command !== 'string' || !Array.isArray(check.args)) {
     throw new Error(`${source} 包含无效检查`);
   }
+  if (check.acceptanceIds !== undefined && !Array.isArray(check.acceptanceIds)) {
+    throw new Error(`${check.name} 的 acceptanceIds 必须是数组`);
+  }
+  const acceptanceIds = [...new Set(check.acceptanceIds ?? [])];
+  if (check.acceptanceMode === 'explicit' || acceptanceIds.length) {
+    throw new Error(`${check.name} 是${source}通用检查，不能绑定任务 Acceptance；请使用 task-check-file`);
+  }
   const sideEffect = check.sideEffect ?? 'workspace';
   if (!['none', 'workspace', 'external'].includes(sideEffect)) throw new Error(`${check.name} 副作用声明无效`);
   return {
@@ -23,9 +30,9 @@ function validateCheck(check, source) {
     covers: ['behavior'],
     estimatedCost: 'medium',
     timeoutMs: 600000,
-    acceptanceMode: 'none',
     ...check,
-    acceptanceIds: [...new Set(check.acceptanceIds ?? [])],
+    acceptanceMode: 'none',
+    acceptanceIds: [],
     sideEffect,
     source
   };
@@ -166,9 +173,19 @@ export function loadTaskChecks(file, options = {}) {
   return value.checks.map((check) => validateTaskCheck(check, { ...options, seen }));
 }
 
-function fileHash(gitRoot, file) {
+function fileHashes(gitRoot, file) {
   const absolute = path.resolve(gitRoot, file);
-  return crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex');
+  const content = fs.readFileSync(absolute);
+  const raw = crypto.createHash('sha256').update(content).digest('hex');
+  const text = content.toString('utf8');
+  const normalized = !text.includes('\u0000') && Buffer.from(text, 'utf8').equals(content)
+    ? crypto.createHash('sha256').update(text.replaceAll('\r\n', '\n')).digest('hex')
+    : null;
+  return { raw, normalized };
+}
+
+function storedFileHashMatches(stored, current) {
+  return stored === current.raw || (current.normalized && stored === current.normalized);
 }
 
 export function createCheckManifest(plan, options = {}) {
@@ -187,7 +204,10 @@ export function createCheckManifest(plan, options = {}) {
     acceptanceIds: check.acceptanceIds ?? [],
     cases: check.cases ?? [],
     testFiles: check.testFiles ?? [],
-    testFileHashes: Object.fromEntries((check.testFiles ?? []).map((file) => [file, fileHash(gitRoot, file)])),
+    testFileHashes: Object.fromEntries((check.testFiles ?? []).map((file) => {
+      const hashes = fileHashes(gitRoot, file);
+      return [file, hashes.normalized ?? hashes.raw];
+    })),
     sideEffect: check.sideEffect ?? 'workspace',
     estimatedCost: check.estimatedCost ?? 'medium',
     timeoutMs: check.timeoutMs ?? 600000,
@@ -208,7 +228,11 @@ export function checksFromManifest(manifest, options = {}) {
   const gitRoot = path.resolve(options.gitRoot ?? options.cwd ?? '.');
   return manifest.checks.map((stored) => {
     for (const file of stored.testFiles ?? []) {
-      if (!fs.existsSync(path.resolve(gitRoot, file)) || fileHash(gitRoot, file) !== stored.testFileHashes?.[file]) {
+      const absolute = path.resolve(gitRoot, file);
+      const current = fs.existsSync(absolute) && fs.statSync(absolute).isFile()
+        ? fileHashes(gitRoot, file)
+        : null;
+      if (!current || !storedFileHashMatches(stored.testFileHashes?.[file], current)) {
         throw new Error(`Check Manifest 测试输入已变化: ${file}`);
       }
     }
@@ -294,15 +318,24 @@ export function planChecks(input = {}) {
   const candidates = (input.checks ?? loadChecks(input.cwd, input))
     .filter((check) => (check.profiles ?? []).includes(profile))
     .filter((check) => check.sideEffect !== 'external')
-    .sort((left, right) => (COST[left.estimatedCost] ?? 2) - (COST[right.estimatedCost] ?? 2));
+    .sort((left, right) => {
+      const proofOrder = Number(acceptanceCoverPairsForCheck(right, acceptance).size > 0)
+        - Number(acceptanceCoverPairsForCheck(left, acceptance).size > 0);
+      return proofOrder || (COST[left.estimatedCost] ?? 2) - (COST[right.estimatedCost] ?? 2);
+    });
 
   const selected = [];
-  for (const check of candidates) {
-    const contribution = checkContributions(check, acceptance, required, covered, pairRequired, pairCovered);
-    if (!contribution.global.length && !contribution.pairs.length) continue;
-    selected.push(check);
-    for (const cover of check.covers ?? []) covered.add(cover);
-    for (const item of contribution.pairs) pairCovered.add(`${item.acceptanceId}\u0000${item.cover}`);
+  for (const proofPass of [true, false]) {
+    if (!proofPass && [...pairRequired].some(([key]) => !pairCovered.has(key))) break;
+    for (const check of candidates) {
+      const provesAcceptance = acceptanceCoverPairsForCheck(check, acceptance).size > 0;
+      if (provesAcceptance !== proofPass) continue;
+      const contribution = checkContributions(check, acceptance, required, covered, pairRequired, pairCovered);
+      if (!contribution.global.length && !contribution.pairs.length) continue;
+      selected.push(check);
+      for (const cover of check.covers ?? []) covered.add(cover);
+      for (const item of contribution.pairs) pairCovered.add(`${item.acceptanceId}\u0000${item.cover}`);
+    }
   }
 
   const missingCovers = [...required].filter((cover) => !covered.has(cover));

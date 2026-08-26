@@ -12,9 +12,10 @@ export const DIRECT_REASON_CODES = [
 ];
 
 function splitValues(value) {
-  const values = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+  const arrayInput = Array.isArray(value);
+  const values = arrayInput ? value : value === undefined || value === null ? [] : [value];
   return values
-    .flatMap((item) => typeof item === 'string' ? item.split(/[\n;；]/u) : [])
+    .flatMap((item) => typeof item === 'string' ? (arrayInput ? [item] : item.split(/[\n;；]/u)) : [])
     .map((item) => String(item).trim())
     .filter(Boolean);
 }

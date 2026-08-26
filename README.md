@@ -39,6 +39,7 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 
 - Acceptance 只有被定点检查显式绑定时才算被证明；通用检查和外部导入结果不能自动冒充验收证据。
 - 新 Task Check 使用用例级 Schema 2，只接受受控 Runner；每个 case 显式绑定 Acceptance、Cover、测试文件和精确用例名。Runner 必须返回真实命中、通过、失败、skip/todo 结果，Check Manifest 同时绑定用例声明、Runner 协议与输入哈希。
+- 默认验证先完整映射 Acceptance，映射缺失时不执行通用命令；映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，同一批检查失败时不保留部分成功 Evidence。
 - Task 写作态、待验收和历史记录分层保存；默认回执只展示四种用户状态，最终验收只能由用户产生。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
 - 并行任务独占 Worktree；集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。

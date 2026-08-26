@@ -61,7 +61,7 @@ test('计划按 Acceptance ID 与 Cover 选择显式绑定检查', () => {
   assert.deepEqual(plan.missingAcceptanceCovers, []);
 });
 
-test('宽泛检查仍补充全局 Cover 但不绑定多条验收并输出业务缺口', () => {
+test('宽泛检查不能闭合 Acceptance 时不执行并输出业务缺口', () => {
   const plan = planChecks({
     profile: 'standard',
     requiredCovers: ['behavior'],
@@ -72,8 +72,8 @@ test('宽泛检查仍补充全局 Cover 但不绑定多条验收并输出业务�
     acceptanceCoverage: {},
     checks: [{ name: 'broad', command: 'node', args: [], profiles: ['standard'], covers: ['behavior'], sideEffect: 'none', estimatedCost: 'low', acceptanceMode: 'matching-covers' }]
   });
-  assert.deepEqual(plan.checks.map((item) => item.name), ['broad']);
-  assert.deepEqual(plan.missingCovers, []);
+  assert.deepEqual(plan.checks.map((item) => item.name), []);
+  assert.deepEqual(plan.missingCovers, ['behavior']);
   assert.deepEqual(plan.missingAcceptance, ['A1', 'A2']);
   assert.deepEqual(plan.gaps, [
     { acceptanceId: 'A1', description: '退款恢复库存', missingCovers: ['behavior'] },
