@@ -8,7 +8,7 @@
 - **只读工程分析**：先运行 `build-context.mjs --cwd "<项目路径>" --intent "<目标>"`，只读轻量结果、目标代码和直接测试；身份、路由或依赖诊断才追加 `--full`。
 - **写入路由**：编辑前进入专属 Worktree。managed 未落地或识别失败时执行 `git worktree add --detach <路径> <起点>`，不得等待、报告主区占用或降级 Local。Local 仅供只读与串行集成。
 - **轻量直达**：`continuity=ephemeral` 的 Quick/普通 Standard 在 Worktree 中实施最小 Diff 和定点检查，不创建 Task；如实报告失败、跳过和未验证项，不声称 Evidence 或验收状态。
-- **正式 Task**：`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务在 Worktree 中 `准备 --integration-target`，再提交、`交付`并立即`集成`。隔离重验通过才快进并清理；目标脏、冲突、验证失败或高风险时保持目标不变。暂停/继续用`保存`/`恢复`；仅有效 `waiting_acceptance` 可称“本轮已交付”，不得伪造 `accepted`。
+- **仓库写任务**：`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务在 Worktree 中 `准备 --integration-target`，再提交、`交付`并立即`集成`。隔离重验通过才快进并清理；目标脏、冲突、验证失败或高风险时保持目标不变。暂停/继续用`保存`/`恢复`；仅有效 `waiting_acceptance` 可称“本轮已交付”，不得伪造 `accepted`。
 - **对话后续**：仅有精确 `continuation.taskId + deliveryId` 时，下一消息前调用一次 `后续`：追问 `related-question`、缺陷 `defect-return`、新增目标 `scope-extension`、非正式肯定 `positive-acknowledgement`、独立话题 `topic-advance`；不确定或含追问用 `related-question`。追问只记首次；无 continuation 不猜 Task，不存正文、不跑检查、不自动建 Task。
 - **写任务对齐**：准备前先读项目事实、目标代码与相关测试并输出简短目标卡；Quick/局部明确任务可 direct，Controlled/Structural 或不同业务结果的实质方案必须先确认或获得明确委托；根因未知先只读探索。对齐、重对齐与交付映射规则见 `20-能力模块/clarify-requirements/CONTRACT.md`。
 - **外部写入或高风险动作**：Push、发布、部署、迁移、远程删除、生产数据修改等必须另获用户明确授权；安全、认证、隐私、迁移和不可逆动作还要覆盖拒绝路径、失败停止条件和可执行回滚。
