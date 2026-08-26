@@ -28,10 +28,10 @@ export function implementationQualityBaseline(artifactKinds = []) {
     id: 'implementation-quality-baseline',
     rules: [
       { id: 'goal-fit', text: '实现必须直接服务 Goal / Acceptance，不解决无关邻近问题' },
-      { id: 'simplicity', text: '同等正确方案优先最低必要复杂度，避免重复逻辑和无职责抽象' },
+      { id: 'simplicity', text: '同等正确方案优先最低必要复杂度；稳定功能查漏补缺优先修改、替换或删除现有权威实现，避免重复逻辑、平行业务规则和无职责抽象' },
       { id: 'structure-naming', text: '职责、数据流和命名必须清晰，并遵循项目已有术语与结构' },
       { id: 'architecture-fit', text: '优先复用现有模块边界和依赖方向，不按模型偏好重塑项目' },
-      { id: 'scope-behavior', text: 'ChangeSet 保持最小充分，并保护未请求改变的已有行为' },
+      { id: 'scope-behavior', text: 'ChangeSet 保持最小充分并保护未请求改变的已有行为；核心运行代码明显净增或旧路径继续保留时，先判断是否缺少基础模型并重新规划' },
       { id: 'boundary', text: '只处理与当前目标相关的必要失败、权限、并发、兼容等边界' },
     ],
     conditionalRules: [
