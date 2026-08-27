@@ -32,4 +32,4 @@
 
 ## 按需规则
 
-仅规格变化、Decision 或用户要求整理经验时读取 `70-文档/25-按需任务规则.md`。行为保持触发见 `20-能力模块/clarify-requirements/CONTRACT.md`；普通优化/重构不自动进入严格 Preservation。
+规格/Decision/经验读 `70-文档/25-按需任务规则.md`；中央机制增删改读 `70-文档/10-架构与原则.md`、`70-文档/55-系统演进准入.md`，仅净正向进入默认路径；其余不加载。行为保持见 `20-能力模块/clarify-requirements/CONTRACT.md`，普通优化/重构不自动严格保持。
