@@ -1,7 +1,6 @@
 ---
 id: DEC-WORKTREE-DEFAULT-002
-status: superseded
-supersededBy: DEC-RISK-PROPORTIONAL-WRITE-ROUTING-003
+status: accepted
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260825071747201-032e7b26

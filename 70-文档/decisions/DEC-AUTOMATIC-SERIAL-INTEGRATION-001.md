@@ -1,7 +1,6 @@
 ---
 id: DEC-AUTOMATIC-SERIAL-INTEGRATION-001
-status: superseded
-supersededBy: DEC-RISK-PROPORTIONAL-WRITE-ROUTING-003
+status: accepted
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260825014558132-3eab3e38
