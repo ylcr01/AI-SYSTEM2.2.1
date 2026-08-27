@@ -95,3 +95,11 @@ test('系统入口固化风险分级写入路由与最小验证分层', () => {
   assert.match(agents, /全量回归须独立 Task/u);
   assert.match(agents, /package\.json.*不按路径升级/u);
 });
+
+test('Controlled 普通交付不自动运行完整 Integration 历史组', () => {
+  const config = JSON.parse(fs.readFileSync(path.join(ROOT, '.ai', 'checks.json'), 'utf8'));
+  const integration = config.checks.find((item) => item.name === 'integration-tests');
+  const staticIntegrity = config.checks.find((item) => item.name === 'static-integrity');
+  assert.deepEqual(integration.profiles, ['release']);
+  assert.equal(staticIntegrity.profiles.includes('controlled'), true);
+});
