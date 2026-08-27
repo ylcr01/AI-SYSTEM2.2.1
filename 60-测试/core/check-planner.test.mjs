@@ -9,14 +9,14 @@ import { tempDir } from '../helpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-test('项目默认计划不为 Standard 选择宽泛测试，Controlled 只选择一个行为分组',()=>{
+test('项目默认计划不为 Standard 或 Controlled 选择宽泛测试，release 保留完整分组',()=>{
   const checks=loadChecks(ROOT);
   const standard=planChecks({cwd:ROOT,profile:'standard',requiredCovers:['behavior'],checks});
   assert.deepEqual(standard.checks.map(item=>item.name),[]);
   assert.deepEqual(standard.missingCovers,['behavior']);
   const controlled=planChecks({cwd:ROOT,profile:'controlled',requiredCovers:['behavior','negative-path'],checks});
-  assert.deepEqual(controlled.checks.map(item=>item.name),['integration-tests']);
-  assert.deepEqual(controlled.missingCovers,[]);
+  assert.deepEqual(controlled.checks.map(item=>item.name),[]);
+  assert.deepEqual(controlled.missingCovers,['behavior','negative-path']);
   const release=planChecks({cwd:ROOT,profile:'release',requiredCovers:['unit','integration'],checks});
   assert.deepEqual(release.checks.map(item=>item.name),['core-tests','integration-tests']);
   assert.deepEqual(release.missingCovers,[]);
