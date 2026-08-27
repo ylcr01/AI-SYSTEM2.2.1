@@ -5,6 +5,7 @@ import { buildContext } from './context-builder.mjs';
 import {
   assertTaskWorktreeBaseline,
   captureBaseline,
+  inspectWorktreeRouteState,
   computeChangeSet,
   inspectPackageManifestChanges,
   normalizeScopes,
@@ -263,8 +264,28 @@ export function preflightWorkspace(options = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const gitRoot = findGitRoot(cwd);
   if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');
-  const result = inspectWorkspaceAvailability({ stateRoot:options.stateRoot, gitRoot, taskId:options.taskId });
-  if (!result.available) throw new Error(result.diagnostic);
+  const availability = inspectWorkspaceAvailability({ stateRoot:options.stateRoot, gitRoot, taskId:options.taskId });
+  const workspace = inspectWorktreeRouteState(gitRoot);
+  const reasonCodes = [];
+  if (!availability.available) reasonCodes.push('active-task');
+  if (!workspace.clean) reasonCodes.push('workspace-dirty');
+  if (workspace.kind === 'local' && !workspace.branch) reasonCodes.push('primary-detached-head');
+  const cleanAndAvailable = availability.available && workspace.clean;
+  const recommended = cleanAndAvailable
+    ? (workspace.kind === 'worktree' ? 'current-worktree' : (workspace.branch ? 'local-direct' : 'new-worktree'))
+    : 'new-worktree';
+  const result = {
+    ...availability,
+    schemaVersion:2,
+    diagnostic:availability.available ? null : '当前工作树已有活动写 Task；按 writeRouting 推荐路由处理。',
+    workspace,
+    writeRouting: {
+      recommended,
+      localDirectEligible:recommended === 'local-direct',
+      reasonCodes,
+    },
+  };
+  if (options.requireAvailable === true && !result.available) throw new Error(availability.diagnostic);
   return result;
 }
 
@@ -272,7 +293,7 @@ export function prepareTask(options = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const intent = String(options.intent ?? '').trim();
   if (!intent) throw new Error('准备任务必须提供 Intent');
-  preflightWorkspace({ stateRoot:options.stateRoot, cwd });
+  preflightWorkspace({ stateRoot:options.stateRoot, cwd, requireAvailable:true });
   const providedAlignment = loadAlignmentFile(options.alignmentFile);
   if (providedAlignment && normalizeUserText(providedAlignment.originalRequest) !== normalizeUserText(intent)) {
     throw new Error('alignment-original-request-mismatch: Alignment originalRequest 必须与 --intent 当前用户请求原文一致');

@@ -4,9 +4,9 @@
 
 - **普通对话**：不依赖仓库事实时直接回答，不建 Task、不运行工程脚本。
 - **只读工程分析**：先运行只读 `task.mjs 预检 --cwd "<项目路径>"`，再运行 `build-context.mjs --cwd "<项目路径>" --intent "<目标>"`；身份、路由或依赖诊断才追加 `--full`。
-- **写入路由**：Codex 默认 managed Worktree；Goal Card/Context 前预检并在原子创建时复核。managed 未落地时执行 `git worktree add --detach <路径> <起点>`，不得等待、报告主区占用或降级 Local；Local 仅供只读和串行集成。
-- **轻量直达**：`continuity=ephemeral` 的 Quick/普通 Standard 在 Worktree 中实施最小 Diff 和定点检查，不创建 Task；如实报告失败、跳过和未验证项，不声称 Evidence 或验收状态。
-- **仓库写任务**：`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务在 Worktree 中 `准备 --integration-target`，重复 `--scope` 授权精确路径，再提交、`交付`并立即`集成`。重验通过才快进并清理；脏目标、冲突、验证失败或高风险时不推进。暂停/继续用`保存`/`恢复`；仅有效 `waiting_acceptance` 可称“本轮已交付”，不得伪造 `accepted`。
+- **写入路由**：任何仓库写入先预检，再构建轻量 Context。`recommended=local-direct` 只表示当前 Local 干净、可用且没有已知并发写 Task；脏、占用、并发或状态不确定时立即进入 managed Worktree，宿主未落地时执行 `git worktree add --detach <路径> <起点>`，不得等待或要求用户处理占用。正式 Task 仍在原子创建时复核。
+- **轻量直达**：`continuity=ephemeral` 的 Quick/普通 Standard 在 `local-direct` 或已经隔离的当前 Worktree 中实施最小 Diff 和一次受影响的定点检查，不创建 Task、Evidence、`waiting_acceptance` 或自动集成流程；如实报告失败、跳过和未验证项。
+- **正式仓库写任务**：`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务在专属 Worktree 中 `准备 --integration-target`，重复 `--scope` 授权精确路径，再提交、`交付`并立即`集成`。重验通过才快进并清理；脏目标、冲突、验证失败或高风险时不推进。暂停/继续用`保存`/`恢复`；仅有效 `waiting_acceptance` 可称“本轮已交付”，不得伪造 `accepted`。
 - **对话后续**：仅有精确 `continuation.taskId + deliveryId` 时，下一消息前调用一次 `后续`；不确定或含追问用 `related-question`。追问只记首次；无 continuation 不猜 Task、不存正文、不跑检查、不建 Task。
 - **写任务对齐**：先预检，再读目标代码和直接测试并输出目标卡；Quick/局部任务可 direct，Controlled/Structural 或改变业务结果的方案须确认或明确委托；根因未知先只读探索。详见 `20-能力模块/clarify-requirements/CONTRACT.md`。
 - **外部/高风险写入**：Push、发布、部署、迁移、远程删除、生产数据修改须另获授权；不可逆动作还须明确拒绝路径、停止条件和回滚。

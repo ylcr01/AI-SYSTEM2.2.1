@@ -5,12 +5,13 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { assertTaskWorktreeBaseline, captureBaseline } from '../../40-脚本/lib/git-state.mjs';
+import { preflightWorkspace } from '../../40-脚本/lib/task-runner.mjs';
 import { gitRepo, runNode, tempDir } from '../helpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TASK = path.join(ROOT, '40-脚本', 'task.mjs');
 
-test('Local baseline 被稳定路由错误拒绝，不能静默降级', (t) => {
+test('正式 Task 的 Local baseline 被稳定路由错误拒绝', (t) => {
   const repo = gitRepo(t);
   assert.throws(() => assertTaskWorktreeBaseline(captureBaseline(repo)), (error) => {
     assert.equal(error.code, 'WORKTREE_REQUIRED');
@@ -18,9 +19,30 @@ test('Local baseline 被稳定路由错误拒绝，不能静默降级', (t) => {
     assert.match(error.message, /git worktree add --detach/u);
     assert.match(error.message, /--integration-target/u);
     assert.match(error.message, /不是用户阻塞/u);
-    assert.match(error.message, /不得.*静默降级到 Local/u);
+    assert.match(error.message, /continuity=ephemeral/u);
     assert.equal(error.routing.localFallbackAllowed, false);
     return true;
+  });
+});
+
+test('预检把干净 Local 路由为轻量直达，把脏 Local 路由到新 Worktree', (t) => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const worktreesBefore = spawnSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding:'utf8' }).stdout;
+  const clean = preflightWorkspace({ cwd:repo, stateRoot });
+  assert.equal(clean.schemaVersion, 2);
+  assert.equal(clean.workspace.kind, 'local');
+  assert.equal(clean.workspace.clean, true);
+  assert.ok(clean.workspace.branch);
+  assert.deepEqual(clean.writeRouting, {
+    recommended:'local-direct', localDirectEligible:true, reasonCodes:[],
+  });
+  assert.equal(fs.existsSync(path.join(stateRoot, '进行中')), false);
+  assert.equal(spawnSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding:'utf8' }).stdout, worktreesBefore);
+  fs.writeFileSync(path.join(repo, 'dirty.txt'), 'user change\n');
+  const dirty = preflightWorkspace({ cwd:repo, stateRoot });
+  assert.equal(dirty.workspace.clean, false);
+  assert.deepEqual(dirty.writeRouting, {
+    recommended:'new-worktree', localDirectEligible:false, reasonCodes:['workspace-dirty'],
   });
 });
 
@@ -34,6 +56,9 @@ test('detached Worktree baseline 可通过门禁且与 Local Git 目录隔离', 
     assert.equal(baseline.linkedWorktree, true);
     assert.equal(assertTaskWorktreeBaseline(baseline), baseline);
     assert.notEqual(fs.realpathSync.native(baseline.gitDir), fs.realpathSync.native(baseline.gitCommonDir));
+    const route = preflightWorkspace({ cwd:worktree, stateRoot:tempDir(t) });
+    assert.equal(route.writeRouting.recommended, 'current-worktree');
+    assert.equal(route.writeRouting.localDirectEligible, false);
   } finally {
     spawnSync('git', ['-C', repo, 'worktree', 'remove', '--force', worktree], { encoding:'utf8' });
   }

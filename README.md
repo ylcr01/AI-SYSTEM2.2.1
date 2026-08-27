@@ -28,9 +28,9 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → build-context → 读取最小相关事实
-局部低风险修改  → 专属 Worktree → build-context → 最小 Diff + 定点检查 → 报告真实结果
+局部低风险修改  → 预检 → 干净 Local 直达 / 异常升级 Worktree → 最小 Diff + 定点检查
 正式写 Task     → 专属 Worktree → 独立提交 → 隔离应用与重验 → 串行快进目标分支 → 本轮已交付
-Local/主工作区  → 只读分析或单一集成者串行集成
+Local/主工作区  → 只读分析、合格轻量直达或单一集成者串行集成
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
@@ -44,7 +44,7 @@ Local/主工作区  → 只读分析或单一集成者串行集成
 - Task 写作态、已交付和历史记录分层保存；默认回执只展示四种用户状态。`delivered` 只表示本轮工程交付通过，`closed` 只表示后续对话自然收口，`accepted` 仍只能由用户显式产生。
 - 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主只在下一条消息中据此记录相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
-- 每个写任务独占 Worktree；Local 不承载实现。集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- 正式写 Task 独占 Worktree；轻量直达只有在 Local 干净、可用且没有已知并发写入时才可实施。正式集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
 - Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
 - 默认回执对 ChangeSet、缺口和诊断列表限量展开，并报告 `total`、`shown`、`truncated`；直接检查不展开成功日志，显式 `--full` 才读取完整记录。
 - `build-context` 返回读取计划的内容指纹；同一输入再次调用时传入 `--known-context-fingerprint <上次指纹>`，未变化则返回空读取计划，项目事实变化后自动恢复完整计划。
@@ -81,9 +81,11 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>" `
 
 ### 执行修改
 
-宿主先为仓库写任务进入专属 Worktree，再读取轻量上下文。结果为 `continuity=ephemeral` 时直接实施最小 Diff，并只运行目标测试或受影响检查，不创建正式 Task。`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务才进入正式 Task：
+宿主先运行只读 `预检`，再读取轻量上下文。结果为 `continuity=ephemeral` 且预检返回 `recommended=local-direct` 时，在当前 Local 直接实施最小 Diff，并只运行一次目标测试或受影响检查，不创建 Worktree、正式 Task 或自动集成流程。当前已经位于干净的任务 Worktree 时也可直接实施。Local 脏、被占用、存在已知并发或状态无法确认时，确定性升级到专属 Worktree。
 
-先为每个写任务建立专属 Worktree。Codex 桌面端优先选择 managed Worktree；若宿主未能创建或识别，则使用下方 detached Worktree fallback，不能改在 Local 中执行。
+`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务才进入正式 Task：
+
+先为每个正式写 Task 建立专属 Worktree。Codex 桌面端优先选择 managed Worktree；若宿主未能创建或识别，则使用下方 detached Worktree fallback，不能把正式 Task 改在 Local 中执行。
 
 ```powershell
 node ./40-脚本/task.mjs 预检 --cwd <项目路径>
@@ -98,9 +100,9 @@ node ./40-脚本/task.mjs 交付 --task-id <编号>
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
-正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态。主 Local checkout 只用于只读分析和串行集成，正式 Task 在主 checkout 准备会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
+正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态。主 Local checkout 可承载合格的轻量直达和串行集成，但正式 Task 在主 checkout 准备仍会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
 
-`预检` 只读且不加载工程上下文、不创建 Task；`准备` 会再次预检，并在最终原子创建时复核。多个精确授权路径可重复传入 `--scope`，无需扩大成共同父目录。
+`预检` 只读且不加载工程上下文、不创建 Task；它返回 `local-direct`、`current-worktree` 或 `new-worktree` 推荐路由。Local 直达还要求执行模型确认没有其他已知写入者；任何脏状态、占用或不确定性都回退到新 Worktree。正式 `准备` 会再次预检，并在最终原子创建时复核。多个精确授权路径可重复传入 `--scope`，无需扩大成共同父目录。
 
 ### Worktree 交付与串行集成
 

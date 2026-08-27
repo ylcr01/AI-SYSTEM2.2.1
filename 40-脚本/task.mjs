@@ -290,9 +290,9 @@ function output(result) {
 function help() {
   if (args.full !== true) {
     console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
-  预检 [--cwd <path>]（只读、立即检查该工作树是否可开始写任务）
+  预检 [--cwd <path>]（只读、返回 Local 直达或 Worktree 推荐路由）
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复）]
-       （写任务必须从任务专属 Worktree 运行；Local/主工作区仅只读与串行集成）
+       （仅正式 Task 调用；必须从任务专属 Worktree 运行）
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
   交付 --task-id <id>
   后续 --task-id <id> --delivery-id <id> --observation-id <id>
@@ -309,9 +309,9 @@ function help() {
     return;
   }
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
-  预检|preflight [--cwd <path>] [--state-root <path>]（不加载工程上下文、不创建 Task）
+  预检|preflight [--cwd <path>] [--state-root <path>]（不加载工程上下文、不创建 Task；返回 writeRouting）
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复；不支持逗号或 glob）]
-       （Codex managed Worktree 优先；不可用时 detached Worktree，禁止降级到 Local）
+       （正式 Task 必须使用 Worktree；Codex managed 优先，不可用时使用 detached Worktree）
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
        [--quality-profile <name>（兼容旧 --skill，可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
@@ -347,7 +347,7 @@ function help() {
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
-普通问答不建 Task；只读分析走 build-context；所有仓库修改先进入专属 Worktree。continuity=ephemeral 的局部修改直接做最小 Diff 与定点检查；Tracked、Controlled、Structural、规格或外部写入才准备正式 Task。Local 只读或由单一集成者串行集成，最终验收只能由用户执行。`);
+普通问答不建 Task；只读分析走 build-context。仓库修改先预检：continuity=ephemeral 的 Quick/普通 Standard 在干净、可用且无已知并发写入的 Local 直接做最小 Diff 与定点检查，不创建 Task 或重复集成；脏、占用、并发或不确定时进入 Worktree。Tracked、Controlled、Structural、规格、跨仓或外部写入才在 Worktree 准备正式 Task。最终验收只能由用户执行。`);
 }
 
 function goalCardFileArg({ required = false } = {}) {

@@ -91,7 +91,10 @@ test('隔离失败立即阻断且不执行检查、规格或 Review',t=>{
 test('同一工作树拒绝并行 Task，不同 worktree 允许准备',t=>{
   const repo=gitRepo(t),stateRoot=tempDir(t);
   const first=prepareTask({cwd:repo,stateRoot,intent:'第一个写任务',acceptance:['完成'],scope:'.'});
-  assert.throws(()=>preflightWorkspace({cwd:repo,stateRoot}),new RegExp(first.task.taskId,'u'));
+  const route=preflightWorkspace({cwd:repo,stateRoot});
+  assert.equal(route.available,false);
+  assert.equal(route.conflict.taskId,first.task.taskId);
+  assert.deepEqual(route.writeRouting,{recommended:'new-worktree',localDirectEligible:false,reasonCodes:['active-task']});
   assert.throws(()=>prepareTask({cwd:repo,stateRoot,intent:'第二个写任务',alignmentFile:path.join(stateRoot,'不存在的目标卡.json'),scope:'.'}),error=>{
     assert.match(error.message,new RegExp(first.task.taskId,'u'));
     assert.doesNotMatch(error.message,/无法读取对齐文件/u);

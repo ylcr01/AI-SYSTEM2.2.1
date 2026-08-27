@@ -92,6 +92,20 @@ export function captureBaseline(gitRoot) {
     fingerprint:fingerprint(files), capturedAt:new Date().toISOString() };
 }
 
+export function inspectWorktreeRouteState(gitRoot) {
+  if (!gitRoot) throw new Error('缺少 Git Root');
+  const root = path.resolve(gitRoot);
+  const status = gitRawStrict(root, ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal']).split('\0').filter(Boolean);
+  const head = status.find((item) => item.startsWith('# branch.head '))?.slice('# branch.head '.length) ?? null;
+  const [gitDir, gitCommonDir] = gitRawStrict(root, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])
+    .split(/\r?\n/u).map((item) => item.trim()).filter(Boolean);
+  return {
+    kind:gitDir && gitCommonDir && normalizePath(gitDir) !== normalizePath(gitCommonDir) ? 'worktree' : 'local',
+    clean:status.every((item) => item.startsWith('# ')),
+    branch:head && head !== '(detached)' ? head : null,
+  };
+}
+
 function committedChanges(root, before, after) {
   if (!before || !after || before === after) return [];
   const raw = gitRawStrict(root, ['diff','--name-status','-z','--find-renames',before,after,'--']);
@@ -193,7 +207,7 @@ export function integrationRequiredForBaseline(baseline, explicitTarget = null) 
 
 export function assertTaskWorktreeBaseline(baseline) {
   if (baseline?.linkedWorktree) return baseline;
-  const error = new Error('WORKTREE_REQUIRED: 仓库写任务禁止在 Local/主工作区准备。Codex 桌面端先为该任务创建或移入专属 managed Worktree；宿主不可用或识别失败时，立即使用 `git worktree add --detach <新路径> <起点>` 创建任务专属 Worktree。随后从该 Worktree 重新运行准备并显式传入 `--integration-target <目标分支>`。这是内部路由信号，不是用户阻塞；不得等待主工作树释放、向用户报告“被占用”，或静默降级到 Local。Local 只用于只读分析和单一集成者串行集成。');
+  const error = new Error('WORKTREE_REQUIRED: 正式仓库写 Task 禁止在 Local/主工作区准备。continuity=ephemeral 的 Quick/普通 Standard 应在调用准备前完成轻量路由；其余任务由 Codex 桌面端创建或移入专属 managed Worktree，宿主不可用或识别失败时立即使用 `git worktree add --detach <新路径> <起点>` 创建任务专属 Worktree。随后从该 Worktree 重新运行准备并显式传入 `--integration-target <目标分支>`。这是内部路由信号，不是用户阻塞；不得等待主工作树释放或向用户报告“被占用”。');
   error.code = 'WORKTREE_REQUIRED';
   error.routing = {
     managedPreferred:true,

@@ -44,9 +44,15 @@ test('CLI 预检只读且重复 --scope 保留精确授权', t => {
   fs.mkdirSync(path.join(repo, 'src'));
   const available = runNode(TASK, ['预检', '--cwd', repo, '--state-root', stateRoot], { cwd:ROOT });
   assert.equal(available.status, 0, available.stderr);
-  assert.deepEqual(JSON.parse(available.stdout), {
-    schemaVersion:1, readOnly:true, available:true, gitRoot:fs.realpathSync.native(repo), conflict:null, diagnostic:null,
-  });
+  const availableReceipt = JSON.parse(available.stdout);
+  assert.equal(availableReceipt.schemaVersion, 2);
+  assert.equal(availableReceipt.readOnly, true);
+  assert.equal(availableReceipt.available, true);
+  assert.equal(availableReceipt.gitRoot, fs.realpathSync.native(repo));
+  assert.equal(availableReceipt.workspace.kind, 'local');
+  assert.equal(availableReceipt.workspace.clean, true);
+  assert.ok(availableReceipt.workspace.branch);
+  assert.deepEqual(availableReceipt.writeRouting, { recommended:'local-direct', localDirectEligible:true, reasonCodes:[] });
   const prepared = runNode(TASK, [
     '准备', '--cwd', repo, '--intent', '修改两个局部路径', '--acceptance', '功能正确',
     '--scope', 'src', '--scope', 'tests', '--scope', 'src', '--state-root', stateRoot,
@@ -55,8 +61,12 @@ test('CLI 预检只读且重复 --scope 保留精确授权', t => {
   const receipt = JSON.parse(prepared.stdout);
   assert.deepEqual(receipt.scope, ['src', 'tests']);
   const blocked = runNode(TASK, ['preflight', '--cwd', repo, '--state-root', stateRoot], { cwd:ROOT });
-  assert.notEqual(blocked.status, 0);
-  assert.match(blocked.stderr, new RegExp(receipt.taskId, 'u'));
+  assert.equal(blocked.status, 0, blocked.stderr);
+  const blockedReceipt = JSON.parse(blocked.stdout);
+  assert.equal(blockedReceipt.available, false);
+  assert.equal(blockedReceipt.conflict.taskId, receipt.taskId);
+  assert.equal(blockedReceipt.diagnostic, '当前工作树已有活动写 Task；按 writeRouting 推荐路由处理。');
+  assert.deepEqual(blockedReceipt.writeRouting, { recommended:'new-worktree', localDirectEligible:false, reasonCodes:['active-task'] });
 });
 
 test('CLI 状态迁移默认 dry-run，显式 apply 才写入', t => {

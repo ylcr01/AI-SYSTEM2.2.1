@@ -21,15 +21,18 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /AI_RD_OS_ROOT/u);
   assert.match(result.stdout, /AGENTS\.md/u);
-  assert.match(result.stdout, /lightweight direct changes separately from formal Tasks/u);
+  assert.match(result.stdout, /Preflight before repository writes/u);
+  assert.match(result.stdout, /ephemeral Quick\/ordinary Standard/u);
+  assert.match(result.stdout, /clean, available Local checkout/u);
+  assert.match(result.stdout, /Dirty, occupied, concurrent, or uncertain state/u);
   assert.match(result.stdout, /task-dedicated Worktree/u);
   assert.match(result.stdout, /deterministic detached fallback/u);
-  assert.match(result.stdout, /Never write or silently fall back to Local\/main/u);
+  assert.match(result.stdout, /Formal, Controlled, Structural/u);
   assert.match(result.stdout, /Scope\/Evidence gates/u);
   assert.match(result.stdout, /waiting_acceptance/u);
   assert.match(result.stdout, /exact prior `continuation`/u);
   assert.match(result.stdout, /never scan for a pending Task/u);
-  assert.match(result.stdout, /external writes without explicit user authorization/u);
+  assert.match(result.stdout, /external writes without explicit authorization/u);
   assert.match(result.stdout, /report degraded state/u);
   assert.match(result.stdout, /Browser hard limits remain global/u);
   assert.match(result.stdout, /at most 4 smoke flows/u);
@@ -80,10 +83,12 @@ test('系统入口固化浏览器冒烟预算和熔断规则', () => {
   assert.match(agents, /Runner 或外层命令也须固化上述超时和熔断/u);
 });
 
-test('系统入口固化 Worktree 默认值与最小验证分层', () => {
+test('系统入口固化风险分级写入路由与最小验证分层', () => {
   const agents = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
-  assert.match(agents, /Codex 默认 managed Worktree/u);
-  assert.match(agents, /Goal Card\/Context 前预检并在原子创建时复核/u);
+  assert.match(agents, /任何仓库写入先预检/u);
+  assert.match(agents, /recommended=local-direct/u);
+  assert.match(agents, /脏、占用、并发或状态不确定/u);
+  assert.match(agents, /正式 Task 仍在原子创建时复核/u);
   assert.match(agents, /重复 `--scope` 授权精确路径/u);
   assert.match(agents, /Acceptance 只写结果/u);
   assert.match(agents, /生成并执行最小验证计划/u);
