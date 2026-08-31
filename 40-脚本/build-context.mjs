@@ -1,6 +1,8 @@
-import { parseArgs, listArg } from './lib/args.mjs';
+import path from 'node:path';
+import { parseArgs, listArg, requiredArg } from './lib/args.mjs';
 import { buildContext } from './lib/context-builder.mjs';
 import { fileSha256, payloadHash } from './lib/evidence.mjs';
+import { classifyTask } from './lib/task-policy.mjs';
 
 function readPlanFor(result) {
   const factByPath = new Map((result.facts ?? []).map(fact => [fact.path, fact]));
@@ -22,11 +24,17 @@ function readPlanFor(result) {
     })),
   ];
   const qualityByPath = new Map(qualityEntries.map(item => [item.path, item]));
+  const specificationFiles = new Set((result.specificationHints?.specificationFiles ?? []).map(file => (
+    path.resolve(result.context?.gitRoot ?? process.cwd(), file)
+  )));
   return (result.filesToRead ?? []).map(file => {
     const fact = factByPath.get(file);
     if (fact) return { path: file, reason: fact.reason, authority: fact.authority, fingerprint: fileSha256(file) };
     const quality = qualityByPath.get(file);
     if (quality) return { path: file, reason: quality.reason, authority: quality.authority, fingerprint: fileSha256(file) };
+    if (specificationFiles.has(path.resolve(file))) {
+      return { path: file, reason: '命中规格', authority: 'project', fingerprint: fileSha256(file) };
+    }
     return { path: file, reason: '任务相关资料', authority: 'derived', fingerprint: fileSha256(file) };
   });
 }
@@ -57,6 +65,7 @@ function compactContext(result, options = {}) {
       contracts: (result.quality?.contracts ?? []).map(({ id, version, source }) => ({ id, version, source })),
       exemplars: (result.quality?.exemplars ?? []).map(({ id, version, source }) => ({ id, version, source })),
     },
+    specificationHints: result.specificationHints ?? null,
     readPlan: readPlan.map(({ path, fingerprint }) => ({ path, fingerprint })),
   });
   const contextUnchanged = Boolean(options.knownContextFingerprint)
@@ -72,6 +81,8 @@ function compactContext(result, options = {}) {
     ),
     executionTarget: result.executionTarget,
     classification: {
+      operation: result.classification?.operation,
+      executionRoute: result.classification?.executionRoute,
       controlMode: result.classification?.controlMode,
       structureImpact: result.classification?.structureImpact,
       continuity: result.classification?.continuity,
@@ -98,6 +109,7 @@ function compactContext(result, options = {}) {
         source: item.source,
       })),
     },
+    specificationHints: result.specificationHints ?? null,
     configuration: result.configuration ?? [],
     filesToRead: contextUnchanged ? [] : result.filesToRead ?? [],
     readPlan: contextUnchanged ? [] : readPlan,
@@ -125,17 +137,28 @@ function compactContext(result, options = {}) {
 const args = parseArgs(process.argv.slice(2));
 
 try {
+  const operation = requiredArg(args, 'operation');
+  const intent = args.intent ?? '';
+  const acceptance = args.acceptance ?? '';
+  const classification = classifyTask({
+    operation,
+    intent,
+    acceptance,
+    scope: listArg(args.scope),
+    path: listArg(args.path),
+    tracked: args.tracked === true,
+    handoffRequired: args.handoff === true,
+  });
   const result = buildContext({
     cwd: args.cwd ?? process.cwd(),
     projectId: args.project,
-    intent: args.intent ?? '',
-    acceptance: args.acceptance ?? '',
+    intent,
+    acceptance,
+    classification,
     qualityProfiles: [...new Set([
       ...listArg(args['quality-profile']),
       ...listArg(args.skill),
     ])],
-    tracked: args.tracked === true,
-    handoffRequired: args.handoff === true,
   });
 
   console.log(JSON.stringify(args.full === true

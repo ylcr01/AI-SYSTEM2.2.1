@@ -1,10 +1,11 @@
+// BR-AIRD-BROWSER-001
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadChecks, loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest, planChecks } from '../../40-脚本/lib/check-planner.mjs';
-import { evaluateAdapterResult } from '../../40-脚本/lib/check-adapters.mjs';
+import { BROWSER_CHECK_LIMITS, evaluateAdapterResult } from '../../40-脚本/lib/check-adapters.mjs';
 import { tempDir } from '../helpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -33,6 +34,7 @@ function context(t, extra = {}) {
   const testFile = path.join(root, 'tests', 'target.test.js');
   fs.mkdirSync(path.dirname(testFile), { recursive: true });
   fs.writeFileSync(testFile, '// target\n');
+  fs.writeFileSync(path.join(root, 'README.md'), '# target\n');
   return {
     gitRoot: root,
     acceptance: [
@@ -102,10 +104,74 @@ test('Task Check 校验拒绝各类非法输入', (t) => {
     [{ ...VALID_CHECK, runner: 'shell' }, /runner 不受支持/u],
     [{ ...VALID_CHECK, config: { shell: true } }, /不接受 config/u],
     [{ ...VALID_CHECK, acceptanceIds: ['A1'] }, /必须在 cases 中声明 acceptanceIds/u],
+    [withCase({ acceptanceIds: ['A2'], covers: ['documentation'] }), /必须绑定 artifact/u],
+    [withCase({ acceptanceIds: ['A2'], covers: ['documentation'], artifact: '../outside.md' }), /越出 Git Root/u],
   ];
   for (const [check, pattern] of cases) {
     assert.throws(() => loadTaskChecks(writeTaskChecks(t, [check]), ctx), pattern);
   }
+});
+
+test('文档直接证明在 case 中绑定并产出 Artifact identity', (t) => {
+  const ctx = context(t);
+  const check = withCase({
+    acceptanceIds: ['A2'],
+    covers: ['documentation'],
+    artifact: './README.md',
+    testName: '文档说明正确',
+  });
+  const [loaded] = loadTaskChecks(writeTaskChecks(t, [check]), ctx);
+  assert.equal(loaded.cases[0].artifact, 'README.md');
+  const event = {
+    schemaVersion: 1,
+    event: 'passed',
+    name: '文档说明正确',
+    file: 'tests/target.test.js',
+    entryFile: 'tests/target.test.js',
+    skipped: false,
+    todo: false,
+  };
+  const result = evaluateAdapterResult(loaded, {
+    cwd: ctx.gitRoot,
+    stdout: `AI_RD_NODE_TEST_CASE ${JSON.stringify(event)}\n`,
+  });
+  assert.equal(result.error, null);
+  assert.equal(result.caseResults[0].artifact, 'README.md');
+  assert.match(result.caseResults[0].artifactSha256, /^[a-f0-9]{64}$/u);
+});
+
+test('Browser Task Check 强制一 check/flow、最多四条且单 flow 不超过 15 秒', (t) => {
+  const ctx = context(t, { acceptance: [{ id: 'A1', requiredCovers: ['browser'] }] });
+  const browserCheck = (index, extra = {}) => ({
+    ...VALID_CHECK,
+    name: `browser-flow-${index}`,
+    timeoutMs: undefined,
+    cases: [{
+      ...VALID_CHECK.cases[0],
+      id: `browser-${index}`,
+      covers: ['browser'],
+      testName: `Browser flow ${index}`,
+    }],
+    ...extra,
+  });
+  const four = loadTaskChecks(writeTaskChecks(t, [1, 2, 3, 4].map((index) => browserCheck(index))), ctx);
+  assert.equal(four.length, BROWSER_CHECK_LIMITS.maxFlows);
+  assert.ok(four.every((check) => check.timeoutMs === BROWSER_CHECK_LIMITS.flowTimeoutMs));
+
+  assert.throws(
+    () => loadTaskChecks(writeTaskChecks(t, [browserCheck(1, {
+      cases: [browserCheck(1).cases[0], { ...browserCheck(2).cases[0], id: 'browser-extra' }],
+    })]), ctx),
+    /一个 check.*一个 case\/flow/u,
+  );
+  assert.throws(
+    () => loadTaskChecks(writeTaskChecks(t, [browserCheck(1, { timeoutMs: 15_001 })]), ctx),
+    /1-15000/u,
+  );
+  assert.throws(
+    () => loadTaskChecks(writeTaskChecks(t, [1, 2, 3, 4, 5].map((index) => browserCheck(index))), ctx),
+    /最多允许 4 个 flow/u,
+  );
 });
 
 test('testFiles 支持相对路径、./ 前缀与同文件绝对路径', (t) => {

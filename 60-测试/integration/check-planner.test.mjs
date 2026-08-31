@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import test from 'node:test';import { fileURLToPath } from 'node:url';import { loadChecks,loadTaskChecks,planChecks,executeCheckPlan,resolveCommand } from '../../40-脚本/lib/check-planner.mjs';import { tempDir } from '../helpers.mjs';
+import { BROWSER_CHECK_LIMITS } from '../../40-脚本/lib/check-adapters.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 test('计划选择最低成本且能补充 Covers 的检查',()=>{const plan=planChecks({profile:'standard',requiredCovers:['behavior','typecheck'],checks:[{name:'all',command:'node',args:[],profiles:['standard'],covers:['behavior','typecheck'],sideEffect:'none',estimatedCost:'high'},{name:'behavior',command:'node',args:[],profiles:['standard'],covers:['behavior'],sideEffect:'none',estimatedCost:'low'},{name:'types',command:'node',args:[],profiles:['standard'],covers:['typecheck'],sideEffect:'none',estimatedCost:'low'}]});assert.deepEqual(plan.checks.map(x=>x.name),['behavior','types']);assert.deepEqual(plan.missingCovers,[]);});
 test('自动计划禁止外部写入',()=>{assert.throws(()=>executeCheckPlan({profile:'controlled',checks:[{name:'deploy',command:'node',args:[],sideEffect:'external'}]},{cwd:process.cwd(),budget:{mode:'controlled',limitMs:1000,spentMs:0}}),/禁止执行外部写入/);});
@@ -130,5 +131,158 @@ test('node-test 零命中、失败、skip 和 todo 均阻止检查通过',t=>{
     assert.equal(execution.ok,false,testName);
     assert.equal(execution.stopReason,'failed',testName);
     assert.equal(execution.results[0].caseResults[0].status,'failed',testName);
+  }
+});
+
+function browserCheck(index) {
+  const declared = {
+    id: `browser-${index}`,
+    acceptanceIds: ['A1'],
+    covers: ['browser'],
+    testFile: `browser-${index}.test.mjs`,
+    testName: `Browser flow ${index}`,
+    expectedMatches: 1,
+  };
+  return {
+    name: `browser-flow-${index}`,
+    runner: 'node-test',
+    adapterVersion: 2,
+    resultProtocol: 'node-test-cases-v1',
+    command: 'node',
+    args: ['--test', String(index)],
+    sideEffect: 'workspace',
+    timeoutMs: BROWSER_CHECK_LIMITS.flowTimeoutMs,
+    covers: ['browser'],
+    acceptanceMode: 'explicit',
+    acceptanceIds: ['A1'],
+    cases: [declared],
+    testFiles: [declared.testFile],
+  };
+}
+
+function browserEvent(index, event = 'passed') {
+  return `AI_RD_NODE_TEST_CASE ${JSON.stringify({
+    schemaVersion: 1,
+    event,
+    name: `Browser flow ${index}`,
+    file: `browser-${index}.test.mjs`,
+    entryFile: `browser-${index}.test.mjs`,
+    skipped: false,
+    todo: false,
+  })}\n`;
+}
+
+test('Browser 批次返回真实摘要并明确同步 runner 未实现 30 秒心跳', () => {
+  let now = 0;
+  let calls = 0;
+  const checks = [browserCheck(1), browserCheck(2)];
+  const result = executeCheckPlan({ profile: 'controlled', checks }, {
+    cwd: process.cwd(),
+    budget: { mode: 'controlled', limitMs: 300_000, spentMs: 0 },
+    clock: { now: () => now },
+    spawnSync: () => {
+      calls += 1;
+      now += 100;
+      return { status: 0, stdout: browserEvent(calls), stderr: '', error: undefined };
+    },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+  assert.equal(calls, 2);
+  assert.deepEqual(result.browserSummary, {
+    declared: 2,
+    completed: 2,
+    passed: 2,
+    failed: 0,
+    timedOut: 0,
+    blocked: 0,
+    circuitBroken: false,
+    stopReason: null,
+    limits: BROWSER_CHECK_LIMITS,
+    unimplemented: [{
+      id: 'browser-progress-heartbeat-30s',
+      implemented: false,
+      reason: '同步 spawnSync runner 无法在子进程运行期间读取增量输出并真实执行 30 秒心跳或无输出终止',
+    }],
+  });
+});
+
+test('Browser 首败熔断并把未执行 flow 计为 blocked', () => {
+  let now = 0;
+  let calls = 0;
+  const checks = [browserCheck(1), browserCheck(2), browserCheck(3)];
+  const result = executeCheckPlan({ profile: 'controlled', checks }, {
+    cwd: process.cwd(),
+    budget: { mode: 'controlled', limitMs: 300_000, spentMs: 0 },
+    clock: { now: () => now },
+    spawnSync: () => {
+      calls += 1;
+      now += 100;
+      const failed = calls === 2;
+      return { status: failed ? 1 : 0, stdout: browserEvent(calls, failed ? 'failed' : 'passed'), stderr: '', error: undefined };
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.stopReason, 'failed');
+  assert.equal(calls, 2);
+  assert.equal(result.browserSummary.completed, 2);
+  assert.equal(result.browserSummary.failed, 1);
+  assert.equal(result.browserSummary.blocked, 1);
+  assert.equal(result.browserSummary.circuitBroken, true);
+});
+
+test('Browser 注入时钟固定 flow、batch 与 outer 硬限制', () => {
+  {
+    let now = 0;
+    const result = executeCheckPlan({ profile: 'controlled', checks: [browserCheck(1)] }, {
+      cwd: process.cwd(),
+      budget: { mode: 'controlled', limitMs: 300_000, spentMs: 0 },
+      clock: { now: () => now },
+      spawnSync: () => {
+        now += BROWSER_CHECK_LIMITS.flowTimeoutMs + 1;
+        return { status: 0, stdout: browserEvent(1), stderr: '', error: undefined };
+      },
+    });
+    assert.equal(result.stopReason, 'browser-flow-timeout');
+    assert.equal(result.browserSummary.timedOut, 1);
+  }
+
+  {
+    let now = 0;
+    let calls = 0;
+    const result = executeCheckPlan({ profile: 'controlled', checks: [browserCheck(1), browserCheck(2)] }, {
+      cwd: process.cwd(),
+      budget: { mode: 'controlled', limitMs: 300_000, spentMs: 0 },
+      clock: { now: () => now },
+      spawnSync: () => {
+        calls += 1;
+        now += 100;
+        return { status: 0, stdout: browserEvent(calls), stderr: '', error: undefined };
+      },
+      onBrowserProgress: () => { now = BROWSER_CHECK_LIMITS.batchTimeoutMs; },
+    });
+    assert.equal(result.stopReason, 'browser-batch-timeout');
+    assert.equal(result.browserSummary.blocked, 1);
+    assert.equal(calls, 1);
+  }
+
+  {
+    let now = 0;
+    let calls = 0;
+    const nonBrowser = {
+      name: 'setup', command: 'node', args: [], covers: ['static'], sideEffect: 'none', timeoutMs: 600_000,
+    };
+    const result = executeCheckPlan({ profile: 'controlled', checks: [nonBrowser, browserCheck(1)] }, {
+      cwd: process.cwd(),
+      budget: { mode: 'controlled', limitMs: 300_000, spentMs: 0 },
+      clock: { now: () => now },
+      spawnSync: () => {
+        calls += 1;
+        now += BROWSER_CHECK_LIMITS.outerTimeoutMs;
+        return { status: 0, stdout: '', stderr: '', error: undefined };
+      },
+    });
+    assert.equal(result.stopReason, 'browser-outer-timeout');
+    assert.equal(result.browserSummary.blocked, 1);
+    assert.equal(calls, 1);
   }
 });

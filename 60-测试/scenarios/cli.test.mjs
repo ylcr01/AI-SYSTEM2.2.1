@@ -1,4 +1,4 @@
-// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 BR-AIRD-STATE-002 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001 BR-AIRD-COMMIT-001
+// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 BR-AIRD-STATE-002 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001 BR-AIRD-METRICS-IDENTITY-001 BR-AIRD-DIAGNOSE-001 BR-AIRD-COMMIT-001
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +26,11 @@ test('Task CLI 默认帮助隐藏机器协议，--full 公开宿主参数', () =
   assert.match(full.stdout, /--goal-card-file/u);
   assert.match(full.stdout, /--reason-category/u);
   assert.match(full.stdout, /--quality-profile/u);
+  assert.match(full.stdout, /--baseline-git-common-dir/u);
+  assert.match(full.stdout, /--verified-change-fingerprint/u);
+  assert.match(full.stdout, /--baseline-detached/u);
+  assert.match(full.stdout, /--reasoning-effort/u);
+  assert.match(full.stdout, /--execution-environment/u);
   assert.match(full.stdout, /预检\|preflight/u);
   assert.match(full.stdout, /--scope.*可重复/u);
   assert.match(full.stdout, /follow-up.*--delivery-id/u);
@@ -67,6 +72,41 @@ test('CLI 预检只读且重复 --scope 保留精确授权', t => {
   assert.equal(blockedReceipt.conflict.taskId, receipt.taskId);
   assert.equal(blockedReceipt.diagnostic, '当前工作树已有活动写 Task；按 writeRouting 推荐路由处理。');
   assert.deepEqual(blockedReceipt.writeRouting, { recommended:'new-worktree', localDirectEligible:false, reasonCodes:['active-task'] });
+});
+
+test('linked Worktree Task 可由主 checkout 列表和评估命中并保留显式执行画像', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t), worktree = path.join(tempDir(t), 'identity-worktree');
+  const target = spawnSync('git', ['-C', repo, 'branch', '--show-current'], { encoding:'utf8' }).stdout.trim();
+  const added = spawnSync('git', ['-C', repo, 'worktree', 'add', '--detach', worktree, 'HEAD'], { encoding:'utf8' });
+  assert.equal(added.status, 0, added.stderr);
+  try {
+    const prepared = runNode(TASK, [
+      '准备', '--cwd', worktree, '--intent', '验证逻辑项目身份', '--acceptance', '主 checkout 可检索任务',
+      '--scope', '.', '--integration-target', target, '--state-root', stateRoot,
+      '--model', 'host-model-test', '--reasoning-effort', 'high', '--execution-environment', 'local-worktree',
+    ], { cwd:ROOT });
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const taskId = JSON.parse(prepared.stdout).taskId;
+    const listed = runNode(TASK, ['列表', '--cwd', repo, '--state-root', stateRoot, '--limit', '0', '--full'], { cwd:ROOT });
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.equal(JSON.parse(listed.stdout).tasks.some(task => task.taskId === taskId), true);
+    const metrics = runNode(TASK, ['评估摘要', '--cwd', repo, '--state-root', stateRoot], { cwd:ROOT });
+    assert.equal(metrics.status, 0, metrics.stderr);
+    const sample = JSON.parse(metrics.stdout).sample;
+    assert.equal(sample.total, 1);
+    assert.equal(sample.tracked, 1);
+    assert.equal(sample.delivered, 0);
+    assert.equal(sample.stateCounts.working, 1);
+    const viewed = runNode(TASK, ['查看', '--task-id', taskId, '--state-root', stateRoot, '--full'], { cwd:ROOT });
+    assert.equal(viewed.status, 0, viewed.stderr);
+    const task = JSON.parse(viewed.stdout);
+    assert.equal(task.evaluationContext.model, 'host-model-test');
+    assert.equal(task.evaluationContext.reasoningEffort, 'high');
+    assert.equal(task.evaluationContext.executionEnvironment, 'local-worktree');
+    assert.ok(task.evaluationContext.system.version);
+  } finally {
+    spawnSync('git', ['-C', repo, 'worktree', 'remove', '--force', worktree], { encoding:'utf8' });
+  }
 });
 
 test('CLI 状态迁移默认 dry-run，显式 apply 才写入', t => {
@@ -134,6 +174,8 @@ test('Task CLI 默认自动集成低风险 Worktree 结果并清理任务资源'
   assert.equal(integrated.status, 0, integrated.stderr);
   const receipt = JSON.parse(integrated.stdout);
   assert.equal(receipt.integration.status, 'integrated');
+  assert.match(receipt.next, /本轮已交付/u);
+  assert.doesNotMatch(receipt.next, /尚未完成/u);
   assert.equal(receipt.integration.cleanup.source.worktree, 'removed');
   assert.equal(fs.existsSync(worktree), false);
   assert.equal(fs.readFileSync(path.join(repo, 'target.txt'), 'utf8').trim(), 'integrated');
@@ -160,9 +202,24 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
     schemaVersion: 1,
     workstations: [{ id: 'legacy-domain', keywords: ['Web'] }],
   }));
+  fs.mkdirSync(path.join(repo, 'docs'), { recursive:true });
+  fs.writeFileSync(path.join(repo, 'docs', 'web-spec.md'), '# Web specification\n');
+  const specMapFile=path.join(repo,'.ai','spec-map.json');
+  const specMap=(specificationId)=>({schemaVersion:1,mappings:[{
+    id:'web-spec',paths:['src/**'],keywords:['Web'],specificationFiles:['docs/web-spec.md'],specificationIds:[specificationId],testFiles:[],decisionFiles:[],
+  }]});
+  fs.writeFileSync(specMapFile,JSON.stringify(specMap('BR-WEB-001')));
+
+  const missingOperation = runNode(BUILD_CONTEXT, [
+    '--cwd', repo,
+    '--intent', '分析 Web 页面当前实现',
+  ], { cwd: ROOT });
+  assert.notEqual(missingOperation.status, 0);
+  assert.match(missingOperation.stderr, /operation/u);
 
   const compactResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析 Web 页面当前实现',
   ], { cwd: ROOT });
   assert.equal(compactResult.status, 0, compactResult.stderr);
@@ -190,9 +247,12 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal('quality' in compact, true);
   assert.equal(compact.quality.baseline?.id, 'implementation-quality-baseline');
   assert.ok(compact.quality.contracts.every(item => !('path' in item) && !('files' in item)));
+  assert.deepEqual(compact.specificationHints.specificationIds,['BR-WEB-001']);
+  assert.ok(compact.readPlan.some(item=>item.path.endsWith(path.join('docs','web-spec.md'))&&item.reason==='命中规格'));
 
   const unchangedResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析 Web 页面当前实现',
     '--known-context-fingerprint', compact.contextFingerprint,
   ], { cwd: ROOT });
@@ -203,8 +263,21 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.deepEqual(unchanged.readPlan, []);
   assert.equal(unchanged.projection.filesToRead.suppressedUnchanged, true);
 
+  fs.writeFileSync(specMapFile,JSON.stringify(specMap('BR-WEB-002')));
+  const remappedResult=runNode(BUILD_CONTEXT,[
+    '--cwd',repo,'--operation','read','--intent','分析 Web 页面当前实现',
+    '--known-context-fingerprint',compact.contextFingerprint,
+  ],{cwd:ROOT});
+  assert.equal(remappedResult.status,0,remappedResult.stderr);
+  const remapped=JSON.parse(remappedResult.stdout);
+  assert.equal(remapped.contextUnchanged,false);
+  assert.notEqual(remapped.contextFingerprint,compact.contextFingerprint);
+  assert.deepEqual(remapped.specificationHints.specificationIds,['BR-WEB-002']);
+  fs.writeFileSync(specMapFile,JSON.stringify(specMap('BR-WEB-001')));
+
   const fullResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析 Web 页面当前实现',
     '--full',
   ], { cwd: ROOT });
@@ -225,6 +298,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
 
   const explicitProfileResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析当前实现',
     '--quality-profile', 'develop-web',
   ], { cwd: ROOT });
@@ -235,6 +309,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
 
   const legacySkillAliasResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析当前实现',
     '--skill', 'develop-web',
   ], { cwd: ROOT });
@@ -243,6 +318,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
 
   const dependencyResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析 package 依赖',
   ], { cwd: ROOT });
   assert.equal(dependencyResult.status, 0, dependencyResult.stderr);
@@ -251,6 +327,7 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   fs.writeFileSync(path.join(repo, 'AGENTS.md'), '# changed\n');
   const changedResult = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'read',
     '--intent', '分析 Web 页面当前实现',
     '--known-context-fingerprint', compact.contextFingerprint,
   ], { cwd: ROOT });
@@ -259,6 +336,55 @@ test('build-context 默认轻量，--full 保留完整上下文', t => {
   assert.equal(changed.contextUnchanged, false);
   assert.notEqual(changed.contextFingerprint, compact.contextFingerprint);
   assert.ok(changed.filesToRead.some(file => file.endsWith('AGENTS.md')));
+});
+
+test('诊断状态分开报告存储完整性与当前验收资格', t => {
+  const repo=gitRepo(t),stateRoot=tempDir(t),target=path.join(repo,'target.txt');
+  const prepared=runNode(TASK,['准备','--cwd',repo,'--intent','修复普通功能','--acceptance','功能正确','--scope','.','--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(prepared.status,0,prepared.stderr);
+  const taskId=JSON.parse(prepared.stdout).taskId;
+  fs.writeFileSync(target,'delivered\n');
+  const delivered=runNode(TASK,['交付','--task-id',taskId,'--state-root',stateRoot,'--task-check-file',taskCheck(t,repo)],{cwd:ROOT});
+  assert.equal(delivered.status,0,delivered.stderr);
+  fs.writeFileSync(target,'changed after delivery\n');
+  const diagnosed=runNode(TASK,['诊断状态','--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(diagnosed.status,0,diagnosed.stderr);
+  const report=JSON.parse(diagnosed.stdout);
+  assert.equal(report.schemaVersion,2);
+  assert.equal(report.readOnly,true);
+  assert.equal(report.storageIntegrity.ok,true);
+  assert.equal(report.acceptanceEligibility.scope,'all-projects');
+  assert.equal(report.acceptanceEligibility.ok,false);
+  assert.deepEqual({checked:report.acceptanceEligibility.checked,eligible:report.acceptanceEligibility.eligible,ineligible:report.acceptanceEligibility.ineligible},{checked:1,eligible:0,ineligible:1});
+  assert.equal(report.acceptanceEligibility.diagnostics[0].taskId,taskId);
+});
+
+test('存储完整性失败时验收资格跳过回执仍声明全项目 scope',t=>{
+  const stateRoot=tempDir(t),active=path.join(stateRoot,'进行中');
+  fs.mkdirSync(active,{recursive:true});
+  fs.writeFileSync(path.join(active,'broken.json'),'{not-json');
+  const diagnosed=runNode(TASK,['诊断状态','--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(diagnosed.status,0,diagnosed.stderr);
+  const report=JSON.parse(diagnosed.stdout);
+  assert.equal(report.storageIntegrity.ok,false);
+  assert.equal(report.acceptanceEligibility.skipped,true);
+  assert.equal(report.acceptanceEligibility.scope,'all-projects');
+  assert.equal(report.acceptanceEligibility.reason,'storage-integrity-failed');
+});
+
+test('轻量结果账本损坏纳入存储完整性并阻止验收资格误报',t=>{
+  const stateRoot=tempDir(t);
+  fs.writeFileSync(path.join(stateRoot,'结果事件.jsonl'),'{not-json\n');
+  const diagnosed=runNode(TASK,['诊断状态','--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(diagnosed.status,0,diagnosed.stderr);
+  const report=JSON.parse(diagnosed.stdout);
+  assert.equal(report.storageIntegrity.ok,false);
+  assert.deepEqual(report.storageIntegrity.components,{taskState:true,lightOutcomeLedger:false});
+  assert.equal(report.lightOutcomeLedger.ok,false);
+  assert.equal(report.lightOutcomeLedger.readOnly,true);
+  assert.equal(report.lightOutcomeLedger.diagnostics[0].code,'invalid-json');
+  assert.equal(report.acceptanceEligibility.skipped,true);
+  assert.equal(report.acceptanceEligibility.scope,'all-projects');
 });
 
 test('run-checks 默认隐藏成功日志并保留首个失败，--full 可显式展开',t=>{
@@ -289,6 +415,7 @@ test('run-checks 默认隐藏成功日志并保留首个失败，--full 可显�
 test('系统入口已由宿主加载时不进入 filesToRead', () => {
   const compactResult = runNode(BUILD_CONTEXT, [
     '--cwd', ROOT,
+    '--operation', 'read',
     '--intent', '分析当前实现',
   ], { cwd: ROOT });
   assert.equal(compactResult.status, 0, compactResult.stderr);
@@ -300,6 +427,7 @@ test('系统入口已由宿主加载时不进入 filesToRead', () => {
 
   const fullResult = runNode(BUILD_CONTEXT, [
     '--cwd', ROOT,
+    '--operation', 'read',
     '--intent', '分析当前实现',
     '--full',
   ], { cwd: ROOT });
@@ -313,6 +441,7 @@ test('结构性任务 readPlan 解释质量契约来源', t => {
   const repo = gitRepo(t);
   const result = runNode(BUILD_CONTEXT, [
     '--cwd', repo,
+    '--operation', 'write',
     '--intent', '新增 Web 模块并调整架构职责',
   ], { cwd: ROOT });
   assert.equal(result.status, 0, result.stderr);
@@ -842,7 +971,7 @@ test('CLI 自动记录退回轮次并提供只读完成轮次摘要', t => {
   assert.equal(summary.sample.completed, 0);
   assert.equal(summary.sample.inProgress, 1);
   assert.deepEqual(summary.explicitAcceptance, { decided:1, unknown:0, passed:0, rate:0, coverage:1, role:'secondary-optional-fact' });
-  assert.deepEqual(summary.rework, { tasks:1, count:1, countingScope:'same-sample-related-return', unlinkedRepairTasksIncluded:false });
+  assert.deepEqual(summary.rework, { tasks:1, count:1, countingScope:'same-task-explicit-user-reject', unlinkedRepairTasksIncluded:false });
   assert.deepEqual(summary.returnReasons, [{ category:'code-quality', count:1 }]);
   assert.equal(summary.verification.runs, 1);
   assert.ok(summary.warnings.some(item => /不能单独证明/u.test(item)));
@@ -850,16 +979,35 @@ test('CLI 自动记录退回轮次并提供只读完成轮次摘要', t => {
 
 test('CLI 轻量交付要求本地 HEAD 并进入按问题类型筛选的轮次摘要', t => {
   const repo = gitRepo(t), stateRoot = tempDir(t);
-  const headResult = spawnSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding:'utf8' });
-  assert.equal(headResult.status, 0, headResult.stderr);
-  const head = headResult.stdout.trim();
+  const preflight=runNode(TASK,['预检','--cwd',repo,'--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(preflight.status,0,preflight.stderr);
+  const baseline=JSON.parse(preflight.stdout).directBaseline;
+  fs.writeFileSync(path.join(repo,'target.txt'),'light direct change\n');
+  const verified=runNode(TASK,[
+    '复核直达','--cwd',repo,'--baseline-head',baseline.head,'--baseline-git-root',baseline.gitRoot,
+    '--baseline-git-common-dir',baseline.gitCommonDir,'--baseline-branch',baseline.branch,
+    '--intent','修改普通功能','--scope','target.txt','--state-root',stateRoot,
+  ],{cwd:ROOT});
+  assert.equal(verified.status,0,verified.stderr);
+  const verification=JSON.parse(verified.stdout);
+  assert.equal(verification.baselineIdentity.head,baseline.head);
+  assert.match(verification.verifiedSemanticFingerprint,/^[a-f0-9]{64}$/u);
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','light direct result']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
+  const head=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
   const delivery = runNode(TASK, [
-    '记录轻量交付', '--cwd', repo, '--commit', head, '--problem-type', 'bugfix', '--scope', '.', '--state-root', stateRoot,
+    '记录轻量交付', '--cwd', repo, '--commit', head, '--problem-type', 'bugfix', '--scope', 'target.txt', '--state-root', stateRoot,
+    '--baseline-head',baseline.head,'--baseline-git-root',baseline.gitRoot,'--baseline-git-common-dir',baseline.gitCommonDir,
+    '--verified-change-fingerprint',verification.verifiedSemanticFingerprint,
+    '--model','light-model-test','--reasoning-effort','low','--execution-environment','local-direct',
   ], { cwd:ROOT });
   assert.equal(delivery.status, 0, delivery.stderr);
   const receipt = JSON.parse(delivery.stdout);
   assert.equal(receipt.source, 'light-direct');
   assert.equal(receipt.localCommit, head);
+  const ledgerEvent=JSON.parse(fs.readFileSync(path.join(stateRoot,'结果事件.jsonl'),'utf8').trim());
+  assert.equal(ledgerEvent.evaluationContext.model,'light-model-test');
+  assert.equal(ledgerEvent.evaluationContext.reasoningEffort,'low');
+  assert.equal(ledgerEvent.evaluationContext.executionEnvironment,'local-direct');
   const closed = runNode(TASK, [
     '后续', '--task-id', receipt.taskId, '--delivery-id', receipt.continuation.deliveryId,
     '--observation-id', 'turn-topic', '--kind', 'topic-advance', '--state-root', stateRoot,
@@ -917,4 +1065,22 @@ test('风险升级需要重新对齐时公开状态是需要你决定', t => {
   assert.equal(receipt.state, 'needs_decision');
   assert.equal(receipt.stateLabel, '需要你决定');
   assert.match(receipt.next, /重新对齐/u);
+});
+
+test('集成风险暂停回执明确要求风险授权与原因',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t);
+  const prepared=runNode(TASK,['准备','--cwd',repo,'--intent','修改普通功能','--acceptance','功能正确','--scope','.','--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(prepared.status,0,prepared.stderr);
+  const taskId=JSON.parse(prepared.stdout).taskId;
+  updateTask({stateRoot,taskId,expectedRevision:1,transitionTo:'ready_to_integrate',event:'delivery',mutate(next){
+    next.verification={...next.verification,stopReason:'integration-risk-user-decision'};
+    next.deliveryDecision={decision:'needs_decision',reasons:['residual-risks']};
+    return next;
+  }});
+  const viewed=runNode(TASK,['查看','--task-id',taskId,'--state-root',stateRoot],{cwd:ROOT});
+  assert.equal(viewed.status,0,viewed.stderr);
+  const receipt=JSON.parse(viewed.stdout);
+  assert.equal(receipt.state,'needs_decision');
+  assert.match(receipt.next,/授权风险集成/u);
+  assert.match(receipt.next,/提供原因/u);
 });

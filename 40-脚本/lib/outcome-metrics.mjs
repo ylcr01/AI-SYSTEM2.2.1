@@ -174,7 +174,7 @@ export function singleTurnClosure(conversationOutcome) {
 
 export function publicTaskStateForTask(task = {}) {
   const stopReason = String(task.verification?.stopReason ?? '');
-  if (['alignment-required', 'alignment-risk-escalation', 'budget'].includes(stopReason)) {
+  if (['alignment-required', 'alignment-risk-escalation', 'budget', 'integration-risk-user-decision'].includes(stopReason)) {
     return PUBLIC_STATES.needs_decision;
   }
   return publicTaskState(task.status);
@@ -186,11 +186,15 @@ export function createOutcomeMetrics(input = {}) {
   const problemType = normalizedProblemType(input.problemType);
   const eligible = measurementVersion !== null && input.eligible !== false && problemType !== 'unknown';
   return {
-    schemaVersion: measurementVersion ? 2 : 1,
+    schemaVersion: 3,
     measurementVersion,
     problemType,
     eligible,
-    exclusionReason: eligible ? null : (input.exclusionReason ?? (problemType === 'unknown' ? 'unknown-problem-type' : 'legacy-before-completion-rounds')),
+    exclusionReason: eligible ? null : (input.exclusionReason ?? (
+      measurementVersion === null
+        ? 'legacy-before-completion-rounds'
+        : problemType === 'unknown' ? 'unknown-problem-type' : 'explicitly-ineligible'
+    )),
     trackingStartedAt: input.trackingStartedAt === null ? null : (isoOrNull(input.trackingStartedAt) ?? at),
     preparedAt: isoOrNull(input.preparedAt) ?? at,
     firstDeliveryAt: null,
@@ -201,8 +205,9 @@ export function createOutcomeMetrics(input = {}) {
     completionBasis: null,
     relatedFollowUpCount: 0,
     deliveryAttemptCount: 0,
-    verificationRunCount: 0,
-    verificationDurationMs: 0,
+    verificationExecutionCount: 0,
+    verificationExecutionDurationMs: 0,
+    legacyVerification: null,
     userDecisionCount: integerNonNegative(input.initialUserDecisionCount),
     reworkCount: 0,
     firstPassAccepted: null,
@@ -219,7 +224,11 @@ export function normalizeOutcomeMetrics(value, input = {}) {
       measurementVersion: null,
     });
   }
-  const measured = value.measurementVersion === COMPLETION_MEASUREMENT_VERSION || Number(value.schemaVersion) >= 2;
+  const schemaVersion = value.schemaVersion ?? 1;
+  if (![1, 2, 3].includes(schemaVersion)) throw new Error(`Outcome Metrics Schema 不受支持: ${schemaVersion}`);
+  const measured = value.measurementVersion === COMPLETION_MEASUREMENT_VERSION;
+  const problemType = normalizedProblemType(value.problemType);
+  const eligible = measured && value.eligible !== false && problemType !== 'unknown';
   const base = createOutcomeMetrics({
     at: value.trackingStartedAt ?? input.createdAt,
     preparedAt: value.preparedAt ?? input.createdAt,
@@ -229,16 +238,36 @@ export function normalizeOutcomeMetrics(value, input = {}) {
     eligible: value.eligible,
     exclusionReason: value.exclusionReason,
   });
-  const problemType = normalizedProblemType(value.problemType);
-  const eligible = measured && value.eligible !== false && problemType !== 'unknown';
+  const {
+    verificationRunCount: _legacyRuns,
+    verificationDurationMs: _legacyDuration,
+    ...currentValue
+  } = value;
+  const legacyVerification = value.legacyVerification
+    ? {
+      runs: integerNonNegative(value.legacyVerification.runs),
+      durationMs: finiteNonNegative(value.legacyVerification.durationMs),
+      incomplete: true,
+    }
+    : (Object.hasOwn(value, 'verificationRunCount') || Object.hasOwn(value, 'verificationDurationMs')
+      ? {
+        runs: integerNonNegative(value.verificationRunCount),
+        durationMs: finiteNonNegative(value.verificationDurationMs),
+        incomplete: true,
+      }
+      : null);
   return {
     ...base,
-    ...value,
-    schemaVersion: measured ? 2 : 1,
+    ...currentValue,
+    schemaVersion: 3,
     measurementVersion: measured ? COMPLETION_MEASUREMENT_VERSION : null,
     problemType,
     eligible,
-    exclusionReason: eligible ? null : (value.exclusionReason ?? (measured ? 'unknown-problem-type' : 'legacy-before-completion-rounds')),
+    exclusionReason: eligible ? null : (value.exclusionReason ?? (
+      !measured
+        ? 'legacy-before-completion-rounds'
+        : problemType === 'unknown' ? 'unknown-problem-type' : 'explicitly-ineligible'
+    )),
     trackingStartedAt: isoOrNull(value.trackingStartedAt),
     preparedAt: isoOrNull(value.preparedAt) ?? isoOrNull(input.createdAt),
     firstDeliveryAt: isoOrNull(value.firstDeliveryAt),
@@ -249,8 +278,9 @@ export function normalizeOutcomeMetrics(value, input = {}) {
     completionBasis: value.completionBasis == null ? null : String(value.completionBasis),
     relatedFollowUpCount: integerNonNegative(value.relatedFollowUpCount),
     deliveryAttemptCount: integerNonNegative(value.deliveryAttemptCount),
-    verificationRunCount: integerNonNegative(value.verificationRunCount),
-    verificationDurationMs: finiteNonNegative(value.verificationDurationMs),
+    verificationExecutionCount: integerNonNegative(value.verificationExecutionCount),
+    verificationExecutionDurationMs: finiteNonNegative(value.verificationExecutionDurationMs),
+    legacyVerification,
     userDecisionCount: integerNonNegative(value.userDecisionCount),
     reworkCount: integerNonNegative(value.reworkCount),
     firstPassAccepted: typeof value.firstPassAccepted === 'boolean' ? value.firstPassAccepted : null,
@@ -276,21 +306,23 @@ const COMPLETION_EVENTS = {
   'conversation-topic-advance': 'topic-advance',
 };
 
+const QUALIFIED_DELIVERY_EVENTS = new Set(['delivery', 'integration', 'integration-revalidation']);
+
 export function applyOutcomeMetricEvent(value, input = {}) {
   const at = isoOrNull(input.at) ?? new Date().toISOString();
   const next = normalizeOutcomeMetrics(value, { createdAt: input.createdAt ?? at });
-  next.trackingStartedAt ??= at;
 
   if (input.event === 'delivery') {
     next.firstDeliveryAt ??= at;
     next.deliveryAttemptCount += 1;
-    if (input.durationMs !== undefined) {
-      next.verificationRunCount += 1;
-      next.verificationDurationMs += finiteNonNegative(input.durationMs);
-    }
   }
 
-  if (input.to === 'waiting_acceptance') {
+  if (input.event === 'verification-execution' || input.executionCount !== undefined) {
+    next.verificationExecutionCount += integerNonNegative(input.executionCount);
+    next.verificationExecutionDurationMs += finiteNonNegative(input.durationMs);
+  }
+
+  if (input.to === 'waiting_acceptance' && QUALIFIED_DELIVERY_EVENTS.has(input.event)) {
     next.readyForAcceptanceAt ??= at;
     if (next.measurementVersion === COMPLETION_MEASUREMENT_VERSION) {
       next.firstQualifiedDeliveryAt ??= at;
@@ -313,8 +345,10 @@ export function applyOutcomeMetricEvent(value, input = {}) {
   }
 
   if (input.event === 'user-reject' || input.event === 'conversation-defect-return') {
-    next.reworkCount += 1;
-    if (input.event === 'user-reject' && next.firstPassAccepted === null) next.firstPassAccepted = false;
+    if (input.event === 'user-reject') {
+      next.reworkCount += 1;
+      if (next.firstPassAccepted === null) next.firstPassAccepted = false;
+    }
     next.returnReasons.push({
       at,
       category: input.event === 'conversation-defect-return' ? 'defect-return' : normalizeReturnReasonCategory(input.reasonCategory),
@@ -426,11 +460,14 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   });
 
   const tracked = normalized.filter((item) => item.metrics.trackingStartedAt);
-  const decided = tracked.filter((item) => typeof item.metrics.firstPassAccepted === 'boolean');
+  const delivered = tracked.filter((item) => item.metrics.readyForAcceptanceAt);
+  const decided = delivered.filter((item) => typeof item.metrics.firstPassAccepted === 'boolean');
+  const unknown = delivered.length - decided.length;
   const firstPassAccepted = decided.filter((item) => item.metrics.firstPassAccepted === true).length;
-  const verificationTasks = tracked.filter((item) => item.metrics.verificationRunCount > 0);
-  const verificationRuns = verificationTasks.reduce((sum, item) => sum + item.metrics.verificationRunCount, 0);
-  const verificationDurationMs = verificationTasks.reduce((sum, item) => sum + item.metrics.verificationDurationMs, 0);
+  const verificationTasks = tracked.filter((item) => item.metrics.verificationExecutionCount > 0);
+  const verificationRuns = verificationTasks.reduce((sum, item) => sum + item.metrics.verificationExecutionCount, 0);
+  const verificationDurationMs = verificationTasks.reduce((sum, item) => sum + item.metrics.verificationExecutionDurationMs, 0);
+  const legacyVerificationTasks = tracked.filter((item) => item.metrics.legacyVerification?.incomplete === true);
   const reworkTasks = tracked.filter((item) => item.metrics.reworkCount > 0);
   const reworkCount = reworkTasks.reduce((sum, item) => sum + item.metrics.reworkCount, 0);
   const userDecisionCount = tracked.reduce((sum, item) => sum + item.metrics.userDecisionCount, 0);
@@ -461,10 +498,25 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
   if (completed.length < 10) warnings.push('新版已完成可比样本少于 10，只能用于方向观察');
   else if (completed.length < 20) warnings.push('新版已完成可比样本少于 20，尚不足以判断机制稳定性');
   else if (completed.length < 30) warnings.push('新版已完成可比样本为 20～29，可作阶段判断，建议达到 30 后复核');
-  if (normalized.length > measured.length) warnings.push(`${normalized.length - measured.length} 条旧口径记录已保留，但默认退出完成轮次统计`);
+  if (normalized.length > measured.length) warnings.push(`${normalized.length - measured.length} 条旧 Task 或旧口径记录已保留，但默认退出完成轮次统计`);
   if (observing.length) warnings.push(`${observing.length} 条样本仍在 ${quietDays} 天静默观察期，不进入完成轮次分母`);
   if (excluded.length) warnings.push(`${excluded.length} 条新版记录因类型或排除原因不进入可比样本`);
+  if (unknown > 0) warnings.push(`${unknown} 条已正式交付 Task 没有明确用户验收，不能纳入首轮验收结论`);
+  warnings.push('返工只统计同一 Task 内显式记录的用户退回；未关联的新修复 Task 不在返工计数中');
+  if (legacyVerificationTasks.length) warnings.push(`${legacyVerificationTasks.length} 条旧 Task 的验证次数与交付尝试混合，仅保留为 legacy，不纳入新验证执行统计`);
   warnings.push('本摘要不包含可比基线，不能单独证明机制净收益');
+
+  const durations = (startKey, endForTask) => {
+    const values = delivered.flatMap((item) => {
+      const start = isoOrNull(item.metrics[startKey]);
+      const end = isoOrNull(endForTask(item));
+      if (!start || !end || end < start) return [];
+      return [new Date(end).getTime() - new Date(start).getTime()];
+    });
+    const totalMs = values.reduce((sum, value) => sum + value, 0);
+    return { tasks: values.length, totalMs, averageMs: values.length ? Math.round(totalMs / values.length) : null };
+  };
+  const firstDecisionAt = (item) => item.metrics.returnReasons?.[0]?.at ?? item.task.acceptedAt ?? null;
 
   return {
     schemaVersion: 3,
@@ -483,25 +535,35 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
       completed: completed.length,
       observing: observing.length,
       inProgress: inProgress.length,
+      tracked: tracked.length,
+      delivered: delivered.length,
+      legacyWithoutMetrics: selected.length - tracked.length,
       stateCounts,
     },
     completionRounds: distributionFor(completed),
     byProblemType,
     exclusions: [...exclusionReasons.entries()].sort(([left], [right]) => String(left).localeCompare(String(right)))
       .map(([reason, count]) => ({ reason, count })),
-    explicitAcceptance: {
+    firstPassAcceptance: {
       decided: decided.length,
-      unknown: tracked.length - decided.length,
+      unknown,
       passed: firstPassAccepted,
       rate: decided.length ? Number((firstPassAccepted / decided.length).toFixed(4)) : null,
-      coverage: tracked.length ? Number((decided.length / tracked.length).toFixed(4)) : null,
+      coverage: delivered.length ? Number((decided.length / delivered.length).toFixed(4)) : null,
+    },
+    explicitAcceptance: {
+      decided: decided.length,
+      unknown,
+      passed: firstPassAccepted,
+      rate: decided.length ? Number((firstPassAccepted / decided.length).toFixed(4)) : null,
+      coverage: delivered.length ? Number((decided.length / delivered.length).toFixed(4)) : null,
       role: 'secondary-optional-fact',
     },
     conversationFacts: { tracked: conversationTracked.length, followUps },
     rework: {
       tasks: reworkTasks.length,
       count: reworkCount,
-      countingScope: 'same-sample-related-return',
+      countingScope: 'same-task-explicit-user-reject',
       unlinkedRepairTasksIncluded: false,
     },
     technicalDeliveryAttempts: {
@@ -517,6 +579,12 @@ export function summarizeOutcomeMetrics(tasks = [], options = {}) {
       runs: verificationRuns,
       totalMs: verificationDurationMs,
       averageMs: verificationRuns ? Math.round(verificationDurationMs / verificationRuns) : null,
+      legacyIncompleteTasks: legacyVerificationTasks.length,
+    },
+    cycleTime: {
+      preparationToDelivery: durations('preparedAt', item => item.metrics.readyForAcceptanceAt),
+      deliveryToFirstDecision: durations('readyForAcceptanceAt', firstDecisionAt),
+      preparationToFirstDecision: durations('preparedAt', firstDecisionAt),
     },
     returnReasons: [...reasons.entries()].sort(([left], [right]) => left.localeCompare(right))
       .map(([category, count]) => ({ category, count })),

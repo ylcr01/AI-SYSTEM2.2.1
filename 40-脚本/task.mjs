@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { parseArgs, listArg, requiredArg } from './lib/args.mjs';
 import {
   preflightWorkspace,
+  verifyLocalDirect,
   prepareTask,
   deliverTask,
   realignTask,
@@ -18,18 +19,22 @@ import {
   cancelTask,
   findTask,
   listTasks,
+  inspectAcceptanceEligibility,
+  captureEvaluationContext,
 } from './lib/task-runner.mjs';
 import { createExperienceCandidate, saveExperienceCandidate } from './lib/experience-candidate.mjs';
-import { findGitRoot, normalizePath } from './lib/registry.mjs';
-import { diagnoseState, migrateState, readHistory } from './lib/state-manager.mjs';
+import { findGitRoot } from './lib/registry.mjs';
+import { captureRepositoryIdentity } from './lib/git-state.mjs';
+import { diagnoseState, migrateState, readHistory, taskMatchesRepository } from './lib/state-manager.mjs';
 import { publicTaskStateForTask, summarizeOutcomeMetrics } from './lib/outcome-metrics.mjs';
-import { recordLightDelivery, recordLightFollowUp, readLightOutcomeTasks } from './lib/outcome-ledger.mjs';
+import { diagnoseLightOutcomeLedger, recordLightDelivery, recordLightFollowUp, readLightOutcomeTasks } from './lib/outcome-ledger.mjs';
 
 const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const args = parseArgs(process.argv.slice(2));
 const aliases = new Map([
   ['preflight', '预检'],
+  ['verify-local-direct', '复核直达'],
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
   ['realign', '重新对齐'],
   ['follow-up', '后续'],
@@ -124,6 +129,9 @@ function compactStandalone(value) {
     compact[key] = projection.items;
     compact.projection ??= {};
     compact.projection[key] = projection.summary;
+  }
+  for (const key of ['storageIntegrity', 'lightOutcomeLedger', 'acceptanceEligibility']) {
+    if (value[key] && typeof value[key] === 'object') compact[key] = compactStandalone(value[key]);
   }
   return compact;
 }
@@ -228,6 +236,13 @@ function compactTask(task, result = null) {
         `${task.verification.untrustedTechnicalEvidence.length} 条外部技术结果未被作为验收证明`,
       ];
     }
+    if ((task.verification.auxiliaryEvidence ?? []).length > 0) {
+      receipt.warnings = [
+        ...(receipt.warnings ?? []),
+        `${task.verification.auxiliaryEvidence.length} 条导入结果仅作为辅证，未直接闭合验收项`,
+      ];
+    }
+    if (task.verification.browserSummary) receipt.browserSummary = task.verification.browserSummary;
   }
 
   if (task.specImpact && task.specImpact.level !== 'none') {
@@ -261,8 +276,10 @@ function compactTask(task, result = null) {
     ? '需要重新对齐目标或授权边界；确认后宿主会自动更新内部结构并继续。'
     : stopReason === 'budget'
       ? '验证预算已用完，需要你明确决定是否追加有限预算。'
-      : stopReason.startsWith('integration-')
-        ? '目标分支集成或重验尚未完成；处理首个问题后再继续。'
+      : stopReason === 'integration-risk-user-decision'
+        ? '集成存在需显式确认的风险；需要你决定是否授权风险集成并提供原因。'
+        : stopReason.startsWith('integration-') && stopReason !== 'integration-evidence-sufficient'
+          ? '目标分支集成或重验尚未完成；处理首个问题后再继续。'
         : gapText ?? nextAction(task.status);
   if (next) receipt.next = next;
 
@@ -306,6 +323,9 @@ function help() {
   if (args.full !== true) {
     console.log(`AI 研发操作系统 V${SYSTEM_VERSION}：
   预检 [--cwd <path>]（只读、返回 Local 直达或 Worktree 推荐路由）
+  复核直达 --cwd <path> --baseline-head <commit> --baseline-git-root <path>
+       --baseline-git-common-dir <path> (--baseline-branch <branch>|--baseline-detached) --intent <text>
+       [--scope <relative>]
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复）]
        （仅正式 Task 调用；必须从任务专属 Worktree 运行）
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
@@ -317,6 +337,8 @@ function help() {
   保存|恢复|交接|查看|取消 --task-id <id>
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
   记录轻量交付 --cwd <path> --commit <HEAD> --problem-type <类型> --scope <路径>（可重复）
+       --baseline-head <commit> --baseline-git-root <path> --baseline-git-common-dir <path>
+       --verified-change-fingerprint <sha256>
   评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--quiet-days <天数>] [--problem-type <类型>（可重复）] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
   迁移状态 [--state-root <path>] [--apply]（默认仅预演；写入前备份）
@@ -326,12 +348,18 @@ function help() {
   }
   console.log(`AI 研发操作系统 V${SYSTEM_VERSION} 宿主协议：
   预检|preflight [--cwd <path>] [--state-root <path>]（不加载工程上下文、不创建 Task；返回 writeRouting）
+  复核直达|verify-local-direct --cwd <path> --baseline-head <commit>
+       --baseline-git-root <path> --baseline-git-common-dir <path>
+       (--baseline-branch <branch>|--baseline-detached) --intent <text>
+       [--scope <relative>（可重复）] [--path <relative>（可重复）]
+       （轻量写入完成后的无状态最终 Diff 复核；风险、越界、并发或 HEAD 变化时失败关闭）
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复；不支持逗号或 glob）]
        （正式 Task 必须使用 Worktree；Codex managed 优先，不可用时使用 detached Worktree）
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
        [--quality-profile <name>（兼容旧 --skill，可重复）]
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
        [--integration-target <目标分支>（任务 Worktree 必填）]
+       [--model <宿主声明 ID>] [--reasoning-effort <宿主声明档位>] [--execution-environment <宿主声明环境>]
        [--spec-impact none|updated|decision-required] [--spec-impact-reason <text>] [--spec-id <ID>]
   交付 --task-id <id> [--evidence-file <json>] [--review-file <json>]
        [--rationale-file <json>（ChangeSet → Goal/Acceptance 映射，Controlled/Structural 或严格行为保持任务必填，其他可选）]
@@ -341,7 +369,10 @@ function help() {
        --kind related-question|defect-return|scope-extension|positive-acknowledgement|topic-advance
        （只回写关联交付的最小对话事实；不保存消息正文、不运行检查、不自动创建 Task）
   记录轻量交付|record-light-delivery --cwd <path> --commit <当前 HEAD> --problem-type <类型> --scope <路径>（可重复）
+       --baseline-head <commit> --baseline-git-root <path> --baseline-git-common-dir <path>
+       --verified-change-fingerprint <复核直达回执的 verifiedSemanticFingerprint>
        [--task-id <缺陷退回后的原结果编号>] [--exclude-reason <原因>]
+       [--model <宿主声明 ID>] [--reasoning-effort <宿主声明档位>] [--execution-environment <宿主声明环境>]
        （轻量直达验证并本地提交后由宿主自动调用；要求工作树干净，不执行 Push）
   重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
@@ -383,6 +414,20 @@ try {
       stateRoot: args['state-root'],
       cwd: args.cwd ?? process.cwd(),
     }));
+  } else if (action === '复核直达') {
+    output(verifyLocalDirect({
+      stateRoot:args['state-root'],
+      cwd:args.cwd ?? process.cwd(),
+      baselineHead:requiredArg(args, 'baseline-head'),
+      baselineBranch:args['baseline-branch'],
+      baselineDetached:args['baseline-detached'] === true,
+      baselineGitRoot:requiredArg(args, 'baseline-git-root'),
+      baselineGitCommonDir:requiredArg(args, 'baseline-git-common-dir'),
+      intent:requiredArg(args, 'intent'),
+      acceptance:listArg(args.acceptance).join(' '),
+      scope:args.scope ?? '.',
+      plannedPaths:listArg(args.path),
+    }));
   } else if (action === '准备') {
     output(prepareTask({
       stateRoot: args['state-root'],
@@ -410,6 +455,9 @@ try {
         description: args['review-description'] ?? '用户或项目明确要求 Review',
       } : null,
       integrationTarget: args['integration-target'],
+      model:args.model,
+      reasoningEffort:args['reasoning-effort'],
+      executionEnvironment:args['execution-environment'],
     }));
   } else if (action === '交付' || action === '审查') {
     output(deliverTask({
@@ -451,11 +499,20 @@ try {
       stateRoot: args['state-root'],
       cwd: args.cwd ?? process.cwd(),
       commit: requiredArg(args, 'commit'),
+      baselineHead:requiredArg(args, 'baseline-head'),
+      baselineGitRoot:requiredArg(args, 'baseline-git-root'),
+      baselineGitCommonDir:requiredArg(args, 'baseline-git-common-dir'),
+      verifiedChangeFingerprint:requiredArg(args, 'verified-change-fingerprint'),
       problemType: requiredArg(args, 'problem-type'),
       scope: listArg(args.scope),
       taskId: args['task-id'],
       eligible: args.exclude !== true && !args['exclude-reason'],
       exclusionReason: args['exclude-reason'],
+      evaluationContext:captureEvaluationContext({
+        model:args.model,
+        reasoningEffort:args['reasoning-effort'],
+        executionEnvironment:args['execution-environment'],
+      }),
     }));
   } else if (action === '验收') {
     output(acceptTask({
@@ -515,7 +572,28 @@ try {
   } else if (action === '查看') {
     output(findTask({ stateRoot: args['state-root'], taskId: requiredArg(args, 'task-id') }));
   } else if (action === '诊断状态') {
-    output(diagnoseState({ stateRoot: args['state-root'] }));
+    const taskStateIntegrity = diagnoseState({ stateRoot: args['state-root'] });
+    const lightOutcomeLedger = diagnoseLightOutcomeLedger({ stateRoot:args['state-root'] });
+    const storageIntegrity = {
+      ...taskStateIntegrity,
+      ok:taskStateIntegrity.ok && lightOutcomeLedger.ok,
+      components:{ taskState:taskStateIntegrity.ok, lightOutcomeLedger:lightOutcomeLedger.ok },
+    };
+    const acceptanceEligibility = storageIntegrity.ok
+      ? inspectAcceptanceEligibility({ stateRoot:args['state-root'] })
+      : {
+          schemaVersion:1,
+          readOnly:true,
+          scope:'all-projects',
+          ok:null,
+          checked:0,
+          eligible:0,
+          ineligible:0,
+          skipped:true,
+          reason:'storage-integrity-failed',
+          diagnostics:[],
+        };
+    output({ schemaVersion:2, readOnly:true, storageIntegrity, lightOutcomeLedger, acceptanceEligibility });
   } else if (action === '迁移状态') {
     output(migrateState({
       stateRoot:args['state-root'],
@@ -528,10 +606,11 @@ try {
     if (!allProjects && !gitRoot) {
       throw new Error('评估摘要默认按当前 Git 项目过滤；请在 Git 工作树中运行，或显式使用 --all-projects');
     }
-    const active = listTasks({ stateRoot: args['state-root'], gitRoot, limit: 0 }).tasks;
+    const repositoryIdentity = gitRoot ? captureRepositoryIdentity(gitRoot) : null;
+    const active = listTasks({ stateRoot: args['state-root'], repositoryIdentity, limit: 0 }).tasks;
     const history = readHistory({ stateRoot: args['state-root'] })
-      .filter(task => !gitRoot || normalizePath(task.baseline?.gitRoot) === normalizePath(gitRoot));
-    const light = readLightOutcomeTasks({ stateRoot:args['state-root'], gitRoot });
+      .filter(task => !repositoryIdentity || taskMatchesRepository(task, repositoryIdentity));
+    const light = readLightOutcomeTasks({ stateRoot:args['state-root'], repositoryIdentity });
     output(summarizeOutcomeMetrics([...active, ...history, ...light], {
       from: args.from,
       to: args.to,
@@ -544,11 +623,12 @@ try {
     if (!allProjects && !gitRoot) {
       throw new Error('Task 列表默认按当前 Git 项目过滤；请在 Git 工作树中运行，或显式使用 --all-projects');
     }
+    const repositoryIdentity = gitRoot ? captureRepositoryIdentity(gitRoot) : null;
     const limit = args.limit === undefined ? 10 : Number(args.limit);
     if (!Number.isInteger(limit) || limit < 0) throw new Error('--limit 必须是大于等于 0 的整数');
     output(listTasks({
       stateRoot: args['state-root'],
-      gitRoot,
+      repositoryIdentity,
       limit,
     }));
   } else help();

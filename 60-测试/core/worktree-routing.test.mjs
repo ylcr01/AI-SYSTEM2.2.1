@@ -5,11 +5,22 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { assertTaskWorktreeBaseline, captureBaseline } from '../../40-脚本/lib/git-state.mjs';
-import { preflightWorkspace } from '../../40-脚本/lib/task-runner.mjs';
+import { preflightWorkspace, verifyLocalDirect } from '../../40-脚本/lib/task-runner.mjs';
 import { gitRepo, runNode, tempDir } from '../helpers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TASK = path.join(ROOT, '40-脚本', 'task.mjs');
+
+function directBaselineArgs(preflight) {
+  return {
+    baselineHead:preflight.directBaseline.head,
+    baselineGitRoot:preflight.directBaseline.gitRoot,
+    baselineGitCommonDir:preflight.directBaseline.gitCommonDir,
+    ...(preflight.directBaseline.detached
+      ? { baselineDetached:true }
+      : { baselineBranch:preflight.directBaseline.branch }),
+  };
+}
 
 test('正式 Task 的 Local baseline 被稳定路由错误拒绝', (t) => {
   const repo = gitRepo(t);
@@ -41,9 +52,92 @@ test('预检把干净 Local 路由为轻量直达，把脏 Local 路由到新 Wo
   fs.writeFileSync(path.join(repo, 'dirty.txt'), 'user change\n');
   const dirty = preflightWorkspace({ cwd:repo, stateRoot });
   assert.equal(dirty.workspace.clean, false);
+  assert.equal(dirty.directBaseline, null);
   assert.deepEqual(dirty.writeRouting, {
     recommended:'new-worktree', localDirectEligible:false, reasonCodes:['workspace-dirty'],
   });
+});
+
+test('轻量直达终检只允许同一 HEAD、授权 Scope 内的真实低风险 ChangeSet', (t) => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const preflight = preflightWorkspace({ cwd:repo, stateRoot });
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'local direct\n');
+  const verified = verifyLocalDirect({
+    cwd:repo,
+    stateRoot,
+    ...directBaselineArgs(preflight),
+    intent:'修改普通功能',
+    scope:'target.txt',
+  });
+  assert.equal(verified.decision, 'allow');
+  assert.deepEqual(verified.changeSet.files.map(item => item.path), ['target.txt']);
+  assert.deepEqual(verified.baselineIdentity, {
+    head:preflight.directBaseline.head,
+    gitRoot:preflight.directBaseline.gitRoot,
+    gitCommonDir:preflight.directBaseline.gitCommonDir,
+  });
+  assert.equal(verified.verifiedSemanticFingerprint,verified.changeSet.semanticFingerprint);
+  assert.match(verified.verifiedSemanticFingerprint,/^[a-f0-9]{64}$/u);
+  assert.equal(verified.classification.executionRoute, 'local-direct-candidate');
+});
+
+test('轻量直达终检拒绝计划或真实 ChangeSet 升级出的正式任务风险', (t) => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const preflight = preflightWorkspace({ cwd:repo, stateRoot });
+  fs.mkdirSync(path.join(repo, '.github', 'workflows'), { recursive:true });
+  fs.writeFileSync(path.join(repo, '.github', 'workflows', 'release.yml'), 'name: release\n');
+  assert.throws(() => verifyLocalDirect({
+    cwd:repo,
+    stateRoot,
+    ...directBaselineArgs(preflight),
+    intent:'调整配置',
+    scope:'.github/workflows/release.yml',
+    plannedPaths:['.github/workflows/release.yml'],
+  }), (error) => {
+    assert.equal(error.code, 'LOCAL_DIRECT_RISK_ESCALATION');
+    assert.equal(error.classification.executionRoute, 'formal-task');
+    return true;
+  });
+});
+
+test('轻量直达终检拒绝同一提交和分支下的另一个 Git 仓库', (t) => {
+  const repo = gitRepo(t), stateRoot = tempDir(t), clone = path.join(tempDir(t), 'clone');
+  const preflight = preflightWorkspace({ cwd:repo, stateRoot });
+  const cloned = spawnSync('git', ['clone', '--quiet', repo, clone], { encoding:'utf8' });
+  assert.equal(cloned.status, 0, cloned.stderr);
+  assert.throws(() => verifyLocalDirect({
+    cwd:clone,
+    stateRoot,
+    ...directBaselineArgs(preflight),
+    intent:'修改普通功能',
+    scope:'.',
+  }), (error) => {
+    assert.equal(error.code, 'LOCAL_DIRECT_IDENTITY_CHANGED');
+    return true;
+  });
+});
+
+test('轻量直达终检要求显式分支或 detached 身份且拒绝预检后切分支', (t) => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const preflight = preflightWorkspace({ cwd:repo, stateRoot });
+  assert.throws(() => verifyLocalDirect({
+    cwd:repo,
+    stateRoot,
+    baselineHead:preflight.directBaseline.head,
+    baselineGitRoot:preflight.directBaseline.gitRoot,
+    baselineGitCommonDir:preflight.directBaseline.gitCommonDir,
+    intent:'修改普通功能',
+    scope:'.',
+  }), (error) => error.code === 'LOCAL_DIRECT_BASELINE_REQUIRED');
+  const switched = spawnSync('git', ['-C', repo, 'switch', '-c', 'codex/local-direct-other'], { encoding:'utf8' });
+  assert.equal(switched.status, 0, switched.stderr);
+  assert.throws(() => verifyLocalDirect({
+    cwd:repo,
+    stateRoot,
+    ...directBaselineArgs(preflight),
+    intent:'修改普通功能',
+    scope:'.',
+  }), (error) => error.code === 'LOCAL_DIRECT_HEAD_CHANGED');
 });
 
 test('detached Worktree baseline 可通过门禁且与 Local Git 目录隔离', (t) => {
@@ -58,7 +152,17 @@ test('detached Worktree baseline 可通过门禁且与 Local Git 目录隔离', 
     assert.notEqual(fs.realpathSync.native(baseline.gitDir), fs.realpathSync.native(baseline.gitCommonDir));
     const route = preflightWorkspace({ cwd:worktree, stateRoot:tempDir(t) });
     assert.equal(route.writeRouting.recommended, 'current-worktree');
-    assert.equal(route.writeRouting.localDirectEligible, false);
+    assert.equal(route.writeRouting.localDirectEligible, true);
+    assert.equal(route.directBaseline.detached, true);
+    fs.writeFileSync(path.join(worktree, 'target.txt'), 'isolated direct\n');
+    const verified = verifyLocalDirect({
+      cwd:worktree,
+      stateRoot:tempDir(t),
+      ...directBaselineArgs(route),
+      intent:'修改普通功能',
+      scope:'target.txt',
+    });
+    assert.equal(verified.decision, 'allow');
   } finally {
     spawnSync('git', ['-C', repo, 'worktree', 'remove', '--force', worktree], { encoding:'utf8' });
   }

@@ -4,6 +4,7 @@ import { publicContext, resolveContext, selectProjectModule, SYSTEM_ROOT } from 
 import { resolveRepositoryPath } from './path-boundary.mjs';
 import { readProjectManifests } from './manifest-reader.mjs';
 import { loadQualityContext } from './quality-registry.mjs';
+import { addIntentSpecificationHints } from './spec-service.mjs';
 import { classifyTask } from './task-policy.mjs';
 
 function inferRole(context, intent) {
@@ -102,6 +103,9 @@ export function buildContext(options = {}) {
   const classification = options.classification ?? classifyTask({
     intent,
     acceptance,
+    operation: options.operation,
+    scope: options.scope,
+    plannedPaths: options.plannedPaths,
     tracked: options.tracked,
     handoffRequired: options.handoffRequired,
   });
@@ -162,15 +166,16 @@ export function buildContext(options = {}) {
     .filter(item => item.readMode === 'machine' && !manifestPaths.has(item.path))
     .map(configurationSummary);
   const filesToRead = [...new Set([...semanticFacts, ...relevantMachineFacts, ...quality.files])];
-  const warnings = [];
+  const warnings = [...(quality.warnings ?? [])];
   if (classification.structureImpact === 'structural' && filesToRead.length === 0) {
     warnings.push('结构性任务没有可读取的项目资料或质量契约，请显式补充上下文后再实施。');
   }
 
-  return {
+  const result = {
     schemaVersion: 3,
     context: publicContext(context),
     executionTarget: { targetPath: executionTarget },
+    executionRoute: classification.executionRoute,
     role,
     classification,
     facts,
@@ -185,8 +190,10 @@ export function buildContext(options = {}) {
       classification.structureImpact === 'structural'
         ? '读取一个主要 Contract 和最多一个 Active Canonical'
         : '保持局部，不默认加载 Contract/Canonical',
-      classification.continuity === 'ephemeral'
-        ? '轻量直达：不建立持久化 Task；实施最小 Diff，运行受影响的定点检查并报告真实结果'
+      classification.executionRoute === 'read-only'
+        ? '只读分析：不编辑仓库、不建立写 Task；仅返回最小读取计划和可核验事实'
+        : classification.continuity === 'ephemeral'
+          ? '轻量直达：不建立持久化 Task；实施最小 Diff，运行受影响的定点检查并报告真实结果'
         : '正式闭环：编辑前准备 Task；保留 Scope、Evidence、外部授权和集成真实性门禁',
       '代码实现完成后按 lightweight quality baseline 做一次交付前 Quality Pass：更简单方案、命名、职责与副作用位置、改动范围、明显性能退化、遗漏的 Protected Behavior 或边界；只修复目标相关问题，自检不替代 Evidence 或独立 Review',
       '机器配置使用已解析摘要；仅在路由或依赖诊断时读取原文',
@@ -194,4 +201,6 @@ export function buildContext(options = {}) {
       '模型自行选择验证方式和是否使用额外 Agent',
     ],
   };
+  if (context.gitRoot) addIntentSpecificationHints(result, context.gitRoot, intent);
+  return result;
 }

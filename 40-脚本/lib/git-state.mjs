@@ -34,6 +34,23 @@ function statusEntries(gitRoot) {
   return entries.sort((a,b) => a.path.localeCompare(b.path));
 }
 
+function semanticStatus(item) {
+  const status = String(item?.status ?? '').trim();
+  if (item?.hash == null || status.includes('D')) return 'D';
+  if (status === '??' || status.includes('A')) return 'A';
+  return 'M';
+}
+
+function normalizedSemanticEntries(entries = []) {
+  return [...entries]
+    .map((item) => ({ path:String(item?.path ?? '').replaceAll('\\','/'), status:semanticStatus(item), hash:item?.hash ?? null }))
+    .sort((a,b) => a.path.localeCompare(b.path));
+}
+
+export function semanticFingerprintForFiles(entries = []) {
+  return crypto.createHash('sha256').update(JSON.stringify({ files:normalizedSemanticEntries(entries) })).digest('hex');
+}
+
 function fingerprint(entries, extra = {}) {
   const normalized = [...entries].map((item) => ({ path:item.path, status:item.status ?? null, hash:item.hash ?? null })).sort((a,b) => a.path.localeCompare(b.path));
   return crypto.createHash('sha256').update(JSON.stringify({ files: normalized, extra })).digest('hex');
@@ -92,6 +109,17 @@ export function captureBaseline(gitRoot) {
     fingerprint:fingerprint(files), capturedAt:new Date().toISOString() };
 }
 
+export function captureRepositoryIdentity(gitRoot) {
+  if (!gitRoot) throw new Error('缺少 Git Root');
+  const root = path.resolve(gitRoot);
+  const gitCommonDir = gitRawStrict(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
+  return {
+    schemaVersion:1,
+    gitRoot:root,
+    gitCommonDir:gitCommonDir ? path.resolve(gitCommonDir) : null,
+  };
+}
+
 export function inspectWorktreeRouteState(gitRoot) {
   if (!gitRoot) throw new Error('缺少 Git Root');
   const root = path.resolve(gitRoot);
@@ -133,7 +161,7 @@ export function computeChangeSet(baseline) {
   changes.sort((a,b)=>a.path.localeCompare(b.path));
   const uncommittedTaskChanges = JSON.stringify(currentEntries) !== JSON.stringify(baseline.files ?? []);
   return {schemaVersion:4,gitRoot:root,baselineHead:baseline.head,currentHead,files:changes,uncommittedTaskChanges,
-    fingerprint:fingerprint(changes,{head:currentHead}),computedAt:new Date().toISOString()};
+    fingerprint:fingerprint(changes,{head:currentHead}),semanticFingerprint:semanticFingerprintForFiles(changes),computedAt:new Date().toISOString()};
 }
 
 const PACKAGE_METADATA_FIELDS = new Set([

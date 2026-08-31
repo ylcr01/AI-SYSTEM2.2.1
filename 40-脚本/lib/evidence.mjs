@@ -21,6 +21,7 @@ const TECHNICAL_COVERS = new Set([
   'package', 'browser', 'negative-path', 'data', 'rollback', 'architecture',
   'target-environment'
 ]);
+const ARTIFACT_PROOF_COVERS = new Set(['documentation', 'contract', 'visual']);
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -71,31 +72,61 @@ export function createEvidence(input = {}) {
   return evidence;
 }
 
-function validateArtifact(evidence, context, errors) {
-  const relative = evidence?.source?.artifact;
+function artifactIdentities(evidence) {
+  const identities = [];
+  if (evidence?.source?.artifact) identities.push({
+    artifact: evidence.source.artifact,
+    artifactSha256: evidence.source.artifactSha256,
+    label: 'Evidence Artifact',
+  });
+  for (const item of evidence?.result?.caseResults ?? []) {
+    if (!item?.artifact) continue;
+    identities.push({
+      artifact: item.artifact,
+      artifactSha256: item.artifactSha256,
+      label: `Evidence case ${item.id ?? '<missing>'} Artifact`,
+    });
+  }
+  return identities;
+}
+
+function validateArtifactIdentity(identity, context, errors) {
+  const relative = identity?.artifact;
   if (!relative) return;
   const gitRoot = context.gitRoot ? path.resolve(context.gitRoot) : null;
   if (!gitRoot) {
-    errors.push('Evidence Artifact 校验缺少 Git Root');
+    errors.push(`${identity.label} 校验缺少 Git Root`);
     return;
   }
   const artifact = path.resolve(gitRoot, relative);
   const allowedRoots = [gitRoot, ...(context.allowedArtifactRoots ?? []).map((item) => path.resolve(item))];
   if (!pathWithinAnyRoot(artifact, allowedRoots)) {
-    errors.push(`Evidence Artifact 越出允许目录: ${relative}`);
+    errors.push(`${identity.label} 越出允许目录: ${relative}`);
     return;
   }
   if (!fs.existsSync(artifact) || !fs.statSync(artifact).isFile()) {
-    errors.push(`Evidence Artifact 不存在或不是文件: ${relative}`);
+    errors.push(`${identity.label} 不存在或不是文件: ${relative}`);
     return;
   }
-  if (!/^[a-f0-9]{64}$/u.test(evidence.source.artifactSha256 ?? '')) {
-    errors.push('Evidence Artifact 缺少有效 SHA-256');
+  if (!/^[a-f0-9]{64}$/u.test(identity.artifactSha256 ?? '')) {
+    errors.push(`${identity.label} 缺少有效 SHA-256`);
     return;
   }
-  if (fileSha256(artifact) !== evidence.source.artifactSha256) {
-    errors.push(`Evidence Artifact 内容已变化: ${relative}`);
+  if (fileSha256(artifact) !== identity.artifactSha256) {
+    errors.push(`${identity.label} 内容已变化: ${relative}`);
   }
+}
+
+function validateArtifacts(evidence, context, errors) {
+  for (const identity of artifactIdentities(evidence)) validateArtifactIdentity(identity, context, errors);
+}
+
+function hasArtifactIdentity(evidence) {
+  return artifactIdentities(evidence).some((identity) => (
+    typeof identity.artifact === 'string'
+    && identity.artifact.trim().length > 0
+    && /^[a-f0-9]{64}$/u.test(identity.artifactSha256 ?? '')
+  ));
 }
 
 function sameValues(left = [], right = []) {
@@ -129,6 +160,9 @@ function validateAcceptanceBoundNodeTest(evidence, errors) {
   if (!sameValues(evidence.acceptanceIds, declared.acceptanceIds)
     || !sameValues(evidence.covers, declared.covers)) {
     errors.push('node-test Evidence 的 Acceptance/Cover 归因与用例声明不一致');
+  }
+  if ((declared.artifact || observed.artifact) && declared.artifact !== observed.artifact) {
+    errors.push('node-test Evidence 的声明 Artifact 与实际 Artifact 不一致');
   }
 }
 
@@ -168,7 +202,7 @@ export function validateEvidence(evidence, context = {}) {
   }
   validateAcceptanceBoundNodeTest(evidence, errors);
 
-  validateArtifact(evidence, context, errors);
+  validateArtifacts(evidence, context, errors);
   if (!['passed', 'failed', 'accepted'].includes(evidence?.result?.status)) errors.push('Evidence result.status 无效');
   return { valid: errors.length === 0, errors };
 }
@@ -190,14 +224,30 @@ export function evidenceSummary(input = {}) {
   });
   const systemEvidenceHashes = new Set(input.systemEvidenceHashes ?? []);
   const untrustedTechnicalEvidence = [];
+  const auxiliaryEvidence = [];
   const trusted = [];
   for (const evidence of checked.valid) {
     const isSystemObserved = systemEvidenceHashes.has(evidence.payloadHash);
-    const technicalCovers = (evidence.covers ?? []).filter((cover) => TECHNICAL_COVERS.has(cover));
-    if (technicalCovers.length && !isSystemObserved) {
-      untrustedTechnicalEvidence.push({ id: evidence.id, covers: technicalCovers });
+    const artifactIdentified = hasArtifactIdentity(evidence);
+    const trustedCovers = [];
+    const auxiliaryCovers = [];
+    const auxiliaryReasons = new Set();
+    for (const cover of evidence.covers ?? []) {
+      const reasons = [];
+      if (!isSystemObserved) reasons.push('missing-system-provenance');
+      if (ARTIFACT_PROOF_COVERS.has(cover) && !artifactIdentified) reasons.push('missing-artifact-identity');
+      if (reasons.length) {
+        auxiliaryCovers.push(cover);
+        for (const reason of reasons) auxiliaryReasons.add(reason);
+      } else trustedCovers.push(cover);
     }
-    const trustedCovers = (evidence.covers ?? []).filter((cover) => !TECHNICAL_COVERS.has(cover) || isSystemObserved);
+    const untrustedTechnicalCovers = auxiliaryCovers.filter((cover) => TECHNICAL_COVERS.has(cover));
+    if (untrustedTechnicalCovers.length) {
+      untrustedTechnicalEvidence.push({ id: evidence.id, covers: untrustedTechnicalCovers });
+    }
+    if (auxiliaryCovers.length) {
+      auxiliaryEvidence.push({ id: evidence.id, covers: auxiliaryCovers, reasons: [...auxiliaryReasons] });
+    }
     if (trustedCovers.length) trusted.push({ ...evidence, covers: trustedCovers });
   }
   const passed = trusted.filter((item) => ['passed', 'accepted'].includes(item.result?.status));
@@ -219,10 +269,12 @@ export function evidenceSummary(input = {}) {
     coveredAcceptance: Object.entries(acceptanceCoverage).filter(([, value]) => value.satisfied).map(([id]) => id),
     missingAcceptance: Object.entries(acceptanceCoverage).filter(([, value]) => !value.satisfied).map(([id]) => id),
     missingCovers: (input.requiredCovers ?? []).filter((cover) => !covers.includes(cover)),
-    untrustedTechnicalEvidence
+    untrustedTechnicalEvidence,
+    auxiliaryEvidence,
   };
 }
 
 export const evidenceKinds = ALLOWED_KINDS;
 export const evidenceSourceTypes = ALLOWED_SOURCE_TYPES;
 export const technicalEvidenceCovers = TECHNICAL_COVERS;
+export const artifactProofCovers = ARTIFACT_PROOF_COVERS;

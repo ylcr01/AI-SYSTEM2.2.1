@@ -1,7 +1,31 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import { artifactProofCovers, fileSha256 } from './evidence.mjs';
+import { pathWithinAnyRoot } from './path-boundary.mjs';
 
 const NODE_TEST_CASE_EVENT_PREFIX = 'AI_RD_NODE_TEST_CASE ';
 const NODE_TEST_CASE_REPORTER = new URL('./node-test-case-reporter.mjs', import.meta.url).href;
+export const BROWSER_CHECK_LIMITS = Object.freeze({
+  maxFlows: 4,
+  flowTimeoutMs: 15_000,
+  batchTimeoutMs: 120_000,
+  outerTimeoutMs: 180_000,
+});
+
+export function isBrowserCheck(check = {}) {
+  return (check.covers ?? []).includes('browser')
+    || (check.cases ?? []).some((item) => (item.covers ?? []).includes('browser'));
+}
+
+function validateBrowserShape(check, legacy) {
+  if (!isBrowserCheck(check)) return;
+  if (legacy || check.runner !== 'node-test') {
+    throw new Error('Browser Check 必须使用 node-test 用例级 Runner');
+  }
+  if (!Array.isArray(check.cases) || check.cases.length !== 1) {
+    throw new Error('Browser Check 必须一个 check 只声明一个 case/flow');
+  }
+}
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
@@ -18,6 +42,7 @@ function nodeTestArgs(check, { legacy }) {
     args.push(...check.testFiles);
     return args;
   }
+  validateBrowserShape(check, legacy);
   if (Object.keys(config).length) throw new Error('node-test v2 不接受 config；目标用例必须通过 cases 声明');
   if (!Array.isArray(check.cases) || !check.cases.length) throw new Error('node-test v2 必须声明非空 cases');
   const names = [...new Set(check.cases.map((item) => item.testName))];
@@ -28,6 +53,27 @@ function nodeTestArgs(check, { legacy }) {
     '--test-name-pattern', pattern,
     ...check.testFiles,
   ];
+}
+
+function captureArtifactIdentity(item, cwd) {
+  const requiresArtifact = (item.covers ?? []).some((cover) => artifactProofCovers.has(cover));
+  if (!item.artifact) {
+    return requiresArtifact
+      ? { ok: false, error: `case ${item.id} 的直接证明缺少 Artifact identity` }
+      : { ok: true };
+  }
+  const artifact = path.resolve(cwd, item.artifact);
+  if (!pathWithinAnyRoot(artifact, [cwd])) {
+    return { ok: false, error: `case ${item.id} 的 Artifact 越出 Git Root: ${item.artifact}` };
+  }
+  if (!fs.existsSync(artifact) || !fs.statSync(artifact).isFile()) {
+    return { ok: false, error: `case ${item.id} 的 Artifact 不存在或不是文件: ${item.artifact}` };
+  }
+  return {
+    ok: true,
+    artifact: item.artifact,
+    artifactSha256: fileSha256(artifact),
+  };
 }
 
 const ADAPTERS = new Map([
@@ -84,11 +130,13 @@ function nodeTestCaseResult(check, execution) {
     const failedCount = matches.filter((event) => event.event === 'failed').length;
     const passedCount = matches.filter((event) => event.event === 'passed' && !event.skipped && !event.todo).length;
     const matchedCount = matches.length;
+    const artifactIdentity = captureArtifactIdentity(declared, execution.cwd);
     const ok = matchedCount === declared.expectedMatches
       && passedCount === declared.expectedMatches
       && failedCount === 0
       && skippedCount === 0
-      && todoCount === 0;
+      && todoCount === 0
+      && artifactIdentity.ok;
     return {
       id: declared.id,
       acceptanceIds: declared.acceptanceIds,
@@ -102,6 +150,11 @@ function nodeTestCaseResult(check, execution) {
       skippedCount,
       todoCount,
       status: ok ? 'passed' : 'failed',
+      ...(artifactIdentity.artifact ? {
+        artifact: artifactIdentity.artifact,
+        artifactSha256: artifactIdentity.artifactSha256,
+      } : {}),
+      artifactError: artifactIdentity.error ?? null,
       executed: matches.map((event) => ({
         name: event.name,
         file: event.file,
@@ -118,6 +171,18 @@ function nodeTestCaseResult(check, execution) {
   if (failedCases.length) {
     errorParts.push(`目标用例证明失败: ${failedCases.map((item) => `${item.id}(matched=${item.matchedCount}, passed=${item.passedCount}, failed=${item.failedCount}, skipped=${item.skippedCount}, todo=${item.todoCount})`).join(', ')}`);
   }
+  for (const item of failedCases) {
+    if (item.artifactError) errorParts.push(item.artifactError);
+  }
+  const browserFlow = isBrowserCheck(check) ? {
+    id: caseResults[0]?.id ?? null,
+    status: caseResults[0]?.status ?? 'failed',
+    matchedCount: caseResults[0]?.matchedCount ?? 0,
+    passedCount: caseResults[0]?.passedCount ?? 0,
+    failedCount: caseResults[0]?.failedCount ?? 0,
+    skippedCount: caseResults[0]?.skippedCount ?? 0,
+    todoCount: caseResults[0]?.todoCount ?? 0,
+  } : null;
   return {
     caseResults,
     caseSummary: {
@@ -126,6 +191,7 @@ function nodeTestCaseResult(check, execution) {
       failed: failedCases.length,
       malformedEvents: parsed.malformed.length,
     },
+    browserFlow,
     error: errorParts.length ? errorParts.join('；') : null,
   };
 }
@@ -143,6 +209,7 @@ export function buildAdapterCheck(check = {}) {
   if (check.command !== undefined || check.args !== undefined || check.sideEffect !== undefined) {
     throw new Error(`Task Check ${check.name ?? ''} 只能声明 runner/cases/config，禁止自定义 command/args/sideEffect`);
   }
+  validateBrowserShape(check, check.legacy === true);
   const built = adapter.build(check);
   return {
     runner,

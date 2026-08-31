@@ -8,7 +8,7 @@ import { applyOutcomeMetricEvent, createOutcomeMetrics, normalizeConversationOut
 
 const CURRENT_SCHEMA = 10;
 const TERMINAL = new Set(['accepted','closed','cancelled']);
-const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework']);
+const WRITING = new Set(['prepared','implementing','verifying','reviewing','needs_rework','ready_to_integrate']);
 const TRANSITIONS = {
   prepared: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
   implementing: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','needs_rework','blocked','saved','cancelled']),
@@ -18,7 +18,7 @@ const TRANSITIONS = {
   saved: new Set(['implementing','verifying','cancelled']),
   needs_rework: new Set(['implementing','verifying','reviewing','ready_to_integrate','waiting_acceptance','blocked','saved','cancelled']),
   ready_to_integrate: new Set(['verifying','waiting_acceptance','needs_rework','cancelled']),
-  waiting_acceptance: new Set(['implementing','verifying','accepted','closed','needs_rework','saved','cancelled'])
+  waiting_acceptance: new Set(['implementing','verifying','accepted','closed','needs_rework','blocked','saved','cancelled'])
 };
 
 export function resolveStateRoot(stateRoot, environment = process.env) {
@@ -175,6 +175,7 @@ function currentTask(raw, options = {}) {
     ...upgraded,
     outcomeMetrics: normalizeOutcomeMetrics(upgraded.outcomeMetrics, { createdAt:upgraded.createdAt }),
     conversationOutcome: normalizeConversationOutcome(upgraded.conversationOutcome),
+    evaluationContext: upgraded.evaluationContext ?? null,
     closedAt: upgraded.closedAt ?? null,
   };
 }
@@ -207,6 +208,7 @@ export function createTask(input = {}) {
     authorization: input.authorization,
     classification: input.classification,
     context: input.context,
+    evaluationContext: input.evaluationContext ?? null,
     baseline: input.baseline ?? null,
     changeSet: null,
     evidence: [],
@@ -311,6 +313,7 @@ export function updateTask(input = {}) {
         at: next.updatedAt,
         createdAt: current.createdAt,
         durationMs: input.metricDurationMs,
+        executionCount: input.metricExecutionCount,
         reasonCategory: input.metricReasonCategory,
         note: input.metricNote,
       });
@@ -338,11 +341,22 @@ export function listTasks(input = {}) {
   const value = paths(input.stateRoot);
   let tasks = nonTerminalTasks(value)
     .sort((left, right) => (right.updatedAt ?? right.createdAt).localeCompare(left.updatedAt ?? left.createdAt));
-  if (input.gitRoot) {
-    tasks = tasks.filter((task) => normalizePath(task.baseline?.gitRoot) === normalizePath(input.gitRoot));
+  if (input.repositoryIdentity || input.gitRoot) {
+    const identity = input.repositoryIdentity ?? { gitRoot:input.gitRoot };
+    tasks = tasks.filter((task) => taskMatchesRepository(task, identity));
   }
   if (input.limit > 0) tasks = tasks.slice(0, input.limit);
   return { tasks, stateRoot: value.root };
+}
+
+export function taskMatchesRepository(task, identity = {}) {
+  const taskCommonDir = task?.baseline?.gitCommonDir;
+  const currentCommonDir = identity.gitCommonDir;
+  if (taskCommonDir && currentCommonDir) {
+    return normalizePath(taskCommonDir) === normalizePath(currentCommonDir);
+  }
+  return Boolean(task?.baseline?.gitRoot && identity.gitRoot)
+    && normalizePath(task.baseline.gitRoot) === normalizePath(identity.gitRoot);
 }
 
 export function diagnoseState(input = {}) {

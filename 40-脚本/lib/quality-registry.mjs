@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveRepositoryPath } from './path-boundary.mjs';
 import { SYSTEM_ROOT } from './registry.mjs';
 
 const ROLE_PROFILE = {
@@ -19,6 +20,7 @@ const INTENT_PROFILES = [
   ['curate-knowledge', /经验|知识|复盘|knowledge/iu],
 ];
 const IMPLEMENTATION_QUALITY_KINDS = new Set(['code', 'api', 'data', 'integration', 'ui']);
+const MAX_PROFILES = 2;
 
 export function implementationQualityBaseline(artifactKinds = []) {
   const kinds = Array.isArray(artifactKinds) ? artifactKinds : [];
@@ -44,46 +46,129 @@ function existing(file) {
   return file && fs.existsSync(file) && fs.statSync(file).isFile() ? path.resolve(file) : null;
 }
 
-function existingPath(file) {
-  return file && fs.existsSync(file) ? path.resolve(file) : null;
-}
-
 function readJson(file, fallback = null) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
   catch { return fallback; }
 }
 
 function unique(values = []) {
-  return [...new Set(values.filter(Boolean).map(String))];
+  return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))];
 }
 
 function selectProfiles(role, intent, explicit = []) {
-  if (explicit.length) return unique(explicit).slice(0, 2);
-  const result = [];
-  if (ROLE_PROFILE[role]) result.push(ROLE_PROFILE[role]);
-  for (const [name, pattern] of INTENT_PROFILES) if (pattern.test(intent)) result.push(name);
-  return unique(result).slice(0, 2);
+  const candidates = [];
+  if (explicit.length) candidates.push(...explicit);
+  else {
+    if (ROLE_PROFILE[role]) candidates.push(ROLE_PROFILE[role]);
+    for (const [name, pattern] of INTENT_PROFILES) if (pattern.test(intent)) candidates.push(name);
+  }
+  const selected = unique(candidates);
+  return {
+    profiles: selected.slice(0, MAX_PROFILES),
+    warnings: selected.length > MAX_PROFILES
+      ? [`Quality Profile 命中 ${selected.length} 个，已截断为前 ${MAX_PROFILES} 个: ${selected.slice(0, MAX_PROFILES).join(', ')}`]
+      : [],
+  };
+}
+
+function assertQualityEntry(entry, label, arrayFields) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error(`${label}必须是对象`);
+  if (typeof entry.id !== 'string' || !entry.id.trim()) throw new Error(`${label}.id 必须是非空字符串`);
+  if ('status' in entry && typeof entry.status !== 'string') throw new Error(`${label}.status 必须是字符串`);
+  for (const field of arrayFields) {
+    if (!(field in entry)) continue;
+    if (!Array.isArray(entry[field]) || entry[field].some((value) => typeof value !== 'string' || !value.trim())) {
+      throw new Error(`${label}.${field} 必须是非空字符串数组`);
+    }
+  }
 }
 
 function qualityManifest(root, source) {
   if (!root) return null;
-  const file = path.join(root, '.ai', 'quality.json');
-  const value = readJson(file);
-  if (!value) return null;
+  const candidate = path.join(root, '.ai', 'quality.json');
+  const label = source === 'project' ? '项目质量清单' : '底座质量清单';
+  let candidateEntry;
+  try {
+    candidateEntry = fs.lstatSync(candidate);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw new Error(`${label}路径无法读取: ${candidate}: ${error.message}`);
+  }
+  if (candidateEntry.isSymbolicLink()) {
+    try {
+      fs.statSync(candidate);
+    } catch (error) {
+      if (error?.code === 'ENOENT') throw new Error(`${label}符号链接目标不存在: ${candidate}`);
+      throw new Error(`${label}符号链接目标无法读取: ${candidate}: ${error.message}`);
+    }
+  }
+  const file = resolveRepositoryPath(root, '.ai/quality.json', { label, mustExist: true }).target;
+  if (!fs.statSync(file).isFile()) throw new Error(`${label}必须是普通文件: ${file}`);
+  let value;
+  try {
+    value = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new Error(`${label} JSON 损坏: ${file}: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label}必须是 JSON 对象: ${file}`);
+  }
+  if ('schemaVersion' in value && value.schemaVersion !== 1) {
+    throw new Error(`${label}.schemaVersion 仅支持 1，实际为 ${value.schemaVersion}`);
+  }
+  for (const field of ['contracts', 'exemplars', 'disabledDefaults', 'exceptions']) {
+    if (field in value && !Array.isArray(value[field])) throw new Error(`${label}.${field} 必须是数组`);
+  }
+  if ((value.disabledDefaults ?? []).some((profile) => typeof profile !== 'string' || !profile.trim())) {
+    throw new Error(`${label}.disabledDefaults 必须是非空字符串数组`);
+  }
+  const manifestRoot = path.resolve(root);
+  for (const [index, item] of (value.contracts ?? []).entries()) {
+    const itemLabel = `${label}.contracts[${index}]`;
+    assertQualityEntry(item, itemLabel, ['profiles', 'skills', 'roles', 'artifactKinds']);
+    if (typeof item.path !== 'string' || !item.path.trim()) throw new Error(`${itemLabel}.path 必须是非空字符串`);
+    if (item.status && item.status !== 'active') continue;
+    resolveManifestFile({ root: manifestRoot }, item.path, `Contract ${item.id ?? index} 路径`);
+  }
+  for (const [index, item] of (value.exemplars ?? []).entries()) {
+    const itemLabel = `${label}.exemplars[${index}]`;
+    assertQualityEntry(item, itemLabel, ['profiles', 'skills', 'roles', 'artifactKinds', 'structureImpacts', 'keywords', 'read']);
+    if ((item.status && item.status !== 'active') || item.supersededBy) continue;
+    resolvePaths({ root: manifestRoot }, item.read, `Canonical ${item.id ?? index} 路径`);
+  }
   return {
     source,
-    root: path.resolve(root),
+    root: manifestRoot,
     file: path.resolve(file),
     contracts: Array.isArray(value.contracts) ? value.contracts : [],
     exemplars: Array.isArray(value.exemplars) ? value.exemplars : [],
-    disabledDefaults: new Set(value.disabledDefaults ?? []),
+    disabledDefaults: new Set(unique(value.disabledDefaults ?? [])),
     exceptions: value.exceptions ?? [],
   };
 }
 
 function configuredProfiles(item) {
-  if (Array.isArray(item.profiles)) return item.profiles;
-  return Array.isArray(item.skills) ? item.skills : [];
+  if (Array.isArray(item.profiles)) return unique(item.profiles);
+  return Array.isArray(item.skills) ? unique(item.skills) : [];
+}
+
+function configuredProfileNames(...manifests) {
+  const central = readJson(path.join(SYSTEM_ROOT, '20-能力模块', 'manifest.json'), {});
+  const centralEntries = central?.profiles ?? central?.abilities ?? [];
+  return new Set(unique([
+    ...centralEntries.filter((item) => !item.status || item.status === 'active').map((item) => item.name),
+    ...manifests.filter(Boolean).flatMap((manifest) => [
+      ...manifest.contracts.flatMap(configuredProfiles),
+      ...manifest.exemplars.flatMap(configuredProfiles),
+    ]),
+  ]));
+}
+
+function assertExplicitProfiles(explicitProfiles, ...manifests) {
+  if (!explicitProfiles.length) return;
+  const configured = configuredProfileNames(...manifests);
+  const invalid = explicitProfiles.filter((profile) => !configured.has(profile));
+  if (invalid.length) throw new Error(`无效 Quality Profile: ${invalid.join(', ')}`);
 }
 
 function matches(item, input) {
@@ -95,15 +180,22 @@ function matches(item, input) {
   return true;
 }
 
-function resolvePaths(manifest, values = []) {
-  return values.map((relative) => existingPath(path.resolve(manifest.root, relative))).filter(Boolean);
+function resolveManifestFile(manifest, relative, label) {
+  const file = resolveRepositoryPath(manifest.root, relative, { label, mustExist: true }).target;
+  if (!fs.statSync(file).isFile()) throw new Error(`${label}必须指向普通文件: ${relative}`);
+  return path.resolve(file);
+}
+
+function resolvePaths(manifest, values = [], label = 'Canonical 路径') {
+  if (!Array.isArray(values) || values.length === 0) throw new Error(`${label}至少需要一个普通文件`);
+  return unique(values).map((relative) => resolveManifestFile(manifest, relative, label));
 }
 
 function contractFromManifest(manifest, input) {
   for (const item of manifest?.contracts ?? []) {
     if (!matches(item, input)) continue;
-    const file = existing(path.resolve(manifest.root, item.path ?? ''));
-    if (file) return { id: item.id, version: item.version ?? 1, path: file, source: manifest.source, manifest: manifest.file };
+    const file = resolveManifestFile(manifest, item.path, `Contract ${item.id ?? '<unknown>'} 路径`);
+    return { id: item.id, version: item.version ?? 1, path: file, source: manifest.source, manifest: manifest.file };
   }
   return null;
 }
@@ -113,6 +205,7 @@ function exemplarCandidates(manifest, input) {
   return (manifest?.exemplars ?? [])
     .filter((item) => matches(item, input) && !item.supersededBy && (item.structureImpacts ?? ['structural']).includes('structural'))
     .map((item) => ({ item, score: (item.keywords ?? []).filter((keyword) => normalized.includes(String(keyword).toLowerCase())).length }))
+    .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score)
     .map(({ item }) => item);
 }
@@ -120,8 +213,8 @@ function exemplarCandidates(manifest, input) {
 function exemplarFromManifest(manifest, input) {
   const item = exemplarCandidates(manifest, input)[0];
   if (!item) return null;
-  const files = resolvePaths(manifest, item.read ?? []);
-  return files.length ? { ...item, files, source: manifest.source, manifest: manifest.file } : null;
+  const files = resolvePaths(manifest, item.read, `Canonical ${item.id ?? '<unknown>'} 路径`);
+  return { ...item, files, source: manifest.source, manifest: manifest.file };
 }
 
 function centralContract(profile) {
@@ -151,10 +244,12 @@ function centralExemplar(profile, intent) {
   const item = (entry?.exemplars ?? [])
     .filter((candidate) => candidate.status === 'active' && !candidate.supersededBy && (candidate.structureImpacts ?? ['structural']).includes('structural'))
     .map((candidate) => ({ candidate, score: (candidate.keywords ?? []).filter((keyword) => normalized.includes(String(keyword).toLowerCase())).length }))
+    .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score)[0]?.candidate;
   if (!item) return null;
-  const files = (item.read ?? []).map((file) => existing(path.join(root, file))).filter(Boolean);
-  return files.length ? { ...item, files, source: 'central' } : null;
+  const centralRoot = { root };
+  const files = resolvePaths(centralRoot, item.read, `Central Canonical ${item.id ?? '<unknown>'} 路径`);
+  return { ...item, files, source: 'central' };
 }
 
 function selectExperience(intent, projectRoot) {
@@ -173,8 +268,15 @@ function selectExperience(intent, projectRoot) {
       .filter(({ score }) => score > 0)
       .sort((left, right) => right.score - left.score)[0]?.item;
     if (route) {
-      const file = existing(path.join(source.root, route.read?.[0] ?? ''));
-      if (file) return [{ path: file, source: source.source }];
+      if (!Array.isArray(route.read) || route.read.length === 0) {
+        throw new Error(`Experience ${route.id ?? '<unknown>'} 至少需要一个普通文件`);
+      }
+      const files = resolvePaths(
+        { root: source.root },
+        route.read,
+        `Experience ${route.id ?? '<unknown>'} 路径`,
+      );
+      return files.map((file) => ({ path: file, source: source.source }));
     }
   }
   return [];
@@ -182,7 +284,11 @@ function selectExperience(intent, projectRoot) {
 
 export function loadQualityContext(input = {}) {
   const explicitProfiles = unique(input.explicitProfiles ?? input.explicitSkills ?? []);
-  const profiles = selectProfiles(input.role, input.intent ?? '', explicitProfiles);
+  const project = qualityManifest(input.projectRoot, 'project');
+  const template = qualityManifest(input.templateRoot, 'template');
+  assertExplicitProfiles(explicitProfiles, project, template);
+  const selection = selectProfiles(input.role, input.intent ?? '', explicitProfiles);
+  const profiles = selection.profiles;
   const baseline = implementationQualityBaseline(input.artifactKinds ?? []);
   const experiences = selectExperience(input.intent ?? '', input.projectRoot);
   const shouldLoadContract = input.structureImpact === 'structural' || explicitProfiles.length > 0;
@@ -193,7 +299,9 @@ export function loadQualityContext(input = {}) {
     contracts: [],
     exemplars: [],
     experiences,
-    files: [],
+    files: unique(experiences.map((item) => item.path)),
+    warnings: selection.warnings,
+    authority: { project: project?.file ?? null, template: template?.file ?? null },
   };
   if (!shouldLoadContract) return baseResult;
 
@@ -203,8 +311,6 @@ export function loadQualityContext(input = {}) {
     artifactKinds: input.artifactKinds ?? ['code'],
     intent: input.intent ?? '',
   };
-  const project = qualityManifest(input.projectRoot, 'project');
-  const template = qualityManifest(input.templateRoot, 'template');
   let contract = contractFromManifest(project, matchInput) ?? contractFromManifest(template, matchInput);
   if (!contract) {
     for (const profile of profiles) {
@@ -212,6 +318,9 @@ export function loadQualityContext(input = {}) {
       contract = centralContract(profile);
       if (contract) break;
     }
+  }
+  if (!contract && explicitProfiles.length) {
+    throw new Error(`显式 Quality Profile 没有可读取的 Contract: ${profiles.join(', ')}`);
   }
   contract ??= universalContract();
 
@@ -230,13 +339,12 @@ export function loadQualityContext(input = {}) {
   const files = [
     contract?.path,
     ...(exemplar?.files ?? []),
-    ...(input.structureImpact === 'structural' ? experiences.map((item) => item.path) : []),
+    ...experiences.map((item) => item.path),
   ].filter(Boolean);
   return {
     ...baseResult,
     contracts: contract ? [contract] : [],
     exemplars: exemplar ? [exemplar] : [],
     files: unique(files),
-    authority: { project: project?.file ?? null, template: template?.file ?? null },
   };
 }

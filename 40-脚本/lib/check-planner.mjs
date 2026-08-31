@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createBudget, budgetDecision, consumeBudget, remainingBudget } from './verification-budget.mjs';
-import { buildAdapterCheck, evaluateAdapterResult } from './check-adapters.mjs';
+import {
+  BROWSER_CHECK_LIMITS,
+  buildAdapterCheck,
+  evaluateAdapterResult,
+  isBrowserCheck,
+} from './check-adapters.mjs';
+import { artifactProofCovers } from './evidence.mjs';
 
 const COST = { 'very-low': 0, low: 1, medium: 2, high: 3 };
 
@@ -86,6 +92,16 @@ function canonicalTestFile(gitRoot, file, label) {
   return path.relative(gitRoot, absolute).split(path.sep).join('/');
 }
 
+function canonicalOutputArtifact(gitRoot, file, label) {
+  const raw = String(file ?? '').trim();
+  if (!raw) throw new Error(`${label} 不能为空`);
+  const absolute = path.resolve(gitRoot, raw);
+  if (!lexicalPathWithin(path.resolve(gitRoot), absolute)) {
+    throw new Error(`${label} 越出 Git Root: ${file}`);
+  }
+  return path.relative(gitRoot, absolute).split(path.sep).join('/');
+}
+
 function validateTaskCase(item, checkName, context, seenIds) {
   if (!item || typeof item !== 'object' || Array.isArray(item)) {
     throw new Error(`Task Check ${checkName} 包含无效 case`);
@@ -107,6 +123,13 @@ function validateTaskCase(item, checkName, context, seenIds) {
     throw new Error(`Task Check ${checkName} 的 case ${id} expectedMatches 必须是正安全整数`);
   }
   const testFile = canonicalTestFile(context.gitRoot, String(item.testFile ?? '').trim(), `Task Check ${checkName} 的 case ${id} testFile`);
+  const requiresArtifact = covers.some((cover) => artifactProofCovers.has(cover));
+  const artifact = item.artifact === undefined
+    ? null
+    : canonicalOutputArtifact(context.gitRoot, item.artifact, `Task Check ${checkName} 的 case ${id} artifact`);
+  if (requiresArtifact && !artifact) {
+    throw new Error(`Task Check ${checkName} 的 case ${id} 声明 documentation/contract/visual 直接证明时必须绑定 artifact`);
+  }
   for (const acceptanceId of acceptanceIds) {
     const acceptance = (context.acceptance ?? []).find((entry) => entry.id === acceptanceId);
     if (!acceptance) throw new Error(`Task Check ${checkName} 的 case ${id} 绑定未知 Acceptance: ${acceptanceId}`);
@@ -114,7 +137,30 @@ function validateTaskCase(item, checkName, context, seenIds) {
       throw new Error(`Task Check ${checkName} 的 case ${id} covers 与 Acceptance ${acceptanceId} 的 requiredCovers 无关`);
     }
   }
-  return { id, acceptanceIds, covers, testFile, testName, expectedMatches };
+  return {
+    id, acceptanceIds, covers, testFile, testName, expectedMatches,
+    ...(artifact ? { artifact } : {}),
+  };
+}
+
+function assertBrowserCheckLimits(checks, source = 'Browser Check') {
+  const browserChecks = (checks ?? []).filter((check) => isBrowserCheck(check));
+  if (browserChecks.length > BROWSER_CHECK_LIMITS.maxFlows) {
+    throw new Error(`${source} 最多允许 ${BROWSER_CHECK_LIMITS.maxFlows} 个 flow，当前 ${browserChecks.length} 个`);
+  }
+  for (const check of browserChecks) {
+    if (check.runner !== 'node-test' || check.resultProtocol !== 'node-test-cases-v1') {
+      throw new Error(`${source} ${check.name} 必须使用 node-test 用例级 Runner`);
+    }
+    if (!Array.isArray(check.cases) || check.cases.length !== 1) {
+      throw new Error(`${source} ${check.name} 必须一个 check 只声明一个 case/flow`);
+    }
+    const timeoutMs = Number(check.timeoutMs);
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > BROWSER_CHECK_LIMITS.flowTimeoutMs) {
+      throw new Error(`${source} ${check.name} timeoutMs 必须为 1-${BROWSER_CHECK_LIMITS.flowTimeoutMs} 的安全整数`);
+    }
+  }
+  return browserChecks;
 }
 
 function validateTaskCheck(check, context) {
@@ -136,6 +182,8 @@ function validateTaskCheck(check, context) {
   }
   context.seen.add(name);
   const adapter = buildAdapterCheck({ ...check, name, cases, testFiles });
+  const browser = isBrowserCheck({ ...check, cases, covers });
+  const timeoutMs = Number(check.timeoutMs ?? (browser ? BROWSER_CHECK_LIMITS.flowTimeoutMs : 600000));
   return {
     name,
     runner: adapter.runner,
@@ -150,7 +198,7 @@ function validateTaskCheck(check, context) {
     config: check.config ?? {},
     sideEffect: adapter.sideEffect,
     estimatedCost: String(check.estimatedCost ?? 'low').trim() || 'low',
-    timeoutMs: Number(check.timeoutMs ?? 600000),
+    timeoutMs,
     acceptanceMode: 'explicit',
     profiles: ['quick', 'standard', 'controlled', 'release'],
     source: 'task-check-file'
@@ -170,7 +218,9 @@ export function loadTaskChecks(file, options = {}) {
   }
   if (value.schemaVersion !== 2) throw new Error('新建 task-check-file 必须使用 Schema 2 用例级协议');
   const seen = new Set();
-  return value.checks.map((check) => validateTaskCheck(check, { ...options, seen }));
+  const checks = value.checks.map((check) => validateTaskCheck(check, { ...options, seen }));
+  assertBrowserCheckLimits(checks, 'task-check-file Browser Check');
+  return checks;
 }
 
 function fileHashes(gitRoot, file) {
@@ -226,7 +276,7 @@ export function checksFromManifest(manifest, options = {}) {
     throw new Error('Check Manifest 无效或版本不受支持');
   }
   const gitRoot = path.resolve(options.gitRoot ?? options.cwd ?? '.');
-  return manifest.checks.map((stored) => {
+  const checks = manifest.checks.map((stored) => {
     for (const file of stored.testFiles ?? []) {
       const absolute = path.resolve(gitRoot, file);
       const current = fs.existsSync(absolute) && fs.statSync(absolute).isFile()
@@ -260,6 +310,8 @@ export function checksFromManifest(manifest, options = {}) {
     if (!stored.command || !Array.isArray(stored.args)) throw new Error(`Check Manifest 检查定义无效: ${stored.name}`);
     return { ...stored, source: 'check-manifest' };
   });
+  assertBrowserCheckLimits(checks, 'Check Manifest Browser Check');
+  return checks;
 }
 
 export function acceptanceIdsForCheck(check, acceptance = []) {
@@ -396,13 +448,20 @@ export function resolveCommand(command, options = {}) {
   return { command, prefix: [] };
 }
 
-function executeOne(check, cwd, timeoutMs) {
+function nowFrom(clock) {
+  const value = Number(clock?.now?.() ?? Date.now());
+  if (!Number.isFinite(value)) throw new Error('检查执行时钟返回无效时间');
+  return value;
+}
+
+function executeOne(check, cwd, timeoutMs, runtime = {}) {
   const resolved = resolveCommand(check.command);
-  const startedAt = new Date().toISOString();
-  const started = Date.now();
+  const started = nowFrom(runtime.clock);
+  const startedAt = new Date(started).toISOString();
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
-  const result = spawnSync(resolved.command, [...resolved.prefix, ...check.args], {
+  const execute = runtime.spawnSync ?? spawnSync;
+  const result = execute(resolved.command, [...resolved.prefix, ...check.args], {
     cwd,
     env: childEnv,
     encoding: 'utf8',
@@ -411,7 +470,8 @@ function executeOne(check, cwd, timeoutMs) {
     timeout: timeoutMs,
     maxBuffer: 8 * 1024 * 1024
   });
-  const finishedAt = new Date().toISOString();
+  const finished = nowFrom(runtime.clock);
+  const finishedAt = new Date(finished).toISOString();
   const adapterResult = evaluateAdapterResult(check, {
     cwd,
     stdout: result.stdout,
@@ -427,7 +487,7 @@ function executeOne(check, cwd, timeoutMs) {
     startedAt,
     finishedAt,
     status: result.status,
-    durationMs: Date.now() - started,
+    durationMs: Math.max(0, finished - started),
     stdout: tail(result.stdout),
     stderr: tail(result.stderr),
     error: result.error?.message ?? adapterResult.error ?? null,
@@ -442,6 +502,7 @@ function executeOne(check, cwd, timeoutMs) {
     cases: check.cases ?? [],
     caseResults: adapterResult.caseResults ?? [],
     caseSummary: adapterResult.caseSummary ?? null,
+    browserFlow: adapterResult.browserFlow ?? null,
     testFiles: check.testFiles ?? [],
     artifacts: check.artifacts ?? []
   };
@@ -491,41 +552,146 @@ function reuseExecution(previous, check, executionFingerprint) {
   };
 }
 
+const BROWSER_HEARTBEAT_GAP = Object.freeze({
+  id: 'browser-progress-heartbeat-30s',
+  implemented: false,
+  reason: '同步 spawnSync runner 无法在子进程运行期间读取增量输出并真实执行 30 秒心跳或无输出终止',
+});
+
+function browserExecutionSummary(checks, results, stopReason = null) {
+  const declared = checks.filter((check) => isBrowserCheck(check)).length;
+  const flowResults = results.filter((result) => isBrowserCheck(result));
+  const timedOut = flowResults.filter((result) => (
+    result.hardLimit
+    || /ETIMEDOUT|timed out|超时/iu.test(result.error ?? '')
+  )).length;
+  const failed = flowResults.filter((result) => (
+    !result.hardLimit
+    && !/ETIMEDOUT|timed out|超时/iu.test(result.error ?? '')
+    && (result.status !== 0 || result.error)
+  )).length;
+  const passed = flowResults.filter((result) => result.status === 0 && !result.error).length;
+  const completed = flowResults.length;
+  const blocked = Math.max(0, declared - completed);
+  return {
+    declared,
+    completed,
+    passed,
+    failed,
+    timedOut,
+    blocked,
+    circuitBroken: Boolean(stopReason && blocked > 0),
+    stopReason,
+    limits: BROWSER_CHECK_LIMITS,
+    unimplemented: [BROWSER_HEARTBEAT_GAP],
+  };
+}
+
+function withBrowserSummary(payload, checks, results, stopReason = null) {
+  if (!checks.some((check) => isBrowserCheck(check))) return payload;
+  return {
+    ...payload,
+    browserSummary: browserExecutionSummary(checks, results, stopReason),
+  };
+}
+
+function hardLimitResult(result, reason, message) {
+  return {
+    ...result,
+    error: message,
+    hardLimit: reason,
+  };
+}
+
+function smallestTimeout(candidates) {
+  return candidates.reduce((selected, candidate) => (
+    candidate.remainingMs < selected.remainingMs ? candidate : selected
+  ));
+}
+
 export function executeCheckPlan(plan, options = {}) {
   if ((plan.checks ?? []).some((check) => check.sideEffect === 'external')) throw new Error('自动检查禁止执行外部写入');
+  const checks = plan.checks ?? [];
+  const browserChecks = assertBrowserCheckLimits(checks, 'Browser 执行计划');
+  const hasBrowser = browserChecks.length > 0;
+  const clock = options.clock ?? { now: Date.now };
+  const planStartedAt = hasBrowser ? nowFrom(clock) : null;
+  let browserStartedAt = null;
   let budget = createBudget(options.budget ?? { mode: plan.profile });
   const results = [];
   const executions = new Map();
-  for (const check of plan.checks ?? []) {
+  for (const check of checks) {
+    const current = hasBrowser ? nowFrom(clock) : null;
+    if (hasBrowser && current - planStartedAt >= BROWSER_CHECK_LIMITS.outerTimeoutMs) {
+      const stopReason = 'browser-outer-timeout';
+      return withBrowserSummary({ ok: false, status: 'unavailable', stopReason, results, budget }, checks, results, stopReason);
+    }
+    const browser = isBrowserCheck(check);
+    if (browser && browserStartedAt === null) browserStartedAt = current;
+    if (browser && current - browserStartedAt >= BROWSER_CHECK_LIMITS.batchTimeoutMs) {
+      const stopReason = 'browser-batch-timeout';
+      return withBrowserSummary({ ok: false, status: 'unavailable', stopReason, results, budget }, checks, results, stopReason);
+    }
     const executionFingerprint = checkExecutionFingerprint(check, { cwd: options.cwd });
     const previous = executions.get(executionFingerprint);
-    if (previous) {
+    if (previous && !browser) {
       results.push(reuseExecution(previous, check, executionFingerprint));
       continue;
     }
     const decision = budgetDecision(budget);
-    if (!decision.allowed) return { ok: false, status: 'unavailable', stopReason: 'budget', results, budget };
+    if (!decision.allowed) {
+      return withBrowserSummary({ ok: false, status: 'unavailable', stopReason: 'budget', results, budget }, checks, results, 'budget');
+    }
     const remainingMs = remainingBudget(budget);
     const checkTimeoutMs = Number(check.timeoutMs ?? 600000);
-    const budgetLimited = remainingMs <= checkTimeoutMs;
-    const timeout = Math.max(1, Math.min(checkTimeoutMs, remainingMs));
-    const result = { ...executeOne(check, options.cwd, timeout), executionFingerprint, reused: false, reusedFrom: null };
+    const timeoutCandidates = [
+      { reason: 'budget', remainingMs },
+      { reason: browser ? 'browser-flow-timeout' : 'timeout', remainingMs: checkTimeoutMs },
+    ];
+    if (hasBrowser) timeoutCandidates.push({
+      reason: 'browser-outer-timeout',
+      remainingMs: BROWSER_CHECK_LIMITS.outerTimeoutMs - (current - planStartedAt),
+    });
+    if (browser) timeoutCandidates.push({
+      reason: 'browser-batch-timeout',
+      remainingMs: BROWSER_CHECK_LIMITS.batchTimeoutMs - (current - browserStartedAt),
+    });
+    const limiting = smallestTimeout(timeoutCandidates);
+    const timeout = Math.max(1, Math.floor(limiting.remainingMs));
+    let result = {
+      ...executeOne(check, options.cwd, timeout, { clock, spawnSync: options.spawnSync }),
+      executionFingerprint,
+      reused: false,
+      reusedFrom: null,
+    };
+    const finished = hasBrowser ? nowFrom(clock) : null;
+    if (browser && result.durationMs > BROWSER_CHECK_LIMITS.flowTimeoutMs) {
+      result = hardLimitResult(result, 'browser-flow-timeout', `Browser flow 超过 ${BROWSER_CHECK_LIMITS.flowTimeoutMs}ms 硬限制`);
+    } else if (browser && finished - browserStartedAt > BROWSER_CHECK_LIMITS.batchTimeoutMs) {
+      result = hardLimitResult(result, 'browser-batch-timeout', `Browser batch 超过 ${BROWSER_CHECK_LIMITS.batchTimeoutMs}ms 硬限制`);
+    } else if (hasBrowser && finished - planStartedAt > BROWSER_CHECK_LIMITS.outerTimeoutMs) {
+      result = hardLimitResult(result, 'browser-outer-timeout', `Browser 外层执行超过 ${BROWSER_CHECK_LIMITS.outerTimeoutMs}ms 硬限制`);
+    }
     executions.set(executionFingerprint, result);
     budget = consumeBudget(budget, result.durationMs);
     results.push(result);
+    if (browser && typeof options.onBrowserProgress === 'function') {
+      options.onBrowserProgress(browserExecutionSummary(checks, results));
+    }
     if (result.status !== 0 || result.error) {
       const timedOut = /ETIMEDOUT|timed out/iu.test(result.error ?? '');
-      const stopReason = timedOut ? (budgetLimited ? 'budget' : 'timeout') : 'failed';
-      return { ok: false, status: timedOut ? 'unavailable' : 'failed', results, budget, stopReason };
+      const stopReason = result.hardLimit ?? (timedOut ? limiting.reason : 'failed');
+      const status = timedOut || result.hardLimit ? 'unavailable' : 'failed';
+      return withBrowserSummary({ ok: false, status, results, budget, stopReason }, checks, results, stopReason);
     }
   }
-  const ok = results.length === (plan.checks ?? []).length && results.every((item) => item.status === 0 && !item.error);
-  return {
+  const ok = results.length === checks.length && results.every((item) => item.status === 0 && !item.error);
+  return withBrowserSummary({
     ok,
     status: ok ? 'passed' : 'unavailable',
     results,
     budget,
     executedCount: results.filter((item) => item.reused !== true).length,
     reusedCount: results.filter((item) => item.reused === true).length,
-  };
+  }, checks, results);
 }

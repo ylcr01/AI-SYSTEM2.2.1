@@ -4,6 +4,7 @@ const STRUCTURAL_WORDS = /架构|新模块|模块拆分|职责迁移|公共接�
 const REFERENCE_EQUIVALENT_WORDS = /完全参照|完整复刻|逐项等价|以旧实现为行为基线|不能遗漏任何已有功能|100% 等价|reference implementation|exact behavioral equivalence/iu;
 const STRICT_PRESERVATION_WORDS = /保持全部可观察行为|所有现有行为都不能改变|所有已有功能行为保持不变|零行为变化|行为完全不变|preserve all observable behavior|no observable behavior changes/iu;
 const PRESERVATION_AWARE_WORDS = /重构|refactor|优化|optimize|升级|upgrade|替换实现|重新实现|reimplement|重写|rewrite|迁移|migration|移植|port/iu;
+const OPERATIONS = new Set(['read', 'write', 'external-write']);
 
 export const PROBLEM_TYPES = new Set([
   'bugfix',
@@ -60,24 +61,44 @@ function inferPreservation(text) {
   return { mode: 'preserve-unrequested', reasons: [] };
 }
 
-function inferScopeRisk(scope) {
-  const values = Array.isArray(scope) ? scope : [scope];
+function normalizeOperation(operation) {
+  const value = String(operation ?? 'write').trim();
+  if (!OPERATIONS.has(value)) throw new Error(`无效 operation: ${value || '(empty)'}`);
+  return value;
+}
+
+function inferPlannedRisk(valuesInput, source) {
+  const values = Array.isArray(valuesInput) ? valuesInput : [valuesInput];
   return [...new Set(values.flatMap((value) => {
     const normalized = String(value ?? '').trim().replaceAll('\\', '/');
     if (!normalized || normalized === '.') return [];
     return HARD_RISK_PATTERNS
       .filter(([reason, pattern]) => !(reason === 'build-contract' && /(^|\/)package\.json$/iu.test(normalized))
         && (pattern.test(normalized) || pattern.test(`${normalized}/`)))
-      .map(([reason]) => `scope-${reason}:${normalized}`);
+      .map(([reason]) => `${source}-${reason}:${normalized}`);
   }))];
 }
 
+function executionRouteFor({ operation, continuity, controlMode, structureImpact, riskReasons = [] }) {
+  if (operation === 'read') return 'read-only';
+  if (operation === 'external-write') return 'formal-task';
+  return continuity !== 'ephemeral'
+    || controlMode === 'controlled'
+    || structureImpact === 'structural'
+    || riskReasons.length > 0
+    ? 'formal-task'
+    : 'local-direct-candidate';
+}
+
 export function classifyTask(input = {}) {
+  const operation=normalizeOperation(input.operation);
   const intent=String(input.intent??'');
   const text=[intent,input.acceptance].filter(Boolean).join(' ');
-  const scopeReasons=inferScopeRisk(input.scope);
+  const scopeReasons=inferPlannedRisk(input.scope,'scope');
+  const pathReasons=inferPlannedRisk(input.plannedPaths??input.path??input.paths,'path');
+  const plannedRiskReasons=[...new Set([...scopeReasons,...pathReasons])];
   const textRisk=CONTROLLED_WORDS.test(text);
-  const intentRisk=textRisk||scopeReasons.length>0;
+  const intentRisk=textRisk||plannedRiskReasons.length>0||operation==='external-write';
   const artifactKinds=inferArtifactKinds(intent,input.acceptance);
   const problemType=inferProblemType(intent,input.acceptance);
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
@@ -85,20 +106,27 @@ export function classifyTask(input = {}) {
   const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
   const formalTracking=input.tracked===true||intentRisk||structural;
   const preservation=inferPreservation(text);
+  const continuity=operation==='read'
+    ? 'ephemeral'
+    : input.handoffRequired?'handoff-required':formalTracking?'tracked':'ephemeral';
+  const structureImpact=structural?'structural':controlMode==='quick'?'none':'local';
   return {
+    operation,
+    executionRoute:executionRouteFor({operation,continuity,controlMode,structureImpact,riskReasons:plannedRiskReasons}),
     controlMode,
     recommendedControlMode:controlMode,
-    structureImpact:structural?'structural':controlMode==='quick'?'none':'local',
-    continuity:input.handoffRequired?'handoff-required':formalTracking?'tracked':'ephemeral',
+    structureImpact,
+    continuity,
     artifactKinds,
     problemType,
     preservationMode:preservation.mode,
     preservationReasons:preservation.reasons,
-    reasons:[...(textRisk?['intent-risk-signal']:[]),...scopeReasons]
+    reasons:[...(textRisk?['intent-risk-signal']:[]),...(operation==='external-write'?['operation-external-write']:[]),...plannedRiskReasons]
   };
 }
 
 export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
+  const operation = normalizeOperation(classification?.operation);
   const packageManifestChanges = Array.isArray(input.packageManifestChanges) ? input.packageManifestChanges : null;
   const packageManifestByPath = new Map((packageManifestChanges ?? []).map((item) => [item.path, item]));
   const reasons=[];
@@ -124,13 +152,19 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
   else if(documentationOnly&&!semanticDocument&&classification.structureImpact!=='structural') controlMode='quick';
   else if(intentRisk&&runtimeChanged) controlMode='controlled';
   else if(controlMode==='quick'&&runtimeChanged) controlMode='standard';
+  if(operation==='external-write') controlMode='controlled';
   if(input.forcedMode){
     const order={quick:0,standard:1,controlled:2};
     if(!(input.forcedMode in order)) throw new Error(`无效 forcedMode: ${input.forcedMode}`);
     if(order[input.forcedMode]<order[controlMode]) throw new Error('forcedMode 只能向上加强，不能降低真实 Control Mode');
     controlMode=input.forcedMode;
   }
-  return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,problemType,reclassificationReasons:unique,packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
+  const structureImpact=controlMode==='quick'?'none':classification.structureImpact;
+  let continuity=classification.continuity??'ephemeral';
+  if(operation==='read') continuity='ephemeral';
+  else if(continuity!=='handoff-required'&&(unique.length>0||controlMode==='controlled'||structureImpact==='structural')) continuity='tracked';
+  const executionRoute=executionRouteFor({operation,continuity,controlMode,structureImpact,riskReasons:unique});
+  return {...classification,operation,executionRoute,controlMode,structureImpact,continuity,artifactKinds,problemType,reclassificationReasons:unique,packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
 }
 
 export function determineEvidenceRequirements(input = {}) {

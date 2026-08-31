@@ -2,6 +2,16 @@
 
 ## V2.3.0
 
+### 中央真实性收敛（长期收益待真实任务验证）
+
+- Context 路由显式区分 `read|write|external-write`：只读意图不再因内容风险进入写 Task，外部写入始终进入正式路由，计划 Scope/路径在实施前参与风险分类。
+- `local-direct` 和干净隔离 Worktree 的轻量修改在完成后执行无状态终检；必须原样回传预检 HEAD、branch/detached、`gitRoot` 和 `gitCommonDir`，任一身份、占用、Scope、Manifest 或最终风险变化均失败关闭。
+- Quality 配置改为边界内、文件级和 fail closed；显式无效 JSON/shape/Profile/参考不再静默回退。导入结果只作辅证，文档/Contract/Visual 直接证明必须绑定 Git Root 内 artifact、当前哈希和系统执行来源。
+- Browser Check 强制一 Check 一 flow、最多 4 条、单条 15 秒、整批 120 秒、外层 180 秒和首败熔断。当前同步 Runner 尚未实现 30 秒心跳/无输出终止，运行回执明确标记 `unimplemented`，不声称已执行。
+- `ready_to_integrate` 继续持有源 Worktree 占用；退回使旧 Evidence/Review/Handoff/Rationale/Check Manifest 失效，相同 ChangeSet 未重新对齐时禁止再交付；集成预算续期后仍保持待集成。
+- `诊断状态` 分开 `storageIntegrity` 与 `acceptanceEligibility`。Task 列表/评估按 `gitCommonDir` 识别逻辑项目，验收 unknown 只统计已交付样本；新 Task 保存系统版本与低敏感执行画像，交付尝试、真实检查执行和阶段耗时分开计录。
+- 本轮技术定点验证不代表长期净收益已成立；结论保持 `unknown/experiment`，后续按 12 个受控任务与 20～30 个可比真实任务评估。
+
 ### 对话驱动交付闭环
 
 - 将公开交付状态从 `ready_for_acceptance` 调整为 `delivered`：工程门禁通过即可说明“本轮已交付”，不再要求用户为每轮修改形式化确认。
@@ -10,7 +20,7 @@
 
 ### 内核减重与可信性修复
 
-- 仓库写任务改为一律使用任务专属 Worktree；Local/主工作区只读或串行集成。新增 `WORKTREE_REQUIRED` / `WORKTREE_CONFLICT` 硬门禁、Codex managed Worktree → detached Worktree 确定性 fallback，以及面向模型的生成式入口指令，禁止把工作树占用转述为用户阻塞或静默降级到 Local。
+- 仓库写入按风险分路：合格 `ephemeral` 任务可在干净 Local 或已隔离 Worktree 轻量直达；正式写 Task 一律使用任务专属 Worktree。`WORKTREE_REQUIRED` / `WORKTREE_CONFLICT` 和 managed → detached fallback 保留，工作树占用不得转述为用户阻塞或静默降级。
 - 删除项目业务工作站的中央能力、自动上下文路由、CLI、模板和宿主 Skill；项目中已有的 `.ai/workstations/` 可继续作为普通文档保留。
 - 删除 10 个未注册、不可由宿主发现的内部 `SKILL.md`，将实际能力明确为 Quality Profile → Contract/Canonical 路由；新增 `--quality-profile`，旧 `--skill` 仅作兼容别名。
 - 新增状态迁移的 dry-run / 显式 `--apply` 流程：仅升级受支持的非终态旧 Schema 和目录错位，写前备份，冲突 fail closed，不推断用户决定。

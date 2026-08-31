@@ -40,3 +40,226 @@ test('直接模块入口仍校验绑定模板身份', (t) => {
  };
  assert.throws(() => buildContext({ cwd: modulePath, intent: '检查网页', registry }), /模板身份冲突/u);
 });
+
+test('Context 转发 operation、scope、plannedPaths 并暴露执行路由', (t) => {
+  const repo = gitRepo(t);
+  const readOnly = buildContext({
+    cwd: repo,
+    operation: 'read',
+    intent: '分析新增模块后的架构职责',
+    scope: ['src/auth'],
+    plannedPaths: ['src/auth/access.mjs'],
+  });
+  assert.equal(readOnly.classification.operation, 'read');
+  assert.equal(readOnly.classification.structureImpact, 'structural');
+  assert.equal(readOnly.executionRoute, 'read-only');
+  assert.ok(readOnly.next.some((item) => /只读分析/u.test(item)));
+  assert.equal(readOnly.next.some((item) => /实施最小 Diff/u.test(item)), false);
+
+  const plannedRisk = buildContext({
+    cwd: repo,
+    operation: 'write',
+    intent: '修复普通功能',
+    scope: ['src/orders'],
+    plannedPaths: ['src/auth/access.mjs'],
+  });
+  assert.equal(plannedRisk.executionRoute, 'formal-task');
+});
+
+test('只读 Context 复用规格提示并把命中规格加入读取文件', (t) => {
+  const repo = gitRepo(t);
+  fs.mkdirSync(path.join(repo, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'docs', 'orders.md'), '# 订单规格\nBR-ORD-001\n');
+  fs.writeFileSync(path.join(repo, '.ai', 'spec-map.json'), JSON.stringify({
+    schemaVersion: 1,
+    mappings: [{
+      id: 'orders',
+      paths: ['src/orders/**'],
+      keywords: ['订单规格'],
+      specificationFiles: ['docs/orders.md'],
+      specificationIds: ['BR-ORD-001'],
+      testFiles: [],
+      decisionFiles: [],
+    }],
+  }));
+  const result = buildContext({ cwd: repo, operation: 'read', intent: '核对订单规格' });
+  assert.deepEqual(result.specificationHints.matchedRuleIds, ['orders']);
+  assert.ok(result.filesToRead.some((file) => file.endsWith(path.join('docs', 'orders.md'))));
+});
+
+test('存在但损坏或不是普通文件的 Quality JSON 失败关闭', (t) => {
+  const malformed = gitRepo(t);
+  fs.writeFileSync(path.join(malformed, '.ai', 'quality.json'), '{not-json');
+  assert.throws(
+    () => buildContext({ cwd: malformed, operation: 'read', intent: '检查项目' }),
+    /质量清单 JSON 损坏/u,
+  );
+
+  const directory = gitRepo(t);
+  fs.mkdirSync(path.join(directory, '.ai', 'quality.json'));
+  assert.throws(
+    () => buildContext({ cwd: directory, operation: 'read', intent: '检查项目' }),
+    /质量清单必须是普通文件/u,
+  );
+
+  const unsupported = gitRepo(t);
+  fs.writeFileSync(path.join(unsupported, '.ai', 'quality.json'), JSON.stringify({ schemaVersion: 999, contracts: [] }));
+  assert.throws(
+    () => buildContext({ cwd: unsupported, operation: 'read', intent: '检查项目' }),
+    /schemaVersion 仅支持 1/u,
+  );
+
+  const invalidShape = gitRepo(t);
+  fs.writeFileSync(path.join(invalidShape, '.ai', 'quality.json'), JSON.stringify({
+    contracts: [{ id: 'invalid-shape', profiles: 'develop-web', path: 'README.md' }],
+  }));
+  assert.throws(
+    () => buildContext({ cwd: invalidShape, operation: 'read', intent: '检查项目' }),
+    /profiles 必须是非空字符串数组/u,
+  );
+});
+
+test('Quality JSON 是悬空符号链接时不得当作未配置', (t) => {
+  const repository = gitRepo(t);
+  const manifest = path.join(repository, '.ai', 'quality.json');
+  try {
+    fs.symlinkSync(path.join(repository, '.ai', 'missing-quality.json'), manifest, 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOSYS'].includes(error?.code)) {
+      t.skip(`当前平台无法创建测试符号链接: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => buildContext({ cwd: repository, operation: 'read', intent: '检查项目' }),
+    /质量清单符号链接目标不存在/u,
+  );
+});
+
+test('Quality Contract 路径越界或指向目录时失败关闭', (t) => {
+  const escaped = gitRepo(t);
+  const outside = tempDir(t, 'quality-outside-');
+  const outsideFile = path.join(outside, 'contract.md');
+  fs.writeFileSync(outsideFile, '# outside');
+  fs.writeFileSync(path.join(escaped, '.ai', 'quality.json'), JSON.stringify({
+    contracts: [{
+      id: 'escaped', status: 'active', profiles: ['develop-web'],
+      path: path.relative(escaped, outsideFile),
+    }],
+  }));
+  assert.throws(
+    () => loadQualityContext({
+      role: 'web', intent: '新增模块', structureImpact: 'structural', artifactKinds: ['code'], projectRoot: escaped,
+    }),
+    /不能越出仓库/u,
+  );
+
+  const directory = gitRepo(t);
+  fs.mkdirSync(path.join(directory, 'docs', 'contract'), { recursive: true });
+  fs.writeFileSync(path.join(directory, '.ai', 'quality.json'), JSON.stringify({
+    contracts: [{
+      id: 'directory', status: 'active', profiles: ['develop-web'], path: 'docs/contract',
+    }],
+  }));
+  assert.throws(
+    () => loadQualityContext({
+      role: 'web', intent: '新增模块', structureImpact: 'structural', artifactKinds: ['code'], projectRoot: directory,
+    }),
+    /必须指向普通文件/u,
+  );
+});
+
+test('Canonical 仅在关键词得分大于零时加载且 read 只接受普通文件', (t) => {
+  const unrelated = gitRepo(t);
+  fs.mkdirSync(path.join(unrelated, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(unrelated, 'docs', 'customer.md'), '# customer');
+  fs.writeFileSync(path.join(unrelated, '.ai', 'quality.json'), JSON.stringify({
+    exemplars: [{
+      id: 'customer', status: 'active', structureImpacts: ['structural'],
+      keywords: ['客户'], read: ['docs/customer.md'],
+    }],
+  }));
+  const noMatch = loadQualityContext({
+    intent: '分析新增模块后的架构职责', structureImpact: 'structural', artifactKinds: ['code'], projectRoot: unrelated,
+  });
+  assert.equal(noMatch.exemplars.length, 0);
+
+  const directory = gitRepo(t);
+  fs.mkdirSync(path.join(directory, 'docs', 'customer'), { recursive: true });
+  fs.writeFileSync(path.join(directory, '.ai', 'quality.json'), JSON.stringify({
+    exemplars: [{
+      id: 'customer', status: 'active', structureImpacts: ['structural'],
+      keywords: ['客户'], read: ['docs/customer'],
+    }],
+  }));
+  assert.throws(
+    () => loadQualityContext({
+      intent: '新增客户模块并调整架构', structureImpact: 'structural', artifactKinds: ['code'], projectRoot: directory,
+    }),
+    /必须指向普通文件/u,
+  );
+});
+
+test('无效显式 Profile 失败关闭，Profile 截断产生 warning', (t) => {
+  const repo = gitRepo(t);
+  assert.throws(
+    () => buildContext({ cwd: repo, operation: 'read', intent: '检查项目', qualityProfiles: ['unknown-profile'] }),
+    /无效 Quality Profile/u,
+  );
+  const withoutContract = gitRepo(t);
+  fs.mkdirSync(path.join(withoutContract, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(withoutContract, 'docs', 'example.md'), '# example');
+  fs.writeFileSync(path.join(withoutContract, '.ai', 'quality.json'), JSON.stringify({
+    exemplars: [{
+      id: 'custom-example', status: 'active', profiles: ['custom-profile'],
+      keywords: ['示例'], read: ['docs/example.md'],
+    }],
+  }));
+  assert.throws(
+    () => buildContext({
+      cwd: withoutContract, operation: 'read', intent: '检查示例', qualityProfiles: ['custom-profile'],
+    }),
+    /显式 Quality Profile 没有可读取的 Contract/u,
+  );
+  const result = loadQualityContext({
+    role: 'web',
+    intent: '梳理需求、产品、界面和联调方案',
+    structureImpact: 'local',
+    artifactKinds: ['code'],
+  });
+  assert.equal(result.profiles.length, 2);
+  assert.ok(result.warnings.some((warning) => /截断/u.test(warning)));
+});
+
+test('明确命中的 Experience 即使是局部任务也进入读取文件', (t) => {
+  const repo = gitRepo(t);
+  const experienceRoot = path.join(repo, '.ai', '30-经验');
+  fs.mkdirSync(experienceRoot, { recursive: true });
+  fs.writeFileSync(path.join(experienceRoot, 'cache-stampede.md'), '# 缓存击穿处理');
+  fs.writeFileSync(path.join(experienceRoot, '索引.json'), JSON.stringify({
+    routes: [{
+      id: 'cache-stampede', lifecycle: 'active', keywords: ['缓存击穿'], read: ['cache-stampede.md'],
+    }],
+  }));
+  const result = buildContext({ cwd: repo, operation: 'read', intent: '排查缓存击穿问题' });
+  assert.equal(result.classification.structureImpact, 'local');
+  assert.equal(result.quality.experiences[0]?.source, 'project');
+  assert.ok(result.quality.experiences[0]?.path.endsWith(path.join('30-经验', 'cache-stampede.md')));
+  assert.ok(result.filesToRead.some((file) => file.endsWith(path.join('30-经验', 'cache-stampede.md'))));
+});
+
+test('命中 Experience 但 read 指向目录时失败关闭', (t) => {
+  const repo = gitRepo(t);
+  const experienceRoot = path.join(repo, '.ai', '30-经验');
+  fs.mkdirSync(path.join(experienceRoot, 'cache-stampede'), { recursive: true });
+  fs.writeFileSync(path.join(experienceRoot, '索引.json'), JSON.stringify({
+    routes: [{
+      id: 'cache-stampede', lifecycle: 'active', keywords: ['缓存击穿'], read: ['cache-stampede'],
+    }],
+  }));
+  assert.throws(
+    () => buildContext({ cwd: repo, operation: 'read', intent: '排查缓存击穿问题' }),
+    /必须指向普通文件/u,
+  );
+});

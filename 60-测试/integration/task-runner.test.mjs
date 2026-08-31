@@ -1,10 +1,49 @@
 // BR-AIRD-EVIDENCE-001 BR-AIRD-STATE-002 BR-AIRD-METRICS-001
-import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { preflightWorkspace,prepareTask,deliverTask,recordTaskFollowUp,acceptTask,saveTask,resumeTask,continueVerification,integrateTask,confirmIntegration,revalidateIntegration,inferAcceptanceCovers } from '../../40-脚本/lib/task-runner.mjs';import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';import { listTasks,readHistory,updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { cleanupTaskSource } from '../../40-脚本/lib/integration-workflow.mjs';import { gitRepo,taskCheck,tempDir } from '../helpers.mjs';
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { preflightWorkspace,prepareTask,deliverTask,recordTaskFollowUp,acceptTask,saveTask,resumeTask,continueVerification,integrateTask,confirmIntegration,revalidateIntegration,inferAcceptanceCovers,inspectAcceptanceEligibility } from '../../40-脚本/lib/task-runner.mjs';import { computeChangeSet } from '../../40-脚本/lib/git-state.mjs';import { listTasks,readHistory,updateTask } from '../../40-脚本/lib/state-manager.mjs';import { createReviewRecord } from '../../40-脚本/lib/review.mjs';import { createEvidence } from '../../40-脚本/lib/evidence.mjs';import { cleanupTaskSource } from '../../40-脚本/lib/integration-workflow.mjs';import { gitRepo,taskCheck,tempDir } from '../helpers.mjs';
 test('Standard 任务完成自动验证、交付和用户验收',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');assert.ok(delivered.task.evidence.some(x=>x.covers.includes('behavior')));const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});assert.equal(accepted.task.status,'accepted');});
-test('成功交付生成精确 continuation，缺陷退回后重新交付轮换 deliveryId',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'first\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});const firstDeliveryId=first.task.conversationOutcome.deliveryId;assert.ok(firstDeliveryId);const returned=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId:firstDeliveryId,observationId:'turn-defect',kind:'defect-return'});assert.equal(returned.task.status,'needs_rework');assert.equal(returned.task.outcomeMetrics.reworkCount,1);assert.equal(returned.task.outcomeMetrics.relatedFollowUpCount,1);assert.equal(returned.task.outcomeMetrics.firstPassAccepted,null);fs.writeFileSync(target,'second\n');const second=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(second.task.status,'waiting_acceptance');assert.notEqual(second.task.conversationOutcome.deliveryId,firstDeliveryId);assert.equal(second.task.conversationOutcome.counts['defect-return'],1);assert.throws(()=>recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId:firstDeliveryId,observationId:'turn-stale',kind:'topic-advance'}),/delivery-id.*不匹配/u);});
-test('多次相关询问保持 delivered 并增加同一样本轮次，话题推进后自然收口',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});const deliveryId=delivered.task.conversationOutcome.deliveryId;const verificationRuns=delivered.task.outcomeMetrics.verificationRunCount;const related=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-question',kind:'related-question'});assert.equal(related.task.status,'waiting_acceptance');assert.equal(related.task.outcomeMetrics.reworkCount,0);assert.equal(related.task.outcomeMetrics.verificationRunCount,verificationRuns);assert.equal(related.task.conversationOutcome.firstDeliveryFollowUpKind,'related-question');const duplicate=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-question',kind:'related-question'});assert.equal(duplicate.idempotent,true);const second=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-question-2',kind:'related-question'});assert.equal(second.task.outcomeMetrics.relatedFollowUpCount,2);assert.equal(second.task.conversationOutcome.counts['related-question'],2);const closed=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-topic',kind:'topic-advance'});assert.equal(closed.task.status,'closed');assert.equal(closed.task.acceptedAt,null);assert.equal(closed.task.userAcceptance,undefined);assert.equal(closed.task.outcomeMetrics.firstPassAccepted,null);assert.equal(closed.task.outcomeMetrics.completionBasis,'topic-advance');assert.equal('firstPassResolved' in closed.task.conversationOutcome,false);const closedDuplicate=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-topic',kind:'topic-advance'});assert.equal(closedDuplicate.idempotent,true);});
+test('验收资格回执只在真实全量扫描时声明 all-projects',t=>{const repo=gitRepo(t),stateRoot=tempDir(t),identity=preflightWorkspace({cwd:repo,stateRoot}).directBaseline;const scoped=inspectAcceptanceEligibility({stateRoot,repositoryIdentity:{gitRoot:identity.gitRoot,gitCommonDir:identity.gitCommonDir}});assert.equal(scoped.scope,'repository');assert.equal(scoped.checked,0);const all=inspectAcceptanceEligibility({stateRoot});assert.equal(all.scope,'all-projects');assert.equal(all.checked,0);});
+test('成功交付生成精确 continuation，缺陷退回增加完成轮次且空提交不算输入变化',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});const target=path.join(repo,'target.txt');fs.writeFileSync(target,'first\n');const first=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});const firstDeliveryId=first.task.conversationOutcome.deliveryId;assert.ok(firstDeliveryId);const returned=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId:firstDeliveryId,observationId:'turn-defect',kind:'defect-return'});assert.equal(returned.task.status,'needs_rework');assert.equal(returned.task.outcomeMetrics.reworkCount,0);assert.equal(returned.task.outcomeMetrics.relatedFollowUpCount,1);assert.equal(returned.task.outcomeMetrics.firstPassAccepted,null);assert.equal(returned.task.evidence.length,0);assert.equal(returned.task.verification.inputCycle,1);assert.deepEqual(returned.task.verification.missingAcceptance,['A1']);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)}),/user-return-input-unchanged/u);const stateFile=path.join(stateRoot,'进行中',`${prepared.task.taskId}.json`),legacy=JSON.parse(fs.readFileSync(stateFile,'utf8'));delete legacy.verification.returnedSemanticFingerprint;fs.writeFileSync(stateFile,JSON.stringify(legacy));assert.equal(spawnSync('git',['-C',repo,'-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','--allow-empty','-m','empty return bypass'],{encoding:'utf8'}).status,0);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)}),/user-return-input-unchanged/u);fs.writeFileSync(target,'second\n');const second=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(second.task.status,'waiting_acceptance');assert.notEqual(second.task.conversationOutcome.deliveryId,firstDeliveryId);assert.equal(second.task.conversationOutcome.counts['defect-return'],1);assert.throws(()=>recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId:firstDeliveryId,observationId:'turn-stale',kind:'topic-advance'}),/delivery-id.*不匹配/u);});
+test('显式验收退回使旧证明失效，未修改或重新对齐不能机械再交付',t=>{const repo=gitRepo(t),stateRoot=tempDir(t),target=path.join(repo,'target.txt');const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(target,'first\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});const rejected=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'退回',reasonCategory:'verification-gap',note:'真实链路仍失败'});assert.equal(rejected.task.status,'needs_rework');assert.equal(rejected.task.evidence.length,0);assert.equal(rejected.task.verification.systemEvidenceHashes.length,0);assert.equal(rejected.task.outcomeMetrics.reworkCount,1);assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)}),/user-return-input-unchanged/u);fs.writeFileSync(target,'fixed\n');const redelivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(redelivered.task.status,'waiting_acceptance');});
+test('唯一相关询问增加完成轮次，重复观察幂等且话题推进不伪造验收',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});const deliveryId=delivered.task.conversationOutcome.deliveryId;const verificationRuns=delivered.task.outcomeMetrics.verificationExecutionCount;const related=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-question',kind:'related-question'});assert.equal(related.task.status,'waiting_acceptance');assert.equal(related.task.outcomeMetrics.reworkCount,0);assert.equal(related.task.outcomeMetrics.verificationExecutionCount,verificationRuns);assert.equal(related.task.outcomeMetrics.relatedFollowUpCount,1);assert.equal(related.task.conversationOutcome.firstDeliveryFollowUpKind,'related-question');const duplicate=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-question',kind:'related-question'});assert.equal(duplicate.idempotent,true);assert.equal(duplicate.task.outcomeMetrics.relatedFollowUpCount,1);const second=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-question-2',kind:'related-question'});assert.equal(second.task.outcomeMetrics.relatedFollowUpCount,2);assert.equal(second.task.conversationOutcome.counts['related-question'],2);const closed=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-topic',kind:'topic-advance'});assert.equal(closed.task.status,'closed');assert.equal(closed.task.acceptedAt,null);assert.equal(closed.task.userAcceptance,undefined);assert.equal(closed.task.outcomeMetrics.firstPassAccepted,null);assert.equal(closed.task.outcomeMetrics.completionBasis,'topic-advance');assert.equal('firstPassResolved' in closed.task.conversationOutcome,false);const closedDuplicate=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId,observationId:'turn-topic',kind:'topic-advance'});assert.equal(closedDuplicate.idempotent,true);});
 test('三类隐式收口保持 accepted 强语义并为 scope extension 返回父任务关联',t=>{for(const kind of ['scope-extension','positive-acknowledgement','topic-advance']){const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),`${kind}\n`);const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});const result=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId:delivered.task.conversationOutcome.deliveryId,observationId:`turn-${kind}`,kind,message:'这段消息正文不得保存'});assert.equal(result.task.status,'closed');assert.equal(result.task.userAcceptance,undefined);assert.equal(result.task.outcomeMetrics.firstPassAccepted,null);assert.equal(JSON.stringify(result.task).includes('这段消息正文不得保存'),false);assert.equal(listTasks({stateRoot}).tasks.length,0);assert.deepEqual(readHistory({stateRoot}).map(item=>item.taskId),[prepared.task.taskId]);if(kind==='scope-extension')assert.deepEqual({parentTaskId:result.followUp.parentTaskId,relation:result.followUp.relation},{parentTaskId:prepared.task.taskId,relation:'scope-extension'});}});
 test('自动检查生成的 Evidence 自动进入 systemEvidenceHashes',t=>{const repo=gitRepo(t),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,repo)});assert.equal(delivered.task.status,'waiting_acceptance');const behaviorEvidence=delivered.task.evidence.find(x=>x.covers.includes('behavior'));assert.ok(behaviorEvidence);assert.ok(delivered.task.verification.systemEvidenceHashes.includes(behaviorEvidence.payloadHash));assert.ok(delivered.task.evidence.filter(x=>x.covers.includes('scope')).every(x=>delivered.task.verification.systemEvidenceHashes.includes(x.payloadHash)));});
+test('同源检查的新鲜 Artifact Evidence 替换旧失效系统证明并保留外部辅证',t=>{
+  const variable='AI_RD_OS_ARTIFACT_CONTENT';
+  const repo=gitRepo(t),stateRoot=tempDir(t),artifact=path.join(repo,'artifacts','proof.txt');
+  fs.writeFileSync(path.join(repo,'.gitignore'),'artifacts/\n');
+  fs.writeFileSync(path.join(repo,'tests','acceptance.test.mjs'),[
+    "import fs from 'node:fs';", "import test from 'node:test';",
+    `test('A1 proof',()=>{fs.mkdirSync('artifacts',{recursive:true});fs.writeFileSync('artifacts/proof.txt',process.env.${variable}??'missing');});`, ''
+  ].join('\n'));
+  for(const args of [['add','.gitignore','tests/acceptance.test.mjs'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','artifact baseline']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:repo,stateRoot,intent:'更新文档说明',acceptance:['文档说明完整'],scope:'.'});
+  fs.writeFileSync(path.join(repo,'README.md'),'# changed documentation\n');
+  const checkFile=taskCheck(t,repo,{covers:['documentation']});
+  const checkJson=JSON.parse(fs.readFileSync(checkFile,'utf8'));
+  checkJson.checks[0].cases[0].artifact='artifacts/proof.txt';
+  fs.writeFileSync(checkFile,JSON.stringify(checkJson));
+  const imported=createEvidence({kind:'self',taskId:prepared.task.taskId,changeFingerprint:computeChangeSet(prepared.task.baseline).fingerprint,inputCycle:0,acceptanceIds:[],covers:['documentation'],source:{type:'human'},result:{status:'passed'}});
+  const importedFile=path.join(stateRoot,'imported-evidence.json');
+  fs.writeFileSync(importedFile,JSON.stringify(imported));
+  const previous=process.env[variable];
+  try{
+    process.env[variable]='first';
+    const first=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:checkFile,evidenceFile:importedFile});
+    assert.equal(first.task.status,'waiting_acceptance');
+    const oldProof=first.task.evidence.find((item)=>item.covers.includes('documentation')&&first.task.verification.systemEvidenceHashes.includes(item.payloadHash));
+    assert.ok(oldProof);
+    fs.writeFileSync(artifact,'stale');
+    process.env[variable]='second';
+    const second=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:checkFile});
+    assert.equal(second.task.status,'waiting_acceptance');
+    assert.equal(fs.readFileSync(artifact,'utf8'),'second');
+    assert.equal(second.task.evidence.some((item)=>item.payloadHash===oldProof.payloadHash),false);
+    assert.ok(second.task.evidence.some((item)=>item.payloadHash===imported.payloadHash));
+    assert.equal(second.task.verification.systemEvidenceHashes.includes(oldProof.payloadHash),false);
+  }finally{
+    if(previous===undefined)delete process.env[variable];else process.env[variable]=previous;
+  }
+});
 test('纯文档任务进入 Quick，但通用文档检查不能自动证明 Acceptance',t=>{const repo=gitRepo(t,{checks:[{name:'docs',command:process.execPath,args:['-e','process.exit(0)'],profiles:['quick','standard'],covers:['documentation'],sideEffect:'none',estimatedCost:'very-low',timeoutMs:5000,acceptanceMode:'matching-covers'}]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'更新入口规则',acceptance:['规则满足验收条件'],scope:'.'});fs.writeFileSync(path.join(repo,'README.md'),'# updated\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId});assert.equal(delivered.task.status,'verifying');assert.equal(delivered.task.classification.controlMode,'quick');assert.deepEqual(delivered.task.acceptance[0].requiredCovers,['documentation']);assert.equal(delivered.task.verification.requiredCovers.includes('behavior'),false);assert.ok(delivered.task.verification.missingAcceptance.includes('A1'));});
 test('验收证据按每条语义推断',()=>{const classification={controlMode:'standard',artifactKinds:['code']};assert.deepEqual(['README 文档说明已同步','用户在页面可见处理结果','历史状态迁移失败时可以回滚','结果指标显示已决定数量','局部任务不加载 Contract 或 Canonical','未授权用户必须被拒绝','无效数量不能修改库存','支付失败问题已修复'].map(item=>inferAcceptanceCovers(item,classification)),[['documentation'],['behavior','browser'],['behavior','data','rollback','negative-path'],['behavior'],['behavior'],['behavior','negative-path'],['behavior','negative-path'],['behavior']]);});
 test('没有语义 Evidence 时不能进入等待验收',t=>{const repo=gitRepo(t,{checks:[]}),stateRoot=tempDir(t);const prepared=prepareTask({cwd:repo,stateRoot,intent:'修复普通功能',acceptance:['功能正确'],scope:'.'});fs.writeFileSync(path.join(repo,'target.txt'),'changed\n');const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,autoChecks:false});assert.equal(delivered.task.status,'verifying');});
@@ -147,6 +186,196 @@ test('低风险 Worktree 结果默认隔离集成到目标分支并清理任务�
   assert.equal(acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'}).task.status,'accepted');
 });
 
+test('集成验证预算耗尽保持待集成，有限续期后仍回到集成路径',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'budget-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'target.txt'),'budget integration\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','budget result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  assert.equal(delivered.task.status,'ready_to_integrate');
+  const exhausted=updateTask({
+    stateRoot,
+    taskId:prepared.task.taskId,
+    expectedRevision:delivered.task.stateRevision,
+    transitionTo:'ready_to_integrate',
+    event:'test-budget-exhaustion',
+    mutate(next){
+      const spent=Math.max(1,Math.ceil(next.verification.budget.spentMs));
+      next.verification.budget={...next.verification.budget,limitMs:spent,spentMs:spent};
+      return next;
+    },
+  });
+  const paused=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(paused.task.status,'ready_to_integrate');
+  assert.equal(paused.task.verification.stopReason,'budget');
+  assert.equal(paused.task.integration.status,'paused');
+  assert.equal(paused.task.outcomeMetrics.reworkCount,0);
+  const continued=continueVerification({stateRoot,taskId:prepared.task.taskId,additionalBudgetMs:5000,reason:'完成集成候选定点重验'});
+  assert.equal(continued.task.status,'ready_to_integrate');
+  assert.equal(continued.task.integration.status,'ready');
+  assert.equal(continued.task.verification.stopReason,'budget-extended');
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(integrated.task.status,'waiting_acceptance');
+  assert.equal(integrated.task.integration.status,'integrated');
+  assert.equal(integrated.task.outcomeMetrics.reworkCount,0);
+  assert.ok(exhausted.task.stateRevision < integrated.task.stateRevision);
+});
+
+test('集成后非技术直接证明在目标 Worktree 复验 Artifact identity',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'docs-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'更新文档说明',acceptance:['文档说明完整'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'README.md'),'# verified documentation\n');
+  const checkFile=taskCheck(t,worktree,{mappings:[{acceptanceIds:['A1'],covers:['documentation']}]});
+  const checkConfig=JSON.parse(fs.readFileSync(checkFile,'utf8'));
+  checkConfig.checks[0].cases[0].artifact='README.md';
+  fs.writeFileSync(checkFile,JSON.stringify(checkConfig,null,2));
+  for(const args of [['add','README.md'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','document result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:checkFile});
+  assert.equal(delivered.task.status,'ready_to_integrate');
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(integrated.task.status,'waiting_acceptance');
+  assert.equal(fs.existsSync(worktree),false);
+  fs.writeFileSync(path.join(repo,'main.txt'),'target advanced\n');
+  for(const args of [['add','main.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','advance target']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
+  assert.throws(()=>acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'}),/集成目标 HEAD 已变化/u);
+  const exhausted=updateTask({stateRoot,taskId:prepared.task.taskId,expectedRevision:integrated.task.stateRevision,transitionTo:'waiting_acceptance',event:'test-budget-exhaustion',mutate(next){const spent=Math.max(1,Math.ceil(next.verification.budget.spentMs));next.verification.budget={...next.verification.budget,limitMs:spent,spentMs:spent};return next;}});
+  const paused=revalidateIntegration({stateRoot,taskId:prepared.task.taskId,cwd:repo});
+  assert.equal(paused.task.status,'verifying');
+  assert.equal(paused.task.integration.status,'integrated');
+  assert.equal(paused.task.verification.stopReason,'budget');
+  assert.equal(paused.task.outcomeMetrics.reworkCount,0);
+  const continued=continueVerification({stateRoot,taskId:prepared.task.taskId,additionalBudgetMs:5000,reason:'完成目标 HEAD 重验'});
+  assert.equal(continued.task.status,'verifying');
+  assert.equal(continued.task.integration.status,'integrated');
+  assert.equal(continued.task.verification.stopReason,'integration-revalidation-budget-extended');
+  const revalidated=revalidateIntegration({stateRoot,taskId:prepared.task.taskId,cwd:repo});
+  assert.equal(revalidated.task.status,'waiting_acceptance');
+  assert.ok(exhausted.task.stateRevision<revalidated.task.stateRevision);
+  const accepted=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'通过'});
+  assert.equal(accepted.task.status,'accepted');
+});
+
+test('自动集成清理源 Worktree 后，用户退回会重建同一 Task 的返工闭环',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'return-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'target.txt'),'first integrated result\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','first result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(integrated.task.status,'waiting_acceptance');
+  assert.equal(fs.existsSync(worktree),false);
+  const rejected=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'退回',reasonCategory:'verification-gap',note:'结果仍不符合目标'});
+  assert.equal(rejected.task.status,'verifying');
+  assert.equal(rejected.task.integration.status,'pending_commit');
+  assert.equal(rejected.task.integration.resultCommit,null);
+  assert.equal(rejected.task.integration.method,null);
+  assert.equal(rejected.task.integration.pendingRef,null);
+  assert.equal(rejected.task.userAcceptance.decision,'rejected');
+  assert.equal(fs.existsSync(worktree),true);
+  assert.equal(rejected.task.baseline.head,spawnSync('git',['-C',repo,'rev-parse',target],{encoding:'utf8'}).stdout.trim());
+  assert.throws(()=>deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)}),/user-return-input-unchanged/u);
+  fs.writeFileSync(path.join(worktree,'target.txt'),'corrected result\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','corrected result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  const redelivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  assert.equal(redelivered.task.status,'ready_to_integrate');
+  assert.equal(redelivered.task.userAcceptance,undefined);
+  assert.equal(redelivered.task.verification.returnedChangeFingerprint,null);
+  assert.equal(redelivered.task.verification.returnedSemanticFingerprint,null);
+  assert.equal(redelivered.task.verification.returnedAlignmentRevision,null);
+  const reintegrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(reintegrated.task.status,'waiting_acceptance');
+  assert.equal(fs.readFileSync(path.join(repo,'target.txt'),'utf8').trim(),'corrected result');
+});
+
+test('保留的源 Worktree 在缺陷退回时安全对齐最新目标 HEAD 后只重放修正提交',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'kept-return-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'target.txt'),'first integrated result\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','first kept result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  const delivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId,keepWorktree:true});
+  assert.equal(integrated.task.status,'waiting_acceptance');
+  assert.equal(fs.existsSync(worktree),true);
+  fs.writeFileSync(path.join(repo,'main.txt'),'target advanced after integration\n');
+  for(const args of [['add','main.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','advance integrated target']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
+  const targetHead=spawnSync('git',['-C',repo,'rev-parse',target],{encoding:'utf8'}).stdout.trim();
+  const returned=recordTaskFollowUp({stateRoot,taskId:prepared.task.taskId,deliveryId:integrated.task.conversationOutcome.deliveryId,observationId:'integrated-defect-return',kind:'defect-return'});
+  assert.equal(returned.task.status,'verifying');
+  assert.equal(returned.task.baseline.head,targetHead);
+  assert.equal(spawnSync('git',['-C',worktree,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),targetHead);
+  assert.equal(returned.task.conversationOutcome.terminalFollowUp.kind,'defect-return');
+  fs.writeFileSync(path.join(worktree,'target.txt'),'corrected kept result\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','correct kept result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  const redelivered=deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  assert.equal(redelivered.task.status,'ready_to_integrate');
+  const reintegrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(reintegrated.task.status,'waiting_acceptance');
+  assert.equal(fs.readFileSync(path.join(repo,'main.txt'),'utf8').trim(),'target advanced after integration');
+  assert.equal(fs.readFileSync(path.join(repo,'target.txt'),'utf8').trim(),'corrected kept result');
+});
+
+test('集成退回即使返工路径被占用也先持久化退回事实并可在恢复时重试',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'blocked-return-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'target.txt'),'integrated before blocked return\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','blocked return result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(fs.existsSync(worktree),false);
+  fs.mkdirSync(worktree,{recursive:true});
+  fs.writeFileSync(path.join(worktree,'occupied.txt'),'do not overwrite\n');
+  const rejected=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'退回',reasonCategory:'verification-gap',note:'需要返工'});
+  assert.equal(rejected.task.status,'blocked');
+  assert.equal(rejected.task.userAcceptance.decision,'rejected');
+  assert.equal(rejected.task.outcomeMetrics.reworkCount,1);
+  assert.equal(rejected.task.evidence.length,0);
+  assert.equal(rejected.task.verification.inputCycle,1);
+  assert.equal(rejected.task.verification.stopReason,'integrated-return-workspace-recovery-failed');
+  assert.ok(rejected.task.blockers.some((item)=>item.startsWith('返工 Worktree 恢复失败:')));
+  assert.equal(fs.readFileSync(path.join(worktree,'occupied.txt'),'utf8'),'do not overwrite\n');
+  fs.rmSync(worktree,{recursive:true,force:true});
+  const resumed=resumeTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(resumed.task.status,'verifying');
+  assert.equal(resumed.task.integration.status,'pending_commit');
+  assert.equal(resumed.task.verification.stopReason,'user-return');
+  assert.equal(resumed.task.blockers.some((item)=>item.startsWith('返工 Worktree')),false);
+  assert.equal(fs.existsSync(worktree),true);
+  assert.equal(resumed.task.baseline.head,spawnSync('git',['-C',repo,'rev-parse',target],{encoding:'utf8'}).stdout.trim());
+});
+
+test('集成清理后的源路径被同仓其他干净 Worktree 占用时拒绝接管',t=>{
+  const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'occupied-same-repo-worktree');
+  const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
+  assert.equal(spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,target],{encoding:'utf8'}).status,0);
+  const prepared=prepareTask({cwd:worktree,stateRoot,intent:'修改普通功能',acceptance:['功能正确'],scope:'.',integrationTarget:target});
+  fs.writeFileSync(path.join(worktree,'target.txt'),'integrated before path reuse\n');
+  for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','path reuse result']])assert.equal(spawnSync('git',['-C',worktree,...args],{encoding:'utf8'}).status,0);
+  deliverTask({stateRoot,taskId:prepared.task.taskId,taskCheckFile:taskCheck(t,worktree)});
+  const integrated=integrateTask({stateRoot,taskId:prepared.task.taskId});
+  assert.equal(integrated.task.status,'waiting_acceptance');
+  assert.equal(fs.existsSync(worktree),false);
+  const occupantHead=spawnSync('git',['-C',repo,'rev-parse',`${target}~1`],{encoding:'utf8'}).stdout.trim();
+  const occupied=spawnSync('git',['-C',repo,'worktree','add','--detach',worktree,occupantHead],{encoding:'utf8'});
+  assert.equal(occupied.status,0,occupied.stderr);
+  t.after(()=>spawnSync('git',['-C',repo,'worktree','remove','--force',worktree],{encoding:'utf8'}));
+  const rejected=acceptTask({stateRoot,taskId:prepared.task.taskId,decision:'退回',reasonCategory:'verification-gap',note:'需要返工'});
+  assert.equal(rejected.task.status,'blocked');
+  assert.equal(rejected.task.userAcceptance.decision,'rejected');
+  assert.equal(rejected.task.verification.stopReason,'integrated-return-workspace-recovery-failed');
+  assert.match(rejected.task.integration.diagnostic,/integrated-return-worktree-occupied/u);
+  assert.equal(spawnSync('git',['-C',worktree,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),occupantHead);
+});
+
 test('任务结果变基到最新目标后只集成目标尚未包含的提交',t=>{
   const repo=gitRepo(t),stateRoot=tempDir(t),parent=tempDir(t),worktree=path.join(parent,'task-worktree');
   const target=spawnSync('git',['-C',repo,'branch','--show-current'],{encoding:'utf8'}).stdout.trim();
@@ -227,6 +456,7 @@ test('存在残余风险时默认暂停集成并保留结果',t=>{
   const paused=integrateTask({stateRoot,taskId:prepared.task.taskId});
   assert.equal(paused.task.status,'ready_to_integrate');
   assert.equal(paused.task.integration.status,'paused_risk');
+  assert.deepEqual(paused.task.deliveryDecision,{decision:'needs_decision',reasons:['residual-risks']});
   assert.ok(paused.task.integration.pauseReasons.includes('residual-risks'));
   assert.equal(spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim(),before);
   assert.equal(fs.existsSync(worktree),true);

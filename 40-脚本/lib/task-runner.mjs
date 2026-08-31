@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { buildContext } from './context-builder.mjs';
 import {
   assertTaskWorktreeBaseline,
   captureBaseline,
   inspectWorktreeRouteState,
   computeChangeSet,
+  semanticFingerprintForFiles,
   inspectPackageManifestChanges,
   normalizeScopes,
   assertChangeSetWithinScope,
@@ -19,7 +21,7 @@ import {
   verifyCommitIntegrated,
   deletePendingIntegrationRef
 } from './git-state.mjs';
-import { findGitRoot } from './registry.mjs';
+import { findGitRoot, normalizePath, SYSTEM_ROOT } from './registry.mjs';
 import { classifyTask, reclassifyFromChangeSet, determineEvidenceRequirements, evaluateDeliveryEligibility, canRerunVerification } from './task-policy.mjs';
 import { createEvidence, evidenceSummary } from './evidence.mjs';
 import { planChecks, executeCheckPlan, loadChecks, loadTaskChecks, acceptanceIdsForCheck, createCheckManifest, checksFromManifest } from './check-planner.mjs';
@@ -48,7 +50,7 @@ import { buildReviewPackage, validateReviewRecord, reviewRequirementSatisfied, r
 import { createTask, readTask, findTask, updateTask, listTasks, inspectWorkspaceAvailability, withIntegrationLock } from './state-manager.mjs';
 import { createHandoff, handoffIsFresh } from './handoff.mjs';
 import { createSpecImpact } from './spec-impact.mjs';
-import { addIntentSpecificationHints, buildSpecState, revalidateSpecState, stableSpecReviewState } from './spec-service.mjs';
+import { buildSpecState, revalidateSpecState, stableSpecReviewState } from './spec-service.mjs';
 import {
   beginConversationDelivery,
   FOLLOW_UP_KINDS,
@@ -76,6 +78,36 @@ function nextConversationDelivery(previous) {
     deliveryId: crypto.randomUUID(),
     deliveredAt: new Date().toISOString(),
   });
+}
+
+function optionalHostLabel(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+export function captureEvaluationContext(options = {}) {
+  let systemBaseline = null;
+  try { systemBaseline = captureBaseline(SYSTEM_ROOT); } catch {}
+  let version = null;
+  try {
+    version = JSON.parse(fs.readFileSync(path.join(SYSTEM_ROOT, 'package.json'), 'utf8')).version ?? null;
+  } catch {}
+  return {
+    schemaVersion: 1,
+    system: {
+      version,
+      commit: systemBaseline?.head ?? null,
+      dirty: systemBaseline ? (systemBaseline.files?.length ?? 0) > 0 : null,
+    },
+    model: optionalHostLabel(options.model),
+    reasoningEffort: optionalHostLabel(options.reasoningEffort),
+    executionEnvironment: optionalHostLabel(options.executionEnvironment),
+    runtime: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    },
+  };
 }
 
 export function inferAcceptanceCovers(description, classification) {
@@ -244,6 +276,34 @@ function evidenceFromCheck(task, changeSet, inputCycle, check, acceptance = task
   })];
 }
 
+function systemCheckEvidenceIdentity(evidence) {
+  const source = evidence?.source;
+  if (source?.type !== 'command') return null;
+  return crypto.createHash('sha256').update(JSON.stringify({
+    command:source.command ?? null,
+    args:source.args ?? [],
+    cwd:source.cwd ? path.resolve(source.cwd) : null,
+    sideEffect:source.sideEffect ?? null,
+    runner:source.runner ?? null,
+    adapterVersion:source.adapterVersion ?? null,
+    resultProtocol:source.resultProtocol ?? null,
+    testFiles:source.testFiles ?? [],
+    cases:source.cases ?? [],
+    acceptanceIds:[...(evidence.acceptanceIds ?? [])].sort(),
+    covers:[...(evidence.covers ?? [])].sort(),
+  })).digest('hex');
+}
+
+function supersedePriorSystemCheckEvidence(evidence, freshEvidence, priorSystemHashes) {
+  const freshIdentities = new Set(freshEvidence.map(systemCheckEvidenceIdentity).filter(Boolean));
+  if (!freshIdentities.size) return evidence;
+  return evidence.filter((item) => {
+    if (!priorSystemHashes.has(item.payloadHash)) return true;
+    const identity = systemCheckEvidenceIdentity(item);
+    return !identity || !freshIdentities.has(identity);
+  });
+}
+
 function qualityReviewRefs(task) {
   return {
     qualityContracts: (task.context?.quality?.contracts ?? []).map((item) => ({ id: item.id, version: item.version, source: item.source, path: item.path })),
@@ -266,11 +326,15 @@ export function preflightWorkspace(options = {}) {
   if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');
   const availability = inspectWorkspaceAvailability({ stateRoot:options.stateRoot, gitRoot, taskId:options.taskId });
   const workspace = inspectWorktreeRouteState(gitRoot);
+  const baseline = captureBaseline(gitRoot);
+  const baselineClean = baseline.files.length === 0;
+  const snapshotConsistent = workspace.clean === baselineClean && workspace.branch === baseline.branch;
   const reasonCodes = [];
   if (!availability.available) reasonCodes.push('active-task');
-  if (!workspace.clean) reasonCodes.push('workspace-dirty');
+  if (!workspace.clean || !baselineClean) reasonCodes.push('workspace-dirty');
+  if (!snapshotConsistent) reasonCodes.push('workspace-changed-during-preflight');
   if (workspace.kind === 'local' && !workspace.branch) reasonCodes.push('primary-detached-head');
-  const cleanAndAvailable = availability.available && workspace.clean;
+  const cleanAndAvailable = availability.available && workspace.clean && baselineClean && snapshotConsistent;
   const recommended = cleanAndAvailable
     ? (workspace.kind === 'worktree' ? 'current-worktree' : (workspace.branch ? 'local-direct' : 'new-worktree'))
     : 'new-worktree';
@@ -279,14 +343,122 @@ export function preflightWorkspace(options = {}) {
     schemaVersion:2,
     diagnostic:availability.available ? null : '当前工作树已有活动写 Task；按 writeRouting 推荐路由处理。',
     workspace,
+    directBaseline: ['local-direct', 'current-worktree'].includes(recommended) ? {
+      head: baseline.head,
+      branch: baseline.branch,
+      detached:baseline.branch === null,
+      gitRoot: baseline.gitRoot,
+      gitCommonDir: baseline.gitCommonDir,
+    } : null,
     writeRouting: {
       recommended,
-      localDirectEligible:recommended === 'local-direct',
+      localDirectEligible:['local-direct', 'current-worktree'].includes(recommended),
       reasonCodes,
     },
   };
   if (options.requireAvailable === true && !result.available) throw new Error(availability.diagnostic);
   return result;
+}
+
+function verificationExecutionMetrics(execution) {
+  const executed = (execution?.results ?? []).filter((item) => item.reused !== true);
+  return {
+    count: executed.length,
+    durationMs: executed.reduce((sum, item) => sum + Math.max(0, Number(item.durationMs ?? 0) || 0), 0),
+  };
+}
+
+function localDirectFailure(code, message, details = {}) {
+  const error = new Error(`${code}: ${message}`);
+  error.code = code;
+  Object.assign(error, details);
+  return error;
+}
+
+export function verifyLocalDirect(options = {}) {
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  const gitRoot = findGitRoot(cwd);
+  if (!gitRoot) throw localDirectFailure('LOCAL_DIRECT_IDENTITY', '无法确认 Git 工作树');
+  const baselineHead = String(options.baselineHead ?? '').trim();
+  if (!/^[0-9a-f]{40,64}$/iu.test(baselineHead)) {
+    throw localDirectFailure('LOCAL_DIRECT_BASELINE_REQUIRED', '缺少预检返回的有效 baseline HEAD');
+  }
+  const baselineGitRoot = String(options.baselineGitRoot ?? '').trim();
+  const baselineGitCommonDir = String(options.baselineGitCommonDir ?? '').trim();
+  const baselineBranch = String(options.baselineBranch ?? '').trim() || null;
+  const baselineDetached = options.baselineDetached === true;
+  if (!baselineGitRoot || !baselineGitCommonDir) {
+    throw localDirectFailure('LOCAL_DIRECT_BASELINE_REQUIRED', '缺少预检返回的 Git Root 或 Git Common Dir');
+  }
+  if (Boolean(baselineBranch) === baselineDetached) {
+    throw localDirectFailure('LOCAL_DIRECT_BASELINE_REQUIRED', '必须且只能提供预检返回的 baseline 分支或 detached 标记');
+  }
+  const current = captureBaseline(gitRoot);
+  if (normalizePath(current.gitRoot) !== normalizePath(baselineGitRoot)
+    || normalizePath(current.gitCommonDir) !== normalizePath(baselineGitCommonDir)) {
+    throw localDirectFailure('LOCAL_DIRECT_IDENTITY_CHANGED', '当前工作树不是预检时的同一 Git 工作树，请重新路由', {
+      expectedGitRoot:baselineGitRoot,
+      actualGitRoot:current.gitRoot,
+      expectedGitCommonDir:baselineGitCommonDir,
+      actualGitCommonDir:current.gitCommonDir,
+    });
+  }
+  const expectedBranch = baselineDetached ? null : baselineBranch;
+  if (current.head !== baselineHead || current.branch !== expectedBranch) {
+    throw localDirectFailure('LOCAL_DIRECT_HEAD_CHANGED', '预检后 HEAD 或分支已经变化，请重新路由', {
+      expectedHead:baselineHead,
+      actualHead:current.head,
+      expectedBranch,
+      actualBranch:current.branch,
+    });
+  }
+  const availability = inspectWorkspaceAvailability({ stateRoot:options.stateRoot, gitRoot });
+  if (!availability.available) {
+    throw localDirectFailure('LOCAL_DIRECT_CONFLICT', '工作树出现活动写 Task，不能宣称轻量直达完成', {
+      conflict:availability.conflict,
+    });
+  }
+  const scopes = normalizeScopes(gitRoot, options.scope ?? '.', gitRoot);
+  const baseline = { ...current, head:baselineHead, files:[] };
+  const changeSet = computeChangeSet(baseline);
+  try { assertChangeSetWithinScope(changeSet, scopes); }
+  catch (error) { throw localDirectFailure('LOCAL_DIRECT_SCOPE_VIOLATION', error.message); }
+  const initial = classifyTask({
+    operation:'write',
+    intent:String(options.intent ?? ''),
+    acceptance:String(options.acceptance ?? ''),
+    scope:options.scope ?? '.',
+    plannedPaths:options.plannedPaths ?? [],
+    tracked:false,
+  });
+  const packageManifestChanges = inspectPackageManifestChanges(baseline, changeSet);
+  const finalClassification = reclassifyFromChangeSet(initial, changeSet, { packageManifestChanges });
+  const requiresFormal = finalClassification.executionRoute === 'formal-task'
+    || finalClassification.controlMode === 'controlled'
+    || finalClassification.structureImpact === 'structural'
+    || finalClassification.continuity !== 'ephemeral';
+  if (requiresFormal) {
+    throw localDirectFailure('LOCAL_DIRECT_RISK_ESCALATION', '真实 ChangeSet 已升级为正式任务风险；停止直达交付并在干净隔离 Worktree 重新实施', {
+      classification:finalClassification,
+      changedFiles:changeSet.files.map((item) => item.path),
+    });
+  }
+  return {
+    schemaVersion:1,
+    readOnly:true,
+    decision:'allow',
+    gitRoot,
+    baselineHead,
+    baselineIdentity:{
+      head:baselineHead,
+      gitRoot:current.gitRoot,
+      gitCommonDir:current.gitCommonDir,
+    },
+    verifiedSemanticFingerprint:changeSet.semanticFingerprint,
+    changeSet,
+    classification:finalClassification,
+    scope:scopes.map((item) => item.path),
+  };
 }
 
 export function prepareTask(options = {}) {
@@ -308,6 +480,7 @@ export function prepareTask(options = {}) {
     ].join(' ')
     : intent;
   const initial = classifyTask({
+    operation: 'write',
     intent: classificationText,
     acceptance: providedAlignment ? providedAlignment.acceptance.join(' ') : (options.acceptance ?? []).toString(),
     scope: options.scope,
@@ -350,11 +523,12 @@ export function prepareTask(options = {}) {
     intent,
     acceptance: acceptance.map((item) => item.description).join(' '),
     classification: initial,
+    operation: 'write',
+    scope: options.scope,
     qualityProfiles: options.qualityProfiles ?? options.skills ?? [],
   });
   const gitRoot = built.context.gitRoot;
   if (!gitRoot) throw new Error('写任务必须位于可确认的 Git 工作树');
-  addIntentSpecificationHints(built, gitRoot, intent);
   const scopes = normalizeScopes(built.executionTarget.targetPath, options.scope ?? '.', gitRoot);
   const baseline = captureBaseline(gitRoot);
   // node:test uses primary temporary repositories as isolated fixtures. Real
@@ -409,6 +583,7 @@ export function prepareTask(options = {}) {
     },
     classification: initial,
     context: built,
+    evaluationContext: captureEvaluationContext(options),
     baseline,
     integration,
     verification: {
@@ -432,7 +607,6 @@ export function prepareTask(options = {}) {
 }
 
 export function deliverTask(options = {}) {
-  const deliveryStartedAt = Date.now();
   if (options.inputChange || options.inputChangeReason) {
     throw new Error('禁止手工声明验证输入变化；只有真实 ChangeSet 或正式重新对齐可以开启新的验证周期');
   }
@@ -440,6 +614,19 @@ export function deliverTask(options = {}) {
   const task = current.task;
   const scopes = task.authorization.scope;
   const before = computeChangeSet(task.baseline);
+  const returnedFingerprint = task.verification?.returnedChangeFingerprint;
+  const returnedSemanticFingerprint = task.verification?.returnedSemanticFingerprint
+    ?? (returnedFingerprint && Array.isArray(task.changeSet?.files)
+      ? semanticFingerprintForFiles(task.changeSet.files)
+      : null);
+  const returnedRevision = Number(task.verification?.returnedAlignmentRevision ?? -1);
+  const alignmentRevision = Number(task.goal?.alignment?.revision ?? 0);
+  const unchangedReturnedInput = returnedSemanticFingerprint
+    ? returnedSemanticFingerprint === before.semanticFingerprint
+    : returnedFingerprint && returnedFingerprint === before.fingerprint;
+  if (unchangedReturnedInput && returnedRevision === alignmentRevision) {
+    throw new Error('user-return-input-unchanged: 用户退回后 ChangeSet 未变化且未正式重新对齐，禁止机械重跑旧证明');
+  }
   const scopeValidation = assertChangeSetWithinScope(before, scopes);
   const isolation = userChangesRemainIsolated(task.baseline, before, task.authorization.allowedExistingChanges ?? []);
   const persistentBlockers = withoutRecomputedDeliveryBlockers(task.blockers ?? []);
@@ -450,7 +637,6 @@ export function deliverTask(options = {}) {
       expectedRevision: task.stateRevision,
       transitionTo: 'blocked',
       event: 'delivery',
-      metricDurationMs: Date.now() - deliveryStartedAt,
       mutate(next) {
         next.changeSet = before;
         next.verification = {
@@ -577,6 +763,7 @@ export function deliverTask(options = {}) {
             .filter((item) => item.status === 0 && !item.error)
             .flatMap((item) => evidenceFromCheck(task, changeSet, inputCycle, item, acceptance))
           : [];
+        evidence = supersedePriorSystemCheckEvidence(evidence, checkEvidence, previousSystemHashes);
         for (const item of checkEvidence) systemCreatedHashes.add(item.payloadHash);
         evidence.push(...checkEvidence);
         if (!checkExecution.ok) {
@@ -744,13 +931,15 @@ export function deliverTask(options = {}) {
     ? createPendingIntegrationRef(changeSet.gitRoot, task.taskId, integrationCandidate.resultCommit)
     : task.integration?.pendingRef ?? null;
 
+  const checkMetrics = verificationExecutionMetrics(checkExecution);
   return updateTask({
     stateRoot: options.stateRoot,
     taskId: task.taskId,
     expectedRevision: task.stateRevision,
     transitionTo: status,
     event: 'delivery',
-    metricDurationMs: Date.now() - deliveryStartedAt,
+    metricExecutionCount: checkMetrics.count,
+    metricDurationMs: checkMetrics.durationMs,
     mutate(next) {
       next.classification = classification;
       next.acceptance = acceptance;
@@ -792,6 +981,8 @@ export function deliverTask(options = {}) {
         acceptanceGaps,
         systemEvidenceHashes,
         untrustedTechnicalEvidence: summary.untrustedTechnicalEvidence ?? [],
+        auxiliaryEvidence: summary.auxiliaryEvidence ?? [],
+        browserSummary: checkExecution?.browserSummary ?? null,
         preservationCoverage,
         firstFailure,
         stopReason: checkExecution?.stopReason === 'missing-acceptance-checks' && decisionGateReason
@@ -804,9 +995,13 @@ export function deliverTask(options = {}) {
             : !rationaleGate ? 'change-rationale-required'
             : status === 'waiting_acceptance' ? 'evidence-sufficient' : null),
         checkManifest,
-        lastInputChange: null
+        lastInputChange: null,
+        returnedChangeFingerprint:null,
+        returnedSemanticFingerprint:null,
+        returnedAlignmentRevision:null,
       };
       next.deliveryDecision = decision;
+      delete next.userAcceptance;
       if (status === 'waiting_acceptance') {
         next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
       }
@@ -982,12 +1177,17 @@ export function realignTask(options = {}) {
         acceptanceGaps: [],
         systemEvidenceHashes: [],
         untrustedTechnicalEvidence: [],
+        auxiliaryEvidence: [],
+        browserSummary: null,
         preservationCoverage: null,
         firstFailure: null,
         lastFailureFingerprint: null,
         diagnosticRetryUsed: false,
         stopReason: null,
         checkManifest: null,
+        returnedChangeFingerprint: null,
+        returnedSemanticFingerprint: null,
+        returnedAlignmentRevision: null,
       };
       return next;
     },
@@ -1006,12 +1206,15 @@ function automaticIntegrationRiskReasons(task) {
 
 function pauseIntegration(options, task, details = {}) {
   const reason = details.reason ?? 'integration-paused';
+  const checkMetrics = verificationExecutionMetrics(details.execution);
   return updateTask({
     stateRoot:options.stateRoot,
     taskId:task.taskId,
     expectedRevision:task.stateRevision,
     transitionTo:'ready_to_integrate',
     event:'integration-pause',
+    metricExecutionCount:checkMetrics.count,
+    metricDurationMs:checkMetrics.durationMs,
     mutate(next) {
       next.integration = {
         ...next.integration,
@@ -1027,25 +1230,33 @@ function pauseIntegration(options, task, details = {}) {
       };
       next.verification = {
         ...next.verification,
+        budget:details.execution?.budget ?? next.verification.budget,
         stopReason:reason,
+        browserSummary:details.execution?.browserSummary ?? null,
         firstFailure:details.diagnostic ? {
           name:'integration', command:'git', args:['cherry-pick'], exitCode:1,
           error:null, output:String(details.diagnostic).slice(-5000), truncated:String(details.diagnostic).length > 5000,
         } : null,
       };
-      next.deliveryDecision = { decision:'verifying', reasons:details.pauseReasons ?? [reason] };
+      next.deliveryDecision = {
+        decision:reason === 'integration-risk-user-decision' ? 'needs_decision' : 'verifying',
+        reasons:details.pauseReasons ?? [reason],
+      };
       return next;
     },
   });
 }
 
 function integrationCheckFailure(options, task, details) {
+  const checkMetrics = verificationExecutionMetrics(details.execution);
   return updateTask({
     stateRoot:options.stateRoot,
     taskId:task.taskId,
     expectedRevision:task.stateRevision,
     transitionTo:'needs_rework',
     event:'integration',
+    metricExecutionCount:checkMetrics.count,
+    metricDurationMs:checkMetrics.durationMs,
     mutate(next) {
       next.integration = {
         ...next.integration,
@@ -1064,6 +1275,7 @@ function integrationCheckFailure(options, task, details) {
         budget:details.execution?.budget ?? next.verification.budget,
         stopReason:details.stopReason,
         firstFailure:firstFailureDiagnostic(details.execution),
+        browserSummary:details.execution?.browserSummary ?? null,
       };
       next.deliveryDecision = { decision:'needs_rework', reasons:[details.stopReason] };
       return next;
@@ -1071,8 +1283,55 @@ function integrationCheckFailure(options, task, details) {
   });
 }
 
+function refreshEvidenceFromIntegration(task, details) {
+  const inputCycle = Number(task.verification?.inputCycle ?? 0);
+  const priorSystemHashes = new Set(task.verification?.systemEvidenceHashes ?? []);
+  const retained = (task.evidence ?? []).filter((item) => !(
+    priorSystemHashes.has(item.payloadHash)
+    && item.source?.type === 'command'
+    && item.source?.actor === 'ai-system'
+  ));
+  const refreshed = (details.execution?.results ?? []).flatMap((result) => (
+    evidenceFromCheck(task, task.changeSet, inputCycle, result, task.acceptance)
+  ));
+  const evidence = [...retained, ...refreshed];
+  const systemEvidenceHashes = [...new Set([
+    ...retained.filter((item) => priorSystemHashes.has(item.payloadHash)).map((item) => item.payloadHash),
+    ...refreshed.map((item) => item.payloadHash),
+  ])];
+  const requiredCovers = determineEvidenceRequirements({
+    classification:task.classification,
+    changeSet:task.changeSet,
+    acceptance:task.acceptance,
+    observableBrowserBehavior:task.verification?.requiredCovers?.includes('browser'),
+  });
+  const summary = evidenceSummary({
+    acceptance:task.acceptance,
+    evidence,
+    requiredCovers,
+    systemEvidenceHashes,
+    context:{
+      taskId:task.taskId,
+      changeFingerprint:task.changeSet.fingerprint,
+      inputCycle,
+      gitRoot:details.targetGitRoot,
+    },
+  });
+  if (summary.invalid.length || summary.missingAcceptance.length || summary.missingCovers.length) {
+    const reasons = [
+      ...(summary.invalid.length ? ['invalid-evidence'] : []),
+      ...summary.missingAcceptance.map((id) => `missing-acceptance:${id}`),
+      ...summary.missingCovers.map((cover) => `missing-cover:${cover}`),
+    ];
+    throw new Error(`集成结果无法形成目标 Worktree Evidence: ${reasons.join(', ')}`);
+  }
+  return { evidence, systemEvidenceHashes, requiredCovers, summary };
+}
+
 function recordIntegrationSuccess(options, task, details) {
   const integrationEvidence = compactIntegrationEvidence(task, details.targetCommit, details.plan, details.execution);
+  const refreshed = refreshEvidenceFromIntegration(task, details);
+  const checkMetrics = verificationExecutionMetrics(details.execution);
   deletePendingIntegrationRef(details.targetGitRoot, task.integration.pendingRef, task.integration.resultCommit);
   return updateTask({
     stateRoot:options.stateRoot,
@@ -1080,6 +1339,8 @@ function recordIntegrationSuccess(options, task, details) {
     expectedRevision:task.stateRevision,
     transitionTo:'waiting_acceptance',
     event:'integration',
+    metricExecutionCount:checkMetrics.count,
+    metricDurationMs:checkMetrics.durationMs,
     mutate(next) {
       next.integration = {
         ...next.integration,
@@ -1100,7 +1361,20 @@ function recordIntegrationSuccess(options, task, details) {
         riskAuthorization:details.riskAuthorization ?? next.integration.riskAuthorization ?? null,
       };
       next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
-      next.verification = { ...next.verification, budget:details.execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
+      next.evidence = refreshed.evidence;
+      next.verification = {
+        ...next.verification,
+        budget:details.execution.budget,
+        requiredCovers:refreshed.requiredCovers,
+        missingCovers:refreshed.summary.missingCovers,
+        missingAcceptance:refreshed.summary.missingAcceptance,
+        systemEvidenceHashes:refreshed.systemEvidenceHashes,
+        untrustedTechnicalEvidence:refreshed.summary.untrustedTechnicalEvidence ?? [],
+        auxiliaryEvidence:refreshed.summary.auxiliaryEvidence ?? [],
+        stopReason:'integration-evidence-sufficient',
+        firstFailure:null,
+        browserSummary:details.execution?.browserSummary ?? null,
+      };
       next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
       if (next.classification.continuity === 'handoff-required') {
         next.handoff = createHandoff({ ...next, status:'waiting_acceptance' }, { stateRevision:task.stateRevision + 1, next:'waiting_acceptance' });
@@ -1210,6 +1484,17 @@ export function integrateTask(options = {}) {
     if (!execution.ok || mutated) {
       const stopReason = mutated ? 'integration-check-mutated-candidate' : `integration-check-${execution.stopReason ?? execution.status ?? 'failed'}`;
       const cleanup = removeIntegrationWorktree({ targetCheckout:candidate.targetCheckout, candidatePath:candidate.candidatePath });
+      if (!mutated && execution.stopReason === 'budget') {
+        return pauseIntegration(options, task, {
+          reason:'budget',
+          status:'paused',
+          targetGitRoot:candidate.targetCheckout,
+          integrationWorktree:cleanup.removed ? null : candidate.candidatePath,
+          diagnostic:cleanup.removed ? null : cleanup.diagnostic ?? cleanup.reason,
+          riskAuthorization,
+          execution,
+        });
+      }
       return integrationCheckFailure(options, task, {
         targetGitRoot:candidate.targetCheckout,
         targetCommit:candidate.targetCommit,
@@ -1290,6 +1575,7 @@ export function revalidateIntegration(options = {}) {
     throw new Error(`集成重验缺少检查覆盖: ${[...plan.missingCovers, ...plan.missingAcceptance].join(', ')}`);
   }
   const execution = executeCheckPlan(plan, { cwd:targetGitRoot, budget:task.verification.budget });
+  const checkMetrics = verificationExecutionMetrics(execution);
   const after = captureBaseline(targetGitRoot);
   let stopReason = execution.ok
     ? null
@@ -1302,14 +1588,17 @@ export function revalidateIntegration(options = {}) {
       stateRoot:options.stateRoot,
       taskId:task.taskId,
       expectedRevision:task.stateRevision,
-      transitionTo:task.status,
+      transitionTo:'verifying',
       event:'integration-revalidation',
+      metricExecutionCount:checkMetrics.count,
+      metricDurationMs:checkMetrics.durationMs,
       mutate(next) {
         next.verification = {
           ...next.verification,
           budget:execution.budget,
           stopReason:stopReason ?? 'integration-check-failed',
           firstFailure:firstFailureDiagnostic(execution),
+          browserSummary:execution.browserSummary ?? null,
         };
         next.deliveryDecision = { decision:'verifying', reasons:[stopReason ?? 'integration-check-failed'] };
         return next;
@@ -1318,12 +1607,15 @@ export function revalidateIntegration(options = {}) {
   }
 
   const integrationEvidence = compactIntegrationEvidence(task, integrated.targetCommit, plan, execution);
+  const refreshed = refreshEvidenceFromIntegration(task, { targetGitRoot, execution });
   return updateTask({
     stateRoot:options.stateRoot,
     taskId:task.taskId,
     expectedRevision:task.stateRevision,
     transitionTo:'waiting_acceptance',
     event:'integration-revalidation',
+    metricExecutionCount:checkMetrics.count,
+    metricDurationMs:checkMetrics.durationMs,
     mutate(next) {
       next.integration = {
         ...next.integration,
@@ -1333,7 +1625,20 @@ export function revalidateIntegration(options = {}) {
         integrationEvidence,
         revalidatedAt:integrationEvidence.createdAt,
       };
-      next.verification = { ...next.verification, budget:execution.budget, stopReason:'integration-evidence-sufficient', firstFailure:null };
+      next.evidence = refreshed.evidence;
+      next.verification = {
+        ...next.verification,
+        budget:execution.budget,
+        requiredCovers:refreshed.requiredCovers,
+        missingCovers:refreshed.summary.missingCovers,
+        missingAcceptance:refreshed.summary.missingAcceptance,
+        systemEvidenceHashes:refreshed.systemEvidenceHashes,
+        untrustedTechnicalEvidence:refreshed.summary.untrustedTechnicalEvidence ?? [],
+        auxiliaryEvidence:refreshed.summary.auxiliaryEvidence ?? [],
+        stopReason:'integration-evidence-sufficient',
+        firstFailure:null,
+        browserSummary:execution.browserSummary ?? null,
+      };
       next.deliveryDecision = { decision:'waiting_acceptance', reasons:[] };
       next.conversationOutcome = nextConversationDelivery(next.conversationOutcome);
       if (next.classification.continuity === 'handoff-required') {
@@ -1377,15 +1682,32 @@ export function confirmIntegration(options = {}) {
   const mutated = after.head !== before.head || after.fingerprint !== before.fingerprint;
   if (!execution.ok || mutated) {
     const stopReason = mutated ? 'integration-check-mutated-target' : `integration-check-${execution.stopReason ?? execution.status ?? 'failed'}`;
+    if (!mutated && execution.stopReason === 'budget') {
+      return pauseIntegration(options, task, {
+        reason:'budget',
+        status:'paused',
+        targetGitRoot,
+        execution,
+      });
+    }
+    const checkMetrics = verificationExecutionMetrics(execution);
     return updateTask({
       stateRoot: options.stateRoot,
       taskId: task.taskId,
       expectedRevision: task.stateRevision,
       transitionTo: 'verifying',
       event: 'integration',
+      metricExecutionCount:checkMetrics.count,
+      metricDurationMs:checkMetrics.durationMs,
       mutate(next) {
         next.integration = { ...next.integration, status:'revalidation_failed', targetGitRoot, targetCommit:result.targetCommit };
-        next.verification = { ...next.verification, budget:execution.budget, stopReason, firstFailure:firstFailureDiagnostic(execution) };
+        next.verification = {
+          ...next.verification,
+          budget:execution.budget,
+          stopReason,
+          firstFailure:firstFailureDiagnostic(execution),
+          browserSummary:execution.browserSummary ?? null,
+        };
         next.deliveryDecision = { decision:'verifying', reasons:[stopReason] };
         return next;
       }
@@ -1446,7 +1768,12 @@ function revalidateForAcceptance(task) {
     evidence: task.evidence,
     requiredCovers,
     systemEvidenceHashes: task.verification?.systemEvidenceHashes ?? [],
-    context: { taskId: task.taskId, changeFingerprint: changeSet.fingerprint, inputCycle: task.verification?.inputCycle ?? 0, gitRoot: changeSet.gitRoot }
+    context: {
+      taskId: task.taskId,
+      changeFingerprint: changeSet.fingerprint,
+      inputCycle: task.verification?.inputCycle ?? 0,
+      gitRoot: integrated ? task.integration.targetGitRoot : changeSet.gitRoot,
+    }
   });
   const specState = integrated
     ? { specTraceability:task.specTraceability, specConsistency:task.specConsistency }
@@ -1475,6 +1802,248 @@ function revalidateForAcceptance(task) {
   return { changeSet, summary, validReviews, traceability, specConsistency };
 }
 
+export function inspectAcceptanceEligibility(options = {}) {
+  const repositoryScoped = Boolean(options.repositoryIdentity);
+  const tasks = listTasks({
+    stateRoot:options.stateRoot,
+    repositoryIdentity:options.repositoryIdentity,
+    limit:0,
+  }).tasks.filter((task) => task.status === 'waiting_acceptance');
+  const diagnostics = [];
+  let eligible = 0;
+  for (const task of tasks) {
+    try {
+      revalidateForAcceptance(task);
+      eligible += 1;
+    } catch (error) {
+      diagnostics.push({
+        taskId:task.taskId,
+        code:'acceptance-ineligible',
+        diagnostic:error.message,
+      });
+    }
+  }
+  return {
+    schemaVersion:1,
+    readOnly:true,
+    scope:repositoryScoped ? 'repository' : 'all-projects',
+    ok:diagnostics.length === 0,
+    checked:tasks.length,
+    eligible,
+    ineligible:diagnostics.length,
+    diagnostics,
+  };
+}
+
+function recreateReturnedTaskWorkspace(task) {
+  if (task.integration?.status !== 'integrated') return null;
+  const sourceGitRoot = path.resolve(task.integration.sourceGitRoot ?? task.baseline?.gitRoot ?? '');
+  const targetGitRoot = path.resolve(task.integration.targetGitRoot ?? '');
+  if (!task.integration.sourceGitRoot || !task.integration.targetGitRoot
+    || normalizePath(sourceGitRoot) === normalizePath(targetGitRoot)) {
+    throw new Error('integrated-return-worktree-invalid: 无法确定独立的返工 Worktree');
+  }
+  const integrated = verifyCommitIntegrated({
+    gitRoot:targetGitRoot,
+    expectedCommonDir:task.integration.gitCommonDir,
+    target:task.integration.target,
+    resultCommit:task.integration.resultCommit,
+    baseCommit:task.integration.baseCommit,
+  });
+  if (!integrated.ok || !integrated.targetCommit) {
+    throw new Error(`integrated-return-target-unavailable: ${integrated.reason ?? 'unknown'}${integrated.diagnostic ? `: ${integrated.diagnostic}` : ''}`);
+  }
+  const targetCommit = integrated.targetCommit;
+  let baseline;
+  if (fs.existsSync(sourceGitRoot)) {
+    baseline = captureBaseline(sourceGitRoot);
+    const sourceWasRemoved = ['removed','absent'].includes(task.integration.cleanup?.source?.worktree);
+    if (sourceWasRemoved) {
+      throw new Error('integrated-return-worktree-occupied: 原返工路径在集成清理后被其他 Worktree 占用');
+    }
+    if (normalizePath(baseline.gitCommonDir) !== normalizePath(task.integration.gitCommonDir)) {
+      throw new Error('integrated-return-worktree-mismatch: 原返工路径已属于其他 Git 仓库');
+    }
+    if (!task.baseline?.gitDir || normalizePath(baseline.gitDir) !== normalizePath(task.baseline.gitDir)) {
+      throw new Error('integrated-return-worktree-identity-mismatch: 原返工路径不再是 Task 的同一 Worktree');
+    }
+    if (baseline.files.length) throw new Error('integrated-return-worktree-dirty: 原返工 Worktree 存在未提交改动');
+    if (baseline.head !== targetCommit) {
+      const checkout = spawnSync('git', [
+        '-C', sourceGitRoot, 'checkout', '--detach', targetCommit,
+      ], { encoding:'utf8', windowsHide:true, timeout:30000, maxBuffer:8 * 1024 * 1024 });
+      if (checkout.status !== 0 || checkout.error) {
+        const detail = String(checkout.stderr || checkout.error?.message || `exit ${checkout.status ?? 'unknown'}`).trim();
+        throw new Error(`integrated-return-worktree-align-failed: ${detail}`);
+      }
+      baseline = captureBaseline(sourceGitRoot);
+    }
+  } else {
+    fs.mkdirSync(path.dirname(sourceGitRoot), { recursive:true });
+    const result = spawnSync('git', [
+      '-C', targetGitRoot, 'worktree', 'add', '--detach', sourceGitRoot, targetCommit,
+    ], { encoding:'utf8', windowsHide:true, timeout:30000, maxBuffer:8 * 1024 * 1024 });
+    if (result.status !== 0 || result.error) {
+      const detail = String(result.stderr || result.error?.message || `exit ${result.status ?? 'unknown'}`).trim();
+      throw new Error(`integrated-return-worktree-create-failed: ${detail}`);
+    }
+    baseline = captureBaseline(sourceGitRoot);
+  }
+  if (normalizePath(baseline.gitCommonDir) !== normalizePath(task.integration.gitCommonDir)) {
+    throw new Error('integrated-return-worktree-mismatch: 重建后的 Worktree 不属于原仓库');
+  }
+  if (baseline.head !== targetCommit) {
+    throw new Error(`integrated-return-worktree-stale: 返工 Worktree ${baseline.head} 未对齐目标 ${targetCommit}`);
+  }
+  const emptyChangeSet = computeChangeSet(baseline);
+  if (emptyChangeSet.files.length) throw new Error('integrated-return-worktree-dirty: 重建后的 Worktree 不是干净基线');
+  return { baseline, emptyFingerprint:emptyChangeSet.fingerprint, emptySemanticFingerprint:emptyChangeSet.semanticFingerprint };
+}
+
+function applyReturnedTaskWorkspace(next, restored) {
+  if (!restored) return next;
+  next.baseline = restored.baseline;
+  next.changeSet = null;
+  next.context = {
+    ...next.context,
+    context:{
+      ...next.context?.context,
+      gitRoot:restored.baseline.gitRoot,
+      head:restored.baseline.head,
+      branch:restored.baseline.branch,
+    },
+    executionTarget:{ targetPath:restored.baseline.gitRoot },
+  };
+  next.integration = {
+    ...next.integration,
+    status:'pending_commit',
+    baseCommit:restored.baseline.head,
+    resultCommit:null,
+    targetCommit:null,
+    method:null,
+    pendingRef:null,
+    integratedAt:null,
+    integrationEvidence:null,
+    revalidatedAt:null,
+    candidateBase:null,
+    candidateCommit:null,
+    integrationWorktree:null,
+    conflictFiles:[],
+    diagnostic:null,
+    pauseReasons:[],
+    cleanup:null,
+    riskAuthorization:null,
+  };
+  next.verification.returnedChangeFingerprint = restored.emptyFingerprint;
+  next.verification.returnedSemanticFingerprint = restored.emptySemanticFingerprint;
+  return next;
+}
+
+function invalidateReturnedDeliveryProof(next, reason, restored = null) {
+  const returnedChangeFingerprint = next.changeSet?.fingerprint ?? null;
+  const returnedSemanticFingerprint = next.changeSet?.semanticFingerprint
+    ?? (Array.isArray(next.changeSet?.files) ? semanticFingerprintForFiles(next.changeSet.files) : null);
+  const returnedAlignmentRevision = Number(next.goal?.alignment?.revision ?? 0);
+  next.evidence = [];
+  delete next.reviews;
+  delete next.reviewPackage;
+  next.handoff = null;
+  next.changeRationale = null;
+  next.verification = {
+    ...next.verification,
+    inputCycle:Number(next.verification?.inputCycle ?? 0) + 1,
+    requiredCovers:[],
+    missingCovers:[],
+    missingAcceptance:(next.acceptance ?? []).map((item) => item.id),
+    acceptanceGaps:[],
+    systemEvidenceHashes:[],
+    untrustedTechnicalEvidence:[],
+    auxiliaryEvidence:[],
+    browserSummary:null,
+    preservationCoverage:null,
+    firstFailure:null,
+    lastFailureFingerprint:null,
+    diagnosticRetryUsed:false,
+    checkManifest:null,
+    returnedChangeFingerprint,
+    returnedSemanticFingerprint,
+    returnedAlignmentRevision,
+    stopReason:reason,
+  };
+  return applyReturnedTaskWorkspace(next, restored);
+}
+
+const RETURN_WORKSPACE_REQUIRED = 'integrated-return-workspace-recovery-required';
+const RETURN_WORKSPACE_FAILED = 'integrated-return-workspace-recovery-failed';
+const RETURN_WORKSPACE_BLOCKER = '返工 Worktree 尚未恢复';
+const RETURN_WORKSPACE_FAILURE_PREFIX = '返工 Worktree 恢复失败:';
+
+function withoutReturnWorkspaceBlockers(blockers = []) {
+  return blockers.filter((item) => item !== RETURN_WORKSPACE_BLOCKER
+    && !String(item).startsWith(RETURN_WORKSPACE_FAILURE_PREFIX));
+}
+
+function markReturnWorkspaceRecoveryRequired(next) {
+  next.verification = { ...next.verification, stopReason:RETURN_WORKSPACE_REQUIRED };
+  next.deliveryDecision = { decision:'blocked', reasons:[RETURN_WORKSPACE_REQUIRED] };
+  next.blockers = [...withoutReturnWorkspaceBlockers(next.blockers ?? []), RETURN_WORKSPACE_BLOCKER];
+  next.integration = { ...next.integration, diagnostic:RETURN_WORKSPACE_BLOCKER };
+  return next;
+}
+
+function recoverReturnedTaskWorkspace(options, current, event = 'workspace-recovery') {
+  const task = current.task;
+  const returnReason = task.userAcceptance?.decision === 'rejected'
+    ? 'user-return'
+    : 'conversation-defect-return';
+  try {
+    const sourceGitRoot = task.integration?.sourceGitRoot ?? task.baseline?.gitRoot;
+    const availability = inspectWorkspaceAvailability({
+      stateRoot:options.stateRoot,
+      gitRoot:sourceGitRoot,
+      taskId:task.taskId,
+    });
+    if (!availability.available) {
+      throw new Error(`integrated-return-worktree-conflict: ${availability.diagnostic}`);
+    }
+    const restored = recreateReturnedTaskWorkspace(task);
+    if (!restored) throw new Error('integrated-return-worktree-invalid: Task 不再处于已集成返工状态');
+    return updateTask({
+      stateRoot:options.stateRoot,
+      taskId:task.taskId,
+      expectedRevision:task.stateRevision,
+      transitionTo:'verifying',
+      event,
+      mutate(next) {
+        applyReturnedTaskWorkspace(next, restored);
+        next.verification = { ...next.verification, stopReason:returnReason };
+        next.blockers = withoutReturnWorkspaceBlockers(next.blockers ?? []);
+        next.deliveryDecision = { decision:'needs_rework', reasons:[returnReason] };
+        return next;
+      },
+    });
+  } catch (error) {
+    return updateTask({
+      stateRoot:options.stateRoot,
+      taskId:task.taskId,
+      expectedRevision:task.stateRevision,
+      transitionTo:'blocked',
+      event,
+      mutate(next) {
+        const diagnostic = String(error?.message ?? error);
+        next.verification = { ...next.verification, stopReason:RETURN_WORKSPACE_FAILED };
+        next.deliveryDecision = { decision:'blocked', reasons:[RETURN_WORKSPACE_FAILED] };
+        next.blockers = [
+          ...withoutReturnWorkspaceBlockers(next.blockers ?? []),
+          `${RETURN_WORKSPACE_FAILURE_PREFIX} ${diagnostic}`,
+        ];
+        next.integration = { ...next.integration, diagnostic };
+        return next;
+      },
+    });
+  }
+}
+
 export function acceptTask(options = {}) {
   const current = readTask({ stateRoot: options.stateRoot, taskId: options.taskId });
   const task = current.task;
@@ -1484,19 +2053,23 @@ export function acceptTask(options = {}) {
   if (decision === 'passed' && options.reasonCategory) throw new Error('退回原因分类只用于退回决定');
   if (decision === 'rejected') {
     const reasonCategory = normalizeReturnReasonCategory(options.reasonCategory);
-    return updateTask({
+    const integratedReturn = task.integration?.status === 'integrated';
+    const recorded = updateTask({
       stateRoot: options.stateRoot,
       taskId: task.taskId,
       expectedRevision: task.stateRevision,
-      transitionTo: 'needs_rework',
+      transitionTo: integratedReturn ? 'blocked' : 'needs_rework',
       event: 'user-reject',
       metricReasonCategory: reasonCategory,
       metricNote: options.note,
       mutate(next) {
         next.userAcceptance = { decision: 'rejected', note: options.note ?? null, decidedAt: new Date().toISOString() };
-        return next;
+        next.deliveryDecision = { decision:'needs_rework', reasons:['user-return'] };
+        invalidateReturnedDeliveryProof(next, 'user-return');
+        return integratedReturn ? markReturnWorkspaceRecoveryRequired(next) : next;
       }
     });
+    return integratedReturn ? recoverReturnedTaskWorkspace(options, recorded) : recorded;
   }
   const validation = revalidateForAcceptance(task);
   return updateTask({
@@ -1554,8 +2127,9 @@ export function recordTaskFollowUp(options = {}) {
   if (current.source === 'history' || task.status === 'closed') throw new Error('任务已经根据后续对话收口');
   if (task.status !== 'waiting_acceptance') throw new Error(`任务当前不能记录交付后续: ${task.status}`);
   const closingEvent = CLOSING_FOLLOW_UP_EVENTS[kind];
+  const integratedReturn = kind === 'defect-return' && task.integration?.status === 'integrated';
   const transitionTo = kind === 'defect-return'
-    ? 'needs_rework'
+    ? (integratedReturn ? 'blocked' : 'needs_rework')
     : closingEvent
       ? 'closed'
       : 'waiting_acceptance';
@@ -1577,12 +2151,15 @@ export function recordTaskFollowUp(options = {}) {
       });
       if (kind === 'defect-return') {
         next.deliveryDecision = { decision: 'needs_rework', reasons: ['conversation-defect-return'] };
+        invalidateReturnedDeliveryProof(next, 'conversation-defect-return');
+        if (integratedReturn) markReturnWorkspaceRecoveryRequired(next);
       }
       return next;
     },
   });
+  const recovered = integratedReturn ? recoverReturnedTaskWorkspace(options, updated) : updated;
   return {
-    ...updated,
+    ...recovered,
     recorded: true,
     idempotent: false,
     followUp: {
@@ -1615,6 +2192,9 @@ export function resumeTask(options = {}) {
   if (task.status === 'saved' && task.verification?.stopReason === 'budget') {
     throw new Error('任务因验证预算耗尽而保存；必须使用“继续验证”并说明追加预算和原因');
   }
+  if (task.status === 'blocked' && [RETURN_WORKSPACE_REQUIRED, RETURN_WORKSPACE_FAILED].includes(task.verification?.stopReason)) {
+    return recoverReturnedTaskWorkspace(options, current, 'resume');
+  }
   const changeSet = computeChangeSet(task.baseline);
   const fresh = handoffIsFresh(task.handoff, task) && task.handoff.changeFingerprint === (changeSet.fingerprint ?? null);
   return updateTask({
@@ -1636,25 +2216,42 @@ export function resumeTask(options = {}) {
 export function continueVerification(options = {}) {
   const current = readTask({ stateRoot:options.stateRoot, taskId:options.taskId });
   const task = current.task;
-  if (!['saved','waiting_acceptance','verifying'].includes(task.status) || task.verification?.stopReason !== 'budget') {
+  const legacyIntegrationBudget = ['needs_rework','verifying'].includes(task.status)
+    && task.verification?.stopReason === 'integration-check-budget';
+  const integrationBudget = task.status === 'ready_to_integrate' && task.verification?.stopReason === 'budget';
+  const integratedRevalidationBudget = task.status === 'verifying'
+    && task.integration?.status === 'integrated'
+    && task.verification?.stopReason === 'budget';
+  const ordinaryBudget = ['saved','waiting_acceptance','verifying'].includes(task.status)
+    && task.verification?.stopReason === 'budget';
+  if (!ordinaryBudget && !integrationBudget && !legacyIntegrationBudget && !integratedRevalidationBudget) {
     throw new Error('只有因验证预算耗尽而暂停的 Task 才能继续验证');
   }
   const budget = extendBudget(task.verification.budget, {
     additionalMs:options.additionalBudgetMs,
     reason:options.reason,
   });
-  const changeSet = computeChangeSet(task.baseline);
+  const resumeIntegration = integrationBudget || legacyIntegrationBudget;
+  const changeSet = (resumeIntegration || integratedRevalidationBudget) ? task.changeSet : computeChangeSet(task.baseline);
   return updateTask({
     stateRoot:options.stateRoot,
     taskId:task.taskId,
     expectedRevision:task.stateRevision,
-    transitionTo:'verifying',
+    transitionTo:resumeIntegration ? 'ready_to_integrate' : 'verifying',
     event:'verification-continue',
     mutate(next) {
       next.changeSet = changeSet;
       next.handoff = null;
       next.blockers = withoutDerivedBlockers(next.blockers ?? []);
-      next.verification = { ...next.verification, budget, stopReason:'budget-extended' };
+      next.verification = {
+        ...next.verification,
+        budget,
+        stopReason:integratedRevalidationBudget ? 'integration-revalidation-budget-extended' : 'budget-extended',
+      };
+      if (resumeIntegration && next.integration) {
+        next.integration = { ...next.integration, status:'ready', pauseReasons:[], diagnostic:null };
+        next.deliveryDecision = { decision:'ready_to_integrate', reasons:[] };
+      }
       return next;
     }
   });
