@@ -1,4 +1,4 @@
-// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 BR-AIRD-STATE-002 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001
+// BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-003 BR-AIRD-STATE-001 BR-AIRD-STATE-002 TR-AIRD-STATE-001 BR-AIRD-REALIGN-001 TR-AIRD-REALIGN-001 BR-AIRD-METRICS-001 BR-AIRD-COMMIT-001
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -810,7 +810,7 @@ test('CLI 回执显示 untrustedTechnicalEvidence', t => {
   assert.equal('verification' in receipt, false);
 });
 
-test('CLI 自动记录退回指标并提供只读评估摘要', t => {
+test('CLI 自动记录退回轮次并提供只读完成轮次摘要', t => {
   const repo = gitRepo(t);
   const stateRoot = tempDir(t);
   const prepared = runNode(TASK, [
@@ -836,14 +836,43 @@ test('CLI 自动记录退回指标并提供只读评估摘要', t => {
   const metrics = runNode(TASK, ['评估摘要', '--cwd', repo, '--state-root', stateRoot], { cwd:ROOT });
   assert.equal(metrics.status, 0, metrics.stderr);
   const summary = JSON.parse(metrics.stdout);
-  assert.equal(summary.view, 'outcome-metrics');
+  assert.equal(summary.view, 'completion-rounds');
   assert.equal(summary.sample.total, 1);
-  assert.equal(summary.sample.tracked, 1);
-  assert.deepEqual(summary.firstPassAcceptance, { decided:1, unknown:0, passed:0, rate:0, coverage:1 });
-  assert.deepEqual(summary.rework, { tasks:1, count:1, countingScope:'same-task-explicit-user-reject', unlinkedRepairTasksIncluded:false });
+  assert.equal(summary.sample.measured, 1);
+  assert.equal(summary.sample.completed, 0);
+  assert.equal(summary.sample.inProgress, 1);
+  assert.deepEqual(summary.explicitAcceptance, { decided:1, unknown:0, passed:0, rate:0, coverage:1, role:'secondary-optional-fact' });
+  assert.deepEqual(summary.rework, { tasks:1, count:1, countingScope:'same-sample-related-return', unlinkedRepairTasksIncluded:false });
   assert.deepEqual(summary.returnReasons, [{ category:'code-quality', count:1 }]);
   assert.equal(summary.verification.runs, 1);
   assert.ok(summary.warnings.some(item => /不能单独证明/u.test(item)));
+});
+
+test('CLI 轻量交付要求本地 HEAD 并进入按问题类型筛选的轮次摘要', t => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const headResult = spawnSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding:'utf8' });
+  assert.equal(headResult.status, 0, headResult.stderr);
+  const head = headResult.stdout.trim();
+  const delivery = runNode(TASK, [
+    '记录轻量交付', '--cwd', repo, '--commit', head, '--problem-type', 'bugfix', '--scope', '.', '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.equal(delivery.status, 0, delivery.stderr);
+  const receipt = JSON.parse(delivery.stdout);
+  assert.equal(receipt.source, 'light-direct');
+  assert.equal(receipt.localCommit, head);
+  const closed = runNode(TASK, [
+    '后续', '--task-id', receipt.taskId, '--delivery-id', receipt.continuation.deliveryId,
+    '--observation-id', 'turn-topic', '--kind', 'topic-advance', '--state-root', stateRoot,
+  ], { cwd:ROOT });
+  assert.equal(closed.status, 0, closed.stderr);
+  assert.equal(JSON.parse(closed.stdout).state, 'done');
+  const metrics = runNode(TASK, [
+    '评估摘要', '--cwd', repo, '--state-root', stateRoot, '--problem-type', 'bugfix',
+  ], { cwd:ROOT });
+  assert.equal(metrics.status, 0, metrics.stderr);
+  const summary = JSON.parse(metrics.stdout);
+  assert.equal(summary.sample.completed, 1);
+  assert.deepEqual(summary.completionRounds.exact, [{ round:1, count:1, rate:1 }]);
 });
 
 test('系统完整检查通过', () => {

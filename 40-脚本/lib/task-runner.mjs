@@ -1540,7 +1540,7 @@ export function recordTaskFollowUp(options = {}) {
   const kind = String(options.kind ?? '').trim();
   if (!FOLLOW_UP_KINDS.has(kind)) throw new Error(`后续类型无效: ${kind || 'unknown'}`);
   const observationId = normalizedObservationId(options.observationId);
-  const existing = [conversationOutcome.firstFollowUp, conversationOutcome.terminalFollowUp]
+  const existing = (conversationOutcome.observations ?? [])
     .find((item) => item?.observationId === observationId);
   if (existing) {
     if (existing.kind !== kind) throw new Error('同一 observation-id 不能记录为不同后续类型');
@@ -1553,15 +1553,6 @@ export function recordTaskFollowUp(options = {}) {
   }
   if (current.source === 'history' || task.status === 'closed') throw new Error('任务已经根据后续对话收口');
   if (task.status !== 'waiting_acceptance') throw new Error(`任务当前不能记录交付后续: ${task.status}`);
-  if (kind === 'related-question' && conversationOutcome.firstFollowUp) {
-    return {
-      ...current,
-      recorded: false,
-      idempotent: false,
-      followUp: { kind, observationId, ignored: 'first-follow-up-already-recorded' },
-    };
-  }
-
   const closingEvent = CLOSING_FOLLOW_UP_EVENTS[kind];
   const transitionTo = kind === 'defect-return'
     ? 'needs_rework'

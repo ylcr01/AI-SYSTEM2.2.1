@@ -6,7 +6,7 @@
 
 AI-SYSTEM 不替代 Codex、Claude Code 等 Coding Agent，也不试图成为 IDE、Agent Runtime、工作流平台或企业治理系统。它通过宿主自定义指令、项目 `AGENTS.md` 和本地 Node.js 工具，为真实软件任务补上少量但关键的纠偏能力：
 
-> **理解用户目标 → 获取正确上下文 → 在授权范围内实现 → 用定点检查证明结果 → 保持集成状态真实 → 交给用户验收。**
+> **理解用户目标 → 获取正确上下文 → 在授权范围内实现 → 用定点检查证明结果 → 默认本地提交 → 用真实后续衡量完成轮次。**
 
 系统不引入常驻服务，不接管模型的分析、设计和编码过程，也不把流程数量当作研发质量。
 
@@ -30,23 +30,24 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。系统�
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → build-context → 读取最小相关事实
-局部低风险修改  → 预检 → 干净 Local 直达 / 异常升级 Worktree → 最小 Diff + 定点检查
+局部低风险修改  → 预检 → 干净 Local 直达 / 异常升级 Worktree → 最小 Diff + 定点检查 + 本地提交 + 轻量结果
 正式写 Task     → 专属 Worktree → 独立提交 → 隔离应用与重验 → 串行快进目标分支 → 本轮已交付
 Local/主工作区  → 只读分析、合格轻量直达或单一集成者串行集成
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
-低风险局部修改不进入持久化控制面；模型负责理解、实现、最小 Diff 和定点检查。正式 Task 只硬控可以机器确认的 Goal、项目身份、Scope、用户已有改动、ChangeSet、Evidence、检查输入、Worktree 集成新鲜度和用户最终验收。
+低风险局部修改不进入正式 Task 状态机，只追加最小结果事实；模型负责理解、实现、最小 Diff、定点检查和本地提交。正式 Task 只硬控可以机器确认的 Goal、项目身份、Scope、用户已有改动、ChangeSet、Evidence、检查输入和 Worktree 集成新鲜度。显式验收保留为可选强事实，不是交付完成或统计的前置条件。
 
 ## 当前可信边界
 
 - Acceptance 只有被定点检查显式绑定时才算被证明；通用检查和外部导入结果不能自动冒充验收证据。
 - 新 Task Check 使用用例级 Schema 2，只接受受控 Runner；每个 case 显式绑定 Acceptance、Cover、测试文件和精确用例名。Runner 必须返回真实命中、通过、失败、skip/todo 结果，Check Manifest 同时绑定用例声明、Runner 协议与输入哈希。
 - 默认验证先完整映射 Acceptance，映射缺失时不执行通用命令；映射完整后，通用检查只补真实 ChangeSet 尚未覆盖的 Required Covers，同一批检查失败时不保留部分成功 Evidence。全量历史回归不属于普通交付，必须另建 Task 并明确授权。
-- Task 写作态、已交付和历史记录分层保存；默认回执只展示四种用户状态。`delivered` 只表示本轮工程交付通过，`closed` 只表示后续对话自然收口，`accepted` 仍只能由用户显式产生。
-- 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主只在下一条消息中据此记录相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
+- Task 写作态、已交付和历史记录分层保存；默认回执只展示四种用户状态。`delivered` 表示工程门禁已通过且结果已提交，默认无需用户再确认；`closed` 表示后续对话自然收口，`accepted` 仍只能由用户显式产生。
+- 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主据此记录每个不同 `observationId` 的相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
 - 正式写 Task 独占 Worktree；轻量直达只有在 Local 干净、可用且没有已知并发写入时才可实施。正式集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- 仓库修改验证通过后默认形成仅包含本次 Scope 的本地 Git 提交；Push、发布、部署和其他外部写入绝不随交付自动发生，仍须单独授权。
 - Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
 - 默认回执对 ChangeSet、缺口和诊断列表限量展开，并报告 `total`、`shown`、`truncated`；直接检查不展开成功日志，显式 `--full` 才读取完整记录。
 - `build-context` 返回读取计划的内容指纹；同一输入再次调用时传入 `--known-context-fingerprint <上次指纹>`，未变化则返回空读取计划，项目事实变化后自动恢复完整计划。
@@ -83,7 +84,17 @@ node ./40-脚本/build-context.mjs --cwd <项目路径> --intent "<目标>" `
 
 ### 执行修改
 
-宿主先运行只读 `预检`，再读取轻量上下文。结果为 `continuity=ephemeral` 且预检返回 `recommended=local-direct` 时，在当前 Local 直接实施最小 Diff，并只运行一次目标测试或受影响检查，不创建 Worktree、正式 Task 或自动集成流程。当前已经位于干净的任务 Worktree 时也可直接实施。Local 脏、被占用、存在已知并发或状态无法确认时，确定性升级到专属 Worktree。
+宿主先运行只读 `预检`，再读取轻量上下文。结果为 `continuity=ephemeral` 且预检返回 `recommended=local-direct` 时，在当前 Local 实施最小 Diff，只运行一次目标测试或受影响检查；通过后默认本地提交，并调用 `记录轻量交付` 写入最小结果事实，不创建正式 Task 或自动集成流程。当前已经位于干净的任务 Worktree 时也可直接实施。Local 脏、被占用、存在已知并发或状态无法确认时，确定性升级到专属 Worktree。
+
+```powershell
+git add -- <本次 Scope 内的精确文件>
+git commit -m "<本次修改>"
+node ./40-脚本/task.mjs 记录轻量交付 --cwd <项目路径> `
+  --commit <当前 HEAD> --problem-type bugfix|feature|refactor|migration|integration|documentation|maintenance `
+  --scope <本次文件或目录>
+```
+
+该命令只接受工作树干净且等于当前 `HEAD` 的本地提交，不会执行 Push。若后续缺陷退回，修复并验证、提交后用回执中的原 `taskId` 再次记录，仍然只形成一个问题样本。
 
 `tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务才进入正式 Task：
 
@@ -99,10 +110,11 @@ node ./40-脚本/task.mjs 准备 --cwd <任务路径> --intent "<目标>" `
 
 node ./40-脚本/task.mjs 交付 --task-id <编号>
 
+# 可选：用户明确表达通过或退回时才记录强验收事实
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
-正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并在下一轮对话中使用交付回执里的 continuation 自动回写一次后续关系。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件。轻量直达只报告检查事实，不生成 Evidence、`waiting_acceptance` 或验收状态。主 Local checkout 可承载合格的轻量直达和串行集成，但正式 Task 在主 checkout 准备仍会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
+正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并使用交付回执里的 continuation 回写每个不同的相关后续。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件，也不需要为正常完成再做一次形式确认。轻量直达不生成 Evidence 或正式 `waiting_acceptance`，只生成轻量结果记录。主 Local checkout 可承载合格的轻量直达和串行集成，但正式 Task 在主 checkout 准备仍会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
 
 `预检` 只读且不加载工程上下文、不创建 Task；它返回 `local-direct`、`current-worktree` 或 `new-worktree` 推荐路由。Local 直达还要求执行模型确认没有其他已知写入者；任何脏状态、占用或不确定性都回退到新 Worktree。正式 `准备` 会再次预检，并在最终原子创建时复核。多个精确授权路径可重复传入 `--scope`，无需扩大成共同父目录。
 
@@ -145,10 +157,13 @@ node ./40-脚本/task.mjs 保存 --task-id <编号>
 node ./40-脚本/task.mjs 恢复 --task-id <编号>
 node ./40-脚本/task.mjs 继续验证 --task-id <编号> `
   --additional-budget-ms 120000 --reason "用户批准继续"
-node ./40-脚本/task.mjs 评估摘要 --from 2026-08-01 --to 2026-08-31
+node ./40-脚本/task.mjs 评估摘要 --from 2026-08-01 --to 2026-08-31 `
+  --problem-type bugfix --quiet-days 7
 ```
 
-新 Task 自动记录首次交付、交付次数、验证耗时、显式用户决定、返工以及最小对话闭环事实。显式验收率、对话自然收口率和单轮闭环率分别报告，相关疑问不会误记为返工，话题推进也不会伪造成显式验收或“首次修复成功”。旧记录缺少对话事实时保持 unknown。`评估摘要` 只读汇总这些事实；少于 10 个样本只能观察方向，形成稳定结论仍需 20～30 个可比真实任务和明确基线。
+新版结果口径为 `completion-rounds-v1`：一个问题只形成一个样本，完成轮次等于首次有效交付加相关追问、缺陷返回或显式退回次数。明确肯定、范围扩展或话题推进立即收口；没有后续的结果先观察，默认静默 7 天后计为一次完成。报告以一次、二次、三次和四次以上完成占比为主，按 `problemType` 分组；显式验收只作为次要可选事实。
+
+旧 Task 和旧结果不删除，但因缺少新版测量版本默认退出分母。普通问答和纯只读分析不创建结果样本；问题类型不明或显式排除的记录会报告排除原因。少于 10 个可比完成样本只能观察方向，形成稳定结论仍需 20～30 个真实任务和明确基线。
 
 ## 按需能力
 

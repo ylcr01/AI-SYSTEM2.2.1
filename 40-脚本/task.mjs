@@ -23,6 +23,7 @@ import { createExperienceCandidate, saveExperienceCandidate } from './lib/experi
 import { findGitRoot, normalizePath } from './lib/registry.mjs';
 import { diagnoseState, migrateState, readHistory } from './lib/state-manager.mjs';
 import { publicTaskStateForTask, summarizeOutcomeMetrics } from './lib/outcome-metrics.mjs';
+import { recordLightDelivery, recordLightFollowUp, readLightOutcomeTasks } from './lib/outcome-ledger.mjs';
 
 const SYSTEM_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -32,6 +33,7 @@ const aliases = new Map([
   ['prepare', '准备'], ['deliver', '交付'], ['accept', '验收'], ['review', '审查'],
   ['realign', '重新对齐'],
   ['follow-up', '后续'],
+  ['record-light-delivery', '记录轻量交付'],
   ['handoff', '交接'], ['resume', '恢复'], ['show', '查看'], ['list', '列表'],
   ['save', '保存'], ['cancel', '取消'], ['experience', '整理经验'], ['integrate', '集成'],
   ['continue-verification', '继续验证'],
@@ -49,7 +51,7 @@ function nextAction(status) {
     reviewing: '正在检查实现质量。',
     needs_rework: '当前结果仍需修正；修正后重新验证。',
     ready_to_integrate: '代码已准备好集成；低风险任务应由单一集成器直接集成和重验，无需等待用户再次确认。',
-    waiting_acceptance: '本轮已交付；无需形式确认，下一轮对话会记录为继续讨论、返工或自然收口。',
+    waiting_acceptance: '本轮已交付；无需形式确认，后续相关消息会更新完成轮次或自然收口。',
     closed: '上一任务已根据后续对话自然收口。',
     verifying: '仍有结果缺少验证，补齐后继续。',
     saved: '任务已暂停，需要你决定是否继续。',
@@ -137,6 +139,19 @@ function compactTask(task, result = null) {
   };
 
   if (task.goal?.summary) receipt.goal = task.goal.summary;
+  if (task.classification?.problemType) receipt.problemType = task.classification.problemType;
+  if (task.outcomeMetrics?.measurementVersion === 'completion-rounds-v1') {
+    receipt.completion = {
+      currentRound: task.outcomeMetrics.firstQualifiedDeliveryAt
+        ? 1 + Number(task.outcomeMetrics.relatedFollowUpCount ?? 0)
+        : null,
+      status: ['accepted', 'closed'].includes(task.status)
+        ? 'completed'
+        : task.status === 'waiting_acceptance'
+          ? 'observing'
+          : 'working',
+    };
+  }
   if (task.goal?.expectedOutcomes) assignBounded(receipt, 'expectedOutcomes', task.goal.expectedOutcomes);
   if (task.goal?.protectedBehaviors) assignBounded(receipt, 'protectedBehaviors', task.goal.protectedBehaviors);
   if (task.status === 'waiting_acceptance' && task.conversationOutcome?.deliveryId) {
@@ -301,7 +316,8 @@ function help() {
   继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
   保存|恢复|交接|查看|取消 --task-id <id>
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
-  评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
+  记录轻量交付 --cwd <path> --commit <HEAD> --problem-type <类型> --scope <路径>（可重复）
+  评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--quiet-days <天数>] [--problem-type <类型>（可重复）] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
   迁移状态 [--state-root <path>] [--apply]（默认仅预演；写入前备份）
 
@@ -324,6 +340,9 @@ function help() {
   后续|follow-up --task-id <id> --delivery-id <id> --observation-id <id>
        --kind related-question|defect-return|scope-extension|positive-acknowledgement|topic-advance
        （只回写关联交付的最小对话事实；不保存消息正文、不运行检查、不自动创建 Task）
+  记录轻量交付|record-light-delivery --cwd <path> --commit <当前 HEAD> --problem-type <类型> --scope <路径>（可重复）
+       [--task-id <缺陷退回后的原结果编号>] [--exclude-reason <原因>]
+       （轻量直达验证并本地提交后由宿主自动调用；要求工作树干净，不执行 Push）
   重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
@@ -340,14 +359,15 @@ function help() {
   恢复 --task-id <id>（重新竞争原工作树写权限）
   交接|查看|取消
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
-  评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--all-projects]
+  评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--quiet-days <天数>]
+       [--problem-type <类型>（可重复）] [--all-projects]
   诊断状态 [--state-root <path>]（只读，不修复、不迁移）
   迁移状态 [--state-root <path>] [--apply] [--migration-id <id>]
        （默认 dry-run；--apply 仅升级支持的旧 Schema 和修正非终态目录错位，写入前备份）
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
-普通问答不建 Task；只读分析走 build-context。仓库修改先预检：continuity=ephemeral 的 Quick/普通 Standard 在干净、可用且无已知并发写入的 Local 直接做最小 Diff 与定点检查，不创建 Task 或重复集成；脏、占用、并发或不确定时进入 Worktree。Tracked、Controlled、Structural、规格、跨仓或外部写入才在 Worktree 准备正式 Task。最终验收只能由用户执行。`);
+普通问答不建 Task；只读分析走 build-context。仓库修改先预检：continuity=ephemeral 的 Quick/普通 Standard 在干净、可用且无已知并发写入的 Local 直接做最小 Diff 与定点检查，验证通过后默认本地提交并记录轻量结果，不创建正式 Task 或重复集成；脏、占用、并发或不确定时进入 Worktree。Tracked、Controlled、Structural、规格、跨仓或外部写入才在 Worktree 准备正式 Task。显式验收是可选强事实，不是完成轮次统计的前置条件；任何路径都不得自动 Push。`);
 }
 
 function goalCardFileArg({ required = false } = {}) {
@@ -418,12 +438,24 @@ try {
       reason: args.reason,
     }));
   } else if (action === '后续') {
-    output(recordTaskFollowUp({
+    const input = {
       stateRoot: args['state-root'],
       taskId: requiredArg(args, 'task-id'),
       deliveryId: requiredArg(args, 'delivery-id'),
       observationId: requiredArg(args, 'observation-id'),
       kind: requiredArg(args, 'kind'),
+    };
+    output(input.taskId.startsWith('result-') ? recordLightFollowUp(input) : recordTaskFollowUp(input));
+  } else if (action === '记录轻量交付') {
+    output(recordLightDelivery({
+      stateRoot: args['state-root'],
+      cwd: args.cwd ?? process.cwd(),
+      commit: requiredArg(args, 'commit'),
+      problemType: requiredArg(args, 'problem-type'),
+      scope: listArg(args.scope),
+      taskId: args['task-id'],
+      eligible: args.exclude !== true && !args['exclude-reason'],
+      exclusionReason: args['exclude-reason'],
     }));
   } else if (action === '验收') {
     output(acceptTask({
@@ -499,7 +531,13 @@ try {
     const active = listTasks({ stateRoot: args['state-root'], gitRoot, limit: 0 }).tasks;
     const history = readHistory({ stateRoot: args['state-root'] })
       .filter(task => !gitRoot || normalizePath(task.baseline?.gitRoot) === normalizePath(gitRoot));
-    output(summarizeOutcomeMetrics([...active, ...history], { from: args.from, to: args.to }));
+    const light = readLightOutcomeTasks({ stateRoot:args['state-root'], gitRoot });
+    output(summarizeOutcomeMetrics([...active, ...history, ...light], {
+      from: args.from,
+      to: args.to,
+      quietDays: args['quiet-days'],
+      problemTypes: listArg(args['problem-type']),
+    }));
   } else if (action === '列表') {
     const allProjects = args['all-projects'] === true;
     const gitRoot = allProjects ? null : findGitRoot(args.cwd ?? process.cwd());

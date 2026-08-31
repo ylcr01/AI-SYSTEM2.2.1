@@ -236,6 +236,7 @@ export function createTask(input = {}) {
     outcomeMetrics: createOutcomeMetrics({
       at: now,
       initialUserDecisionCount: ['confirmed', 'delegated'].includes(alignmentMode) ? 1 : 0,
+      problemType: input.classification?.problemType,
     }),
     conversationOutcome: null,
     createdAt: now,

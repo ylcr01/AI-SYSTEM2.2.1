@@ -24,12 +24,16 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.match(result.stdout, /Preflight before repository writes/u);
   assert.match(result.stdout, /ephemeral Quick\/ordinary Standard/u);
   assert.match(result.stdout, /clean, available Local checkout/u);
+  assert.match(result.stdout, /scoped local commit/u);
+  assert.match(result.stdout, /lightweight outcome record/u);
   assert.match(result.stdout, /Dirty, occupied, concurrent, or uncertain state/u);
   assert.match(result.stdout, /task-dedicated Worktree/u);
   assert.match(result.stdout, /deterministic detached fallback/u);
   assert.match(result.stdout, /Formal, Controlled, Structural/u);
   assert.match(result.stdout, /Scope\/Evidence gates/u);
   assert.match(result.stdout, /waiting_acceptance/u);
+  assert.match(result.stdout, /Explicit acceptance is optional/u);
+  assert.match(result.stdout, /Never Push by default/u);
   assert.match(result.stdout, /exact prior `continuation`/u);
   assert.match(result.stdout, /never scan for a pending Task/u);
   assert.match(result.stdout, /external writes without explicit authorization/u);
@@ -42,7 +46,7 @@ test('生成的自定义指令仅保留入口导航和不可绕过边界', () =>
   assert.match(result.stdout, /Other checks never substitute for browser verification/u);
   assert.doesNotMatch(result.stdout, /build-context\.mjs/u);
   assert.doesNotMatch(result.stdout, /task\.mjs/u);
-  assert.ok(Buffer.byteLength(result.stdout) < 1400);
+  assert.ok(Buffer.byteLength(result.stdout) < 1600);
 });
 
 test('项目入口初始化保持轻量且默认不覆盖', (t) => {
@@ -65,7 +69,7 @@ test('系统入口保持轻量并将低频规则按需路由', () => {
   assert.match(agents, /不加载整份 Task JSON/u);
   assert.match(agents, /裁剪不得隐藏首个失败/u);
   assert.match(agents, /continuity=ephemeral/u);
-  assert.match(agents, /不创建 Task/u);
+  assert.match(agents, /不建正式 Task/u);
   assert.doesNotMatch(agents, /仓库写任务必须先准备/u);
   assert.equal(fs.existsSync(path.join(ROOT, '70-文档', '25-按需任务规则.md')), true);
 });
@@ -94,6 +98,9 @@ test('系统入口固化风险分级写入路由与最小验证分层', () => {
   assert.match(agents, /生成并执行最小验证计划/u);
   assert.match(agents, /全量回归须独立 Task/u);
   assert.match(agents, /package\.json.*不按路径升级/u);
+  assert.match(agents, /默认本地提交/u);
+  assert.match(agents, /完成轮次/u);
+  assert.match(agents, /不得 Push/u);
 });
 
 test('Controlled 普通交付不自动运行完整 Integration 历史组', () => {

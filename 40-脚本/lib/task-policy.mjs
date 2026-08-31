@@ -5,6 +5,18 @@ const REFERENCE_EQUIVALENT_WORDS = /完全参照|完整复刻|逐项等价|以�
 const STRICT_PRESERVATION_WORDS = /保持全部可观察行为|所有现有行为都不能改变|所有已有功能行为保持不变|零行为变化|行为完全不变|preserve all observable behavior|no observable behavior changes/iu;
 const PRESERVATION_AWARE_WORDS = /重构|refactor|优化|optimize|升级|upgrade|替换实现|重新实现|reimplement|重写|rewrite|迁移|migration|移植|port/iu;
 
+export const PROBLEM_TYPES = new Set([
+  'bugfix',
+  'feature',
+  'refactor',
+  'migration',
+  'integration',
+  'documentation',
+  'maintenance',
+  'external-operation',
+  'unknown',
+]);
+
 const HARD_RISK_PATTERNS = [
   ['security', /(^|\/)(auth|authentication|authorization|security|permissions?|privacy)(\/|$)/iu],
   ['database-migration', /(^|\/)(migrations?|database|schema)(\/|$)/iu],
@@ -27,6 +39,18 @@ function inferArtifactKinds(intent, acceptance) {
   if (/文档|README|说明|documentation/iu.test(text)) kinds.push('documentation');
   if (kinds.length===0 || /代码|功能|Bug|修复|重构|code|feature/iu.test(text)) kinds.push('code');
   return [...new Set(kinds)];
+}
+
+export function inferProblemType(intent, acceptance = '') {
+  const text = [intent, acceptance].filter(Boolean).join(' ');
+  if (/发布|部署|生产数据|远程删除|外部写入|publish|deploy|production write|remote delete/iu.test(text)) return 'external-operation';
+  if (/迁移|移植|升级|migration|migrate|port|upgrade/iu.test(text)) return 'migration';
+  if (/联调|集成|第三方|integration|integrate|third[- ]party/iu.test(text)) return 'integration';
+  if (/修复|缺陷|故障|错误|异常|\bbug\b|\bfix(?:e[ds])?\b|defect|regression/iu.test(text)) return 'bugfix';
+  if (/重构|重写|优化结构|整理结构|refactor|rewrite|reimplement/iu.test(text)) return 'refactor';
+  if (/文档|注释|错字|文案|README|说明|comment|typo|docs?|documentation/iu.test(text)) return 'documentation';
+  if (/新增|实现|增加|功能|特性|feature|implement|add support/iu.test(text)) return 'feature';
+  return text.trim() ? 'maintenance' : 'unknown';
 }
 
 function inferPreservation(text) {
@@ -55,6 +79,7 @@ export function classifyTask(input = {}) {
   const textRisk=CONTROLLED_WORDS.test(text);
   const intentRisk=textRisk||scopeReasons.length>0;
   const artifactKinds=inferArtifactKinds(intent,input.acceptance);
+  const problemType=inferProblemType(intent,input.acceptance);
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
   const structural=STRUCTURAL_WORDS.test(text);
   const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
@@ -66,6 +91,7 @@ export function classifyTask(input = {}) {
     structureImpact:structural?'structural':controlMode==='quick'?'none':'local',
     continuity:input.handoffRequired?'handoff-required':formalTracking?'tracked':'ephemeral',
     artifactKinds,
+    problemType,
     preservationMode:preservation.mode,
     preservationReasons:preservation.reasons,
     reasons:[...(textRisk?['intent-risk-signal']:[]),...scopeReasons]
@@ -92,6 +118,7 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
   const artifactKinds=documentationOnly
     ? [...new Set([...(classification.artifactKinds??[]).filter(kind=>['product','requirements'].includes(kind)),'documentation'])]
     : classification.artifactKinds;
+  const problemType=documentationOnly ? 'documentation' : classification.problemType;
   let controlMode=classification.controlMode;
   if(unique.length) controlMode='controlled';
   else if(documentationOnly&&!semanticDocument&&classification.structureImpact!=='structural') controlMode='quick';
@@ -103,7 +130,7 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
     if(order[input.forcedMode]<order[controlMode]) throw new Error('forcedMode 只能向上加强，不能降低真实 Control Mode');
     controlMode=input.forcedMode;
   }
-  return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,reclassificationReasons:unique,packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
+  return {...classification,controlMode,structureImpact:controlMode==='quick'?'none':classification.structureImpact,artifactKinds,problemType,reclassificationReasons:unique,packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
 }
 
 export function determineEvidenceRequirements(input = {}) {

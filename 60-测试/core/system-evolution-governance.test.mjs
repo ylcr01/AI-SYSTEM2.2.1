@@ -28,7 +28,7 @@ test('系统使命固化六项核心诉求和不可退化边界', () => {
   }
   assert.match(architecture, /不可退化边界/u);
   assert.match(architecture, /代码、配置、Manifest 和 Git 状态证明当前实际实现/u);
-  assert.match(architecture, /真实任务、用户验收、返工和 Regression 证明机制产生了什么效果/u);
+  assert.match(architecture, /真实任务、相关后续、返工和 Regression 证明机制产生了什么效果/u);
 });
 
 test('系统演进准入区分候选试验采纳和增删改', () => {
@@ -47,7 +47,7 @@ test('真实任务计划提供机制净收益判断口径', () => {
   const plan = read(path.join('70-文档', '60-真实任务验证计划.md'));
   assert.match(plan, /系统版本或 Commit/u);
   assert.match(plan, /目标理解、上下文、实现、验证、控制面、验收或环境/u);
-  assert.match(plan, /首轮验收、返工、遗漏\/Regression、流程额外耗时和状态债务/u);
+  assert.match(plan, /完成轮次分布、返工、遗漏\/Regression、流程额外耗时和状态债务/u);
   assert.match(plan, /keep \| shrink \| remove \| observe \| experiment/u);
   assert.match(plan, /当前实现验证通过只能证明本次变更可交付/u);
 });
