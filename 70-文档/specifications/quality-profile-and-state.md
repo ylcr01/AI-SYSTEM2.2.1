@@ -43,6 +43,7 @@ lastVerifiedCommit: null
 | BR-AIRD-QUALITY-001 | 内部 Profile 不得声明或加载 `20-能力模块/*/SKILL.md`；宿主 Skill 以宿主安装和可发现清单为准 | 把普通文档误判为可调用能力 | `check-system` 必须拒绝残留内部 `SKILL.md` |
 | BR-AIRD-QUALITY-002 | 自动 `local/none` 不加载 Contract/Canonical；显式 Profile 最多加载一个 Contract；`structural` 最多加载一个主要 Contract 和一个 Active Canonical。显式 Quality 配置必须是可解析的受支持 shape，配置、Contract 和 Canonical 只能指向各自授权根内实际可读文件；无效 JSON/shape、目录、越界或空读取结果失败关闭。轻量回执绑定内容指纹，相同 `contextFingerprint` 返回空读取计划，事实变化后恢复 | 上下文膨胀、重复读取、缺少结构约束，或错误/越界质量资料被静默忽略 | 权威顺序为项目 → 模板 → 中央；`--full` 不受重复读取抑制 |
 | BR-AIRD-QUALITY-003 | 新配置使用 `profiles` / `--quality-profile`；旧 `skills` / `--skill` 仅作输入兼容，输出不得再声明 `skills` 或 `methods`，也不得读取 `SKILL.md`。未知或无可读 Contract 的显式 Profile 失败关闭，不回退为自动或无配置 | 外部调用方失效、伪能力传播或显式无效选择被静默忽略 | 兼容别名与新参数应产生相同文件计划；自动 Profile 未命中仍是合法的不加载 |
+| BR-AIRD-QUALITY-004 | 只有框架、SDK、数据库驱动、CLI 参数或 migration 的行为存在版本敏感决策时，才先从 Manifest 或锁文件确认实际版本，再按需读取对应版本的官方文档或官方 changelog；外部资料只作为不可信 transient Context，缺少权威依据时必须标记 `UNVERIFIED` | 模型凭过期训练记忆实现版本相关 API，或为普通代码任务常驻加载外部资料导致 Context 膨胀 | 纯逻辑、重命名和版本无关修改不适用；不新增 Skill、状态机、默认门禁、整站加载或永久 Knowledge |
 | BR-AIRD-ROUTE-001 | Context/CLI 显式接受 `operation=read|write|external-write`。`read` 保留内容/结构风险判断但始终只读且 `ephemeral`；`external-write` 始终为 Controlled/tracked 正式路由；`write` 将 Quick/普通 Standard 局部任务标为轻量直达候选，Controlled、Structural、计划 Scope/路径风险、显式跟踪或 Handoff 标为正式闭环。合格 Local 或干净隔离 `current-worktree` 的轻量直达完成后必须执行无状态终检；验证通过后默认形成授权 Scope 的本地提交并追加轻量结果事件，不创建额外 Worktree、正式 Task、Evidence、`waiting_acceptance` 或自动集成 | 只读误进写路由、普通修改承担完整控制面成本、高风险/最终 Diff 绕过门禁，或轻量任务无法进入结果统计 | 所有正式 `准备` 命令仍创建 tracked Task；轻量账本不是第二套 Task 状态机；`package.json` 计划路径只是候选，仍按真实差异复核 |
 | BR-AIRD-OUTPUT-001 | 默认 Context、Task、直接检查、诊断和迁移回执必须限量展开动态内容；成功检查不返回 stdout/stderr，失败必须返回首个失败、截断和 case 事实；只有显式 `--full` 可读取完整结构 | 大 ChangeSet、成功日志或旧状态列表占满会话上下文 | 默认最多 20 个改动、10 个其他动态项；完整日志仍可按需读取 |
 | BR-AIRD-STATE-001 | 状态迁移默认 dry-run；只有显式 `--apply` 才写入，且必须先原样备份、校验源指纹和目标冲突 | 静默损坏运行账本 | 仅处理当前内核支持读取的 V6/V7/V8/V9 非终态记录与目录错位 |
@@ -86,6 +87,7 @@ lastVerifiedCommit: null
 | BR-AIRD-QUALITY-001 | 伪 Skill 残留 | Integration/Scenario | `60-测试/integration/context-quality.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
 | BR-AIRD-QUALITY-002 | 路由过载、无效/越界/非文件 Quality 资料被静默忽略 | Integration | `60-测试/integration/context-quality.test.mjs` | covered |
 | BR-AIRD-QUALITY-003 | 兼容失效或显式无效 Profile 被回退 | Integration/Scenario | `60-测试/integration/context-quality.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
+| BR-AIRD-QUALITY-004 | 版本相关行为凭记忆实现，或 Source-driven 扩大为默认资料加载 | Integration | `60-测试/integration/context-quality.test.mjs` | covered |
 | BR-AIRD-ROUTE-001 | 只读误进写路由、普通任务过重、高风险绕过门禁或轻量结果丢失 | Core/Integration/Scenario | `60-测试/core/task-policy.test.mjs`; `60-测试/core/worktree-routing.test.mjs`; `60-测试/core/outcome-ledger.test.mjs`; `60-测试/integration/context-quality.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
 | BR-AIRD-OUTPUT-001 | 大回执占满上下文 | Scenario | `60-测试/scenarios/cli.test.mjs` | covered |
 | BR-AIRD-STATE-001 | 非授权写入 | Unit/Scenario | `60-测试/core/state-manager.test.mjs`; `60-测试/scenarios/cli.test.mjs` | covered |
