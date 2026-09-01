@@ -10,7 +10,7 @@ import { classifyTask } from './task-policy.mjs';
 function inferRole(context, intent) {
   const registered = context.module?.role ?? context.template?.role;
   if (registered) return registered;
-  if (/服务端|后端|API|数据库|server|backend/iu.test(intent)) return 'server';
+  if (/服务端|后端|数据库|server|backend/iu.test(intent)) return 'server';
   if (/移动|小程序|App|uni-app/iu.test(intent)) return 'app';
   if (/文档|README|documentation/iu.test(intent)) return 'docs';
   if (/部署|环境|运维|deploy/iu.test(intent)) return 'ops';

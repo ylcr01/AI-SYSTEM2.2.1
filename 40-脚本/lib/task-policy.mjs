@@ -70,7 +70,9 @@ export function classifyTask(input = {}) {
   const artifactKinds=inferArtifactKinds(intent,input.acceptance);
   const problemType=inferProblemType(intent,input.acceptance);
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
-  const structural=STRUCTURAL_WORDS.test(text);
+  const formalContext=operation!=='read'
+    && (input.tracked===true||input.handoffRequired===true||operation==='external-write');
+  const structural=formalContext&&STRUCTURAL_WORDS.test(text);
   const controlMode=operation==='external-write'
     ? 'controlled'
     : QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
