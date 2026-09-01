@@ -5,6 +5,7 @@ affects:
   - ARCH-PROBLEM-DRIVEN-EVOLUTION
   - ARCH-CORE-SLIMMING
 sourceTaskId: task-20260901011054511-371165d0
+adoptedByTaskId: task-20260901033909373-93fab8fd
 supersedes: []
 ---
 
