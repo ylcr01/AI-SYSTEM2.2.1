@@ -418,24 +418,24 @@ export function verifyLocalDirect(options = {}) {
       conflict:availability.conflict,
     });
   }
-  const scopes = normalizeScopes(gitRoot, options.scope ?? '.', gitRoot);
+  const hasExplicitScope = options.scope != null
+    && (!Array.isArray(options.scope) || options.scope.length > 0);
+  const scopes = hasExplicitScope ? normalizeScopes(gitRoot, options.scope, gitRoot) : null;
   const baseline = { ...current, head:baselineHead, files:[] };
   const changeSet = computeChangeSet(baseline);
-  try { assertChangeSetWithinScope(changeSet, scopes); }
-  catch (error) { throw localDirectFailure('LOCAL_DIRECT_SCOPE_VIOLATION', error.message); }
+  if (scopes) {
+    try { assertChangeSetWithinScope(changeSet, scopes); }
+    catch (error) { throw localDirectFailure('LOCAL_DIRECT_SCOPE_VIOLATION', error.message); }
+  }
   const initial = classifyTask({
     operation:'write',
     intent:String(options.intent ?? ''),
     acceptance:String(options.acceptance ?? ''),
-    scope:options.scope ?? '.',
-    plannedPaths:options.plannedPaths ?? [],
     tracked:false,
   });
   const packageManifestChanges = inspectPackageManifestChanges(baseline, changeSet);
   const finalClassification = reclassifyFromChangeSet(initial, changeSet, { packageManifestChanges });
   const requiresFormal = finalClassification.executionRoute === 'formal-task'
-    || finalClassification.controlMode === 'controlled'
-    || finalClassification.structureImpact === 'structural'
     || finalClassification.continuity !== 'ephemeral';
   if (requiresFormal) {
     throw localDirectFailure('LOCAL_DIRECT_RISK_ESCALATION', '真实 ChangeSet 已升级为正式任务风险；停止直达交付并在干净隔离 Worktree 重新实施', {
@@ -457,7 +457,10 @@ export function verifyLocalDirect(options = {}) {
     verifiedSemanticFingerprint:changeSet.semanticFingerprint,
     changeSet,
     classification:finalClassification,
-    scope:scopes.map((item) => item.path),
+    scope:scopes
+      ? scopes.map((item) => item.path)
+      : changeSet.files.map((item) => item.path),
+    scopeSource:scopes ? 'explicit' : 'change-set',
   };
 }
 

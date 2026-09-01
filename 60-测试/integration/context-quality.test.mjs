@@ -1,7 +1,7 @@
 // BR-AIRD-QUALITY-001 BR-AIRD-QUALITY-002 BR-AIRD-QUALITY-003 BR-AIRD-QUALITY-004
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import { spawnSync } from 'node:child_process';import test from 'node:test';import { buildContext } from '../../40-脚本/lib/context-builder.mjs';import { loadQualityContext,implementationQualityBaseline } from '../../40-脚本/lib/quality-registry.mjs';import { gitRepo,tempDir } from '../helpers.mjs';
 test('局部任务不加载 Contract 或 Canonical',t=>{const repo=gitRepo(t);const result=buildContext({cwd:repo,intent:'修复 Web 页面局部 Bug',acceptance:'行为正确'});assert.equal(result.classification.structureImpact,'local');assert.equal(result.quality.contracts.length,0);assert.equal(result.quality.exemplars.length,0);});
-test('上下文把普通局部任务路由为轻量直达，把结构任务路由为正式闭环',t=>{const repo=gitRepo(t);const local=buildContext({cwd:repo,intent:'修复 Web 页面局部 Bug',acceptance:'行为正确'});assert.equal(local.classification.continuity,'ephemeral');assert.match(local.next.join('\n'),/轻量直达/u);const structural=buildContext({cwd:repo,intent:'新增模块并调整架构职责',acceptance:'模块职责清楚'});assert.equal(structural.classification.continuity,'tracked');assert.match(structural.next.join('\n'),/正式闭环/u);});
+test('上下文保留结构提示但不把普通任务自动升级为正式闭环',t=>{const repo=gitRepo(t);const local=buildContext({cwd:repo,intent:'修复 Web 页面局部 Bug',acceptance:'行为正确'});assert.equal(local.classification.continuity,'ephemeral');assert.match(local.next.join('\n'),/轻量直达/u);const structural=buildContext({cwd:repo,intent:'新增模块并调整架构职责',acceptance:'模块职责清楚'});assert.equal(structural.classification.structureImpact,'structural');assert.equal(structural.classification.continuity,'ephemeral');assert.equal(structural.executionRoute,'local-direct-candidate');assert.match(structural.next.join('\n'),/轻量直达/u);});
 test('局部 Code Task 获得轻量质量基线',t=>{const repo=gitRepo(t);const result=buildContext({cwd:repo,intent:'修复 Web 页面局部 Bug',acceptance:'行为正确'});assert.equal(result.quality.baseline?.id,'implementation-quality-baseline');assert.ok(result.quality.baseline.rules.some(rule=>rule.id==='goal-fit'));const rules=result.quality.baseline.rules.map(rule=>rule.text).join('\n');assert.match(rules,/稳定功能查漏补缺/u);assert.match(rules,/平行业务规则/u);assert.match(rules,/核心运行代码明显净增/u);const contract=fs.readFileSync(new URL('../../20-能力模块/10-通用工程契约.md',import.meta.url),'utf8');assert.match(contract,/新增逻辑替换或删除了什么旧路径/u);assert.match(contract,/缺少基础模型/u);});
 test('结构性任务最多加载一个主要 Contract 和 Canonical',t=>{const repo=gitRepo(t);const result=buildContext({cwd:repo,intent:'新增 Web 模块并调整架构职责',acceptance:'模块职责清楚'});assert.equal(result.classification.structureImpact,'structural');assert.equal(result.quality.contracts.length,1);assert.ok(result.quality.exemplars.length<=1);assert.equal(result.quality.baseline?.id,'implementation-quality-baseline');});
 test('纯文档任务不返回 implementation quality baseline',t=>{const repo=gitRepo(t);const result=buildContext({cwd:repo,intent:'更新 README 使用说明'});assert.equal(result.quality.baseline,null);});
@@ -42,7 +42,7 @@ test('直接模块入口仍校验绑定模板身份', (t) => {
  assert.throws(() => buildContext({ cwd: modulePath, intent: '检查网页', registry }), /模板身份冲突/u);
 });
 
-test('Context 转发 operation、scope、plannedPaths 并暴露执行路由', (t) => {
+test('Context 转发 operation、scope、plannedPaths 但路径名称不升级路由', (t) => {
   const repo = gitRepo(t);
   const readOnly = buildContext({
     cwd: repo,
@@ -57,14 +57,15 @@ test('Context 转发 operation、scope、plannedPaths 并暴露执行路由', (t
   assert.ok(readOnly.next.some((item) => /只读分析/u.test(item)));
   assert.equal(readOnly.next.some((item) => /实施最小 Diff/u.test(item)), false);
 
-  const plannedRisk = buildContext({
+  const plannedContext = buildContext({
     cwd: repo,
     operation: 'write',
     intent: '修复普通功能',
     scope: ['src/orders'],
     plannedPaths: ['src/auth/access.mjs'],
   });
-  assert.equal(plannedRisk.executionRoute, 'formal-task');
+  assert.equal(plannedContext.executionRoute, 'local-direct-candidate');
+  assert.equal(plannedContext.classification.continuity, 'ephemeral');
 });
 
 test('只读 Context 复用规格提示并把命中规格加入读取文件', (t) => {

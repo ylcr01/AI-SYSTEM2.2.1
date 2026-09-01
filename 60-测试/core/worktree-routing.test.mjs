@@ -58,7 +58,7 @@ test('预检把干净 Local 路由为轻量直达，把脏 Local 路由到新 Wo
   });
 });
 
-test('轻量直达终检只允许同一 HEAD、授权 Scope 内的真实低风险 ChangeSet', (t) => {
+test('可选直达终检从真实 ChangeSet 得出范围并保持 Git 身份', (t) => {
   const repo = gitRepo(t), stateRoot = tempDir(t);
   const preflight = preflightWorkspace({ cwd:repo, stateRoot });
   fs.writeFileSync(path.join(repo, 'target.txt'), 'local direct\n');
@@ -67,7 +67,6 @@ test('轻量直达终检只允许同一 HEAD、授权 Scope 内的真实低风�
     stateRoot,
     ...directBaselineArgs(preflight),
     intent:'修改普通功能',
-    scope:'target.txt',
   });
   assert.equal(verified.decision, 'allow');
   assert.deepEqual(verified.changeSet.files.map(item => item.path), ['target.txt']);
@@ -79,25 +78,38 @@ test('轻量直达终检只允许同一 HEAD、授权 Scope 内的真实低风�
   assert.equal(verified.verifiedSemanticFingerprint,verified.changeSet.semanticFingerprint);
   assert.match(verified.verifiedSemanticFingerprint,/^[a-f0-9]{64}$/u);
   assert.equal(verified.classification.executionRoute, 'local-direct-candidate');
+  assert.deepEqual(verified.scope, ['target.txt']);
+  assert.equal(verified.scopeSource, 'change-set');
 });
 
-test('轻量直达终检拒绝计划或真实 ChangeSet 升级出的正式任务风险', (t) => {
+test('用户显式限定 Scope 时终检仍拒绝越界修改', (t) => {
   const repo = gitRepo(t), stateRoot = tempDir(t);
   const preflight = preflightWorkspace({ cwd:repo, stateRoot });
-  fs.mkdirSync(path.join(repo, '.github', 'workflows'), { recursive:true });
-  fs.writeFileSync(path.join(repo, '.github', 'workflows', 'release.yml'), 'name: release\n');
+  fs.writeFileSync(path.join(repo, 'target.txt'), 'allowed\n');
+  fs.writeFileSync(path.join(repo, 'outside.txt'), 'outside\n');
   assert.throws(() => verifyLocalDirect({
     cwd:repo,
     stateRoot,
     ...directBaselineArgs(preflight),
+    intent:'只修改目标文件',
+    scope:'target.txt',
+  }), (error) => error.code === 'LOCAL_DIRECT_SCOPE_VIOLATION');
+});
+
+test('普通路径和文件类型不再自动升级正式任务', (t) => {
+  const repo = gitRepo(t), stateRoot = tempDir(t);
+  const preflight = preflightWorkspace({ cwd:repo, stateRoot });
+  fs.mkdirSync(path.join(repo, '.github', 'workflows'), { recursive:true });
+  fs.writeFileSync(path.join(repo, '.github', 'workflows', 'release.yml'), 'name: release\n');
+  const verified = verifyLocalDirect({
+    cwd:repo,
+    stateRoot,
+    ...directBaselineArgs(preflight),
     intent:'调整配置',
-    scope:'.github/workflows/release.yml',
-    plannedPaths:['.github/workflows/release.yml'],
-  }), (error) => {
-    assert.equal(error.code, 'LOCAL_DIRECT_RISK_ESCALATION');
-    assert.equal(error.classification.executionRoute, 'formal-task');
-    return true;
   });
+  assert.equal(verified.classification.controlMode, 'standard');
+  assert.equal(verified.classification.executionRoute, 'local-direct-candidate');
+  assert.deepEqual(verified.scope, ['.github/workflows/release.yml']);
 });
 
 test('轻量直达终检拒绝同一提交和分支下的另一个 Git 仓库', (t) => {
@@ -160,9 +172,9 @@ test('detached Worktree baseline 可通过门禁且与 Local Git 目录隔离', 
       stateRoot:tempDir(t),
       ...directBaselineArgs(route),
       intent:'修改普通功能',
-      scope:'target.txt',
     });
     assert.equal(verified.decision, 'allow');
+    assert.deepEqual(verified.scope, ['target.txt']);
   } finally {
     spawnSync('git', ['-C', repo, 'worktree', 'remove', '--force', worktree], { encoding:'utf8' });
   }

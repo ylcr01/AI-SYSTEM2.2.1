@@ -325,7 +325,7 @@ function help() {
   预检 [--cwd <path>]（只读、返回 Local 直达或 Worktree 推荐路由）
   复核直达 --cwd <path> --baseline-head <commit> --baseline-git-root <path>
        --baseline-git-common-dir <path> (--baseline-branch <branch>|--baseline-detached) --intent <text>
-       [--scope <relative>]
+       [--scope <relative>（仅用户明确限定范围时使用；否则从 ChangeSet 得出）]
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复）]
        （仅正式 Task 调用；必须从任务专属 Worktree 运行）
        [--allow-existing-change <relative>（用户明确授权继续修改已有变更，可重复）]
@@ -336,7 +336,7 @@ function help() {
   继续验证 --task-id <id> --additional-budget-ms <毫秒> --reason <原因>
   保存|恢复|交接|查看|取消 --task-id <id>
   列表 [--cwd <path>] [--limit <数量，0=全部>] [--all-projects]
-  记录轻量交付 --cwd <path> --commit <HEAD> --problem-type <类型> --scope <路径>（可重复）
+  记录轻量交付 --cwd <path> --commit <HEAD> --problem-type <类型> [--scope <路径>（可重复）]
        --baseline-head <commit> --baseline-git-root <path> --baseline-git-common-dir <path>
        --verified-change-fingerprint <sha256>
   评估摘要 [--cwd <path>] [--from <日期>] [--to <日期>] [--quiet-days <天数>] [--problem-type <类型>（可重复）] [--all-projects]
@@ -351,8 +351,8 @@ function help() {
   复核直达|verify-local-direct --cwd <path> --baseline-head <commit>
        --baseline-git-root <path> --baseline-git-common-dir <path>
        (--baseline-branch <branch>|--baseline-detached) --intent <text>
-       [--scope <relative>（可重复）] [--path <relative>（可重复）]
-       （轻量写入完成后的无状态最终 Diff 复核；风险、越界、并发或 HEAD 变化时失败关闭）
+       [--scope <relative>（仅显式授权边界，可重复）]
+       （可选的无状态最终 Diff 复核；未声明 Scope 时以真实 ChangeSet 为结果范围）
   准备 --cwd <path> --intent <text> [--acceptance <text>] [--scope <relative>（可重复；不支持逗号或 glob）]
        （正式 Task 必须使用 Worktree；Codex managed 优先，不可用时使用 detached Worktree）
        [--goal-card-file <json>（Goal Card；兼容旧 --alignment-file，二选一）]
@@ -368,12 +368,12 @@ function help() {
   后续|follow-up --task-id <id> --delivery-id <id> --observation-id <id>
        --kind related-question|defect-return|scope-extension|positive-acknowledgement|topic-advance
        （只回写关联交付的最小对话事实；不保存消息正文、不运行检查、不自动创建 Task）
-  记录轻量交付|record-light-delivery --cwd <path> --commit <当前 HEAD> --problem-type <类型> --scope <路径>（可重复）
+  记录轻量交付|record-light-delivery --cwd <path> --commit <当前 HEAD> --problem-type <类型> [--scope <路径>（可重复）]
        --baseline-head <commit> --baseline-git-root <path> --baseline-git-common-dir <path>
        --verified-change-fingerprint <复核直达回执的 verifiedSemanticFingerprint>
        [--task-id <缺陷退回后的原结果编号>] [--exclude-reason <原因>]
        [--model <宿主声明 ID>] [--reasoning-effort <宿主声明档位>] [--execution-environment <宿主声明环境>]
-       （轻量直达验证并本地提交后由宿主自动调用；要求工作树干净，不执行 Push）
+       （用户明确要求本地提交并记录结果时调用；未声明 Scope 时从提交 ChangeSet 得出，不执行 Push）
   重新对齐 --task-id <id> --goal-card-file <json> --reason <text>
        （仅 confirmed/delegated；不改变 Scope、外部授权与集成目标，清空旧验证产物）
   审查 --task-id <id> --review-file <json>
@@ -398,7 +398,7 @@ function help() {
 
 输出默认是轻量回执；诊断或审计时追加 --full 查看完整 Context 或 Task。
 
-普通问答不建 Task；只读分析走 build-context。仓库修改先预检：continuity=ephemeral 的 Quick/普通 Standard 在干净、可用且无已知并发写入的 Local 直接做最小 Diff 与定点检查，验证通过后默认本地提交并记录轻量结果，不创建正式 Task 或重复集成；脏、占用、并发或不确定时进入 Worktree。Tracked、Controlled、Structural、规格、跨仓或外部写入才在 Worktree 准备正式 Task。显式验收是可选强事实，不是完成轮次统计的前置条件；任何路径都不得自动 Push。`);
+普通问答不建 Task；只读分析走 build-context。普通仓库修改由模型在干净、可用且无已知并发写入的当前工作区自主理解、实施最小 Diff、运行相称检查并向用户展示真实 Git Diff；不因关键词、目录名或模型自行扩大的 Scope 自动建立 Task、Worktree、Evidence 或提交。脏、占用、并发或状态不确定时才进入 Worktree。只有用户或模型明确需要持续跟踪、交接、并行隔离或外部写入时，才显式准备正式 Task。任何路径都不得自动 Push。`);
 }
 
 function goalCardFileArg({ required = false } = {}) {
@@ -425,8 +425,7 @@ try {
       baselineGitCommonDir:requiredArg(args, 'baseline-git-common-dir'),
       intent:requiredArg(args, 'intent'),
       acceptance:listArg(args.acceptance).join(' '),
-      scope:args.scope ?? '.',
-      plannedPaths:listArg(args.path),
+      scope:args.scope,
     }));
   } else if (action === '准备') {
     output(prepareTask({

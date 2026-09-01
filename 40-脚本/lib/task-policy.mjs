@@ -1,4 +1,3 @@
-const CONTROLLED_WORDS = /权限|授权|未授权|未经授权|鉴权|认证|身份认证|访问控制|安全|隐私|迁移|生产|发布|部署|不可逆|外部写入|\bauth\b|authorization|authentication|access control|credentials?|security|migration|production|deploy|release/iu;
 const QUICK_WORDS = /文档|注释|错字|文案|README|说明|comment|typo|docs?/iu;
 const STRUCTURAL_WORDS = /架构|新模块|模块拆分|职责迁移|公共接口|数据模型|跨仓|重构体系|architecture|new module|public contract/iu;
 const REFERENCE_EQUIVALENT_WORDS = /完全参照|完整复刻|逐项等价|以旧实现为行为基线|不能遗漏任何已有功能|100% 等价|reference implementation|exact behavioral equivalence/iu;
@@ -17,15 +16,6 @@ export const PROBLEM_TYPES = new Set([
   'external-operation',
   'unknown',
 ]);
-
-const HARD_RISK_PATTERNS = [
-  ['security', /(^|\/)(auth|authentication|authorization|security|permissions?|privacy)(\/|$)/iu],
-  ['database-migration', /(^|\/)(migrations?|database|schema)(\/|$)/iu],
-  ['production', /(^|\/)(production|deploy|deployment|infra|infrastructure)(\/|$)/iu],
-  ['workflow', /(^|\/)\.github\/workflows\//iu],
-  ['build-contract', /(^|\/)(Dockerfile|docker-compose(?:\.[^.]+)?\.ya?ml|package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|pom\.xml|build\.gradle|Cargo\.toml|go\.mod|tsconfig\.json|vite\.config\.[^/]+|webpack\.config\.[^/]+|next\.config\.[^/]+)$/iu],
-  ['public-contract', /(^|\/)(api|contracts?|public)(\/|$)/iu]
-];
 
 function inferArtifactKinds(intent, acceptance) {
   const kinds=[];
@@ -67,44 +57,24 @@ function normalizeOperation(operation) {
   return value;
 }
 
-function inferPlannedRisk(valuesInput, source) {
-  const values = Array.isArray(valuesInput) ? valuesInput : [valuesInput];
-  return [...new Set(values.flatMap((value) => {
-    const normalized = String(value ?? '').trim().replaceAll('\\', '/');
-    if (!normalized || normalized === '.') return [];
-    return HARD_RISK_PATTERNS
-      .filter(([reason, pattern]) => !(reason === 'build-contract' && /(^|\/)package\.json$/iu.test(normalized))
-        && (pattern.test(normalized) || pattern.test(`${normalized}/`)))
-      .map(([reason]) => `${source}-${reason}:${normalized}`);
-  }))];
-}
-
-function executionRouteFor({ operation, continuity, controlMode, structureImpact, riskReasons = [] }) {
+function executionRouteFor({ operation, continuity }) {
   if (operation === 'read') return 'read-only';
   if (operation === 'external-write') return 'formal-task';
-  return continuity !== 'ephemeral'
-    || controlMode === 'controlled'
-    || structureImpact === 'structural'
-    || riskReasons.length > 0
-    ? 'formal-task'
-    : 'local-direct-candidate';
+  return continuity === 'ephemeral' ? 'local-direct-candidate' : 'formal-task';
 }
 
 export function classifyTask(input = {}) {
   const operation=normalizeOperation(input.operation);
   const intent=String(input.intent??'');
   const text=[intent,input.acceptance].filter(Boolean).join(' ');
-  const scopeReasons=inferPlannedRisk(input.scope,'scope');
-  const pathReasons=inferPlannedRisk(input.plannedPaths??input.path??input.paths,'path');
-  const plannedRiskReasons=[...new Set([...scopeReasons,...pathReasons])];
-  const textRisk=CONTROLLED_WORDS.test(text);
-  const intentRisk=textRisk||plannedRiskReasons.length>0||operation==='external-write';
   const artifactKinds=inferArtifactKinds(intent,input.acceptance);
   const problemType=inferProblemType(intent,input.acceptance);
   const semanticDocument=artifactKinds.some(kind=>['product','requirements'].includes(kind));
   const structural=STRUCTURAL_WORDS.test(text);
-  const controlMode=intentRisk?'controlled':QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
-  const formalTracking=input.tracked===true||intentRisk||structural;
+  const controlMode=operation==='external-write'
+    ? 'controlled'
+    : QUICK_WORDS.test(text)&&!semanticDocument&&!structural?'quick':'standard';
+  const formalTracking=input.tracked===true||operation==='external-write';
   const preservation=inferPreservation(text);
   const continuity=operation==='read'
     ? 'ephemeral'
@@ -112,7 +82,7 @@ export function classifyTask(input = {}) {
   const structureImpact=structural?'structural':controlMode==='quick'?'none':'local';
   return {
     operation,
-    executionRoute:executionRouteFor({operation,continuity,controlMode,structureImpact,riskReasons:plannedRiskReasons}),
+    executionRoute:executionRouteFor({operation,continuity}),
     controlMode,
     recommendedControlMode:controlMode,
     structureImpact,
@@ -121,36 +91,22 @@ export function classifyTask(input = {}) {
     problemType,
     preservationMode:preservation.mode,
     preservationReasons:preservation.reasons,
-    reasons:[...(textRisk?['intent-risk-signal']:[]),...(operation==='external-write'?['operation-external-write']:[]),...plannedRiskReasons]
+    reasons:operation==='external-write'?['operation-external-write']:[]
   };
 }
 
 export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
   const operation = normalizeOperation(classification?.operation);
   const packageManifestChanges = Array.isArray(input.packageManifestChanges) ? input.packageManifestChanges : null;
-  const packageManifestByPath = new Map((packageManifestChanges ?? []).map((item) => [item.path, item]));
-  const reasons=[];
-  for(const file of changeSet?.files??[]) for(const [reason,pattern] of HARD_RISK_PATTERNS) {
-    if(!pattern.test(file.path))continue;
-    if(reason==='build-contract'&&/(^|\/)package\.json$/iu.test(file.path)){
-      const manifest=packageManifestByPath.get(file.path);
-      if(manifest?.metadataOnly===true)continue;
-    }
-    reasons.push(`${reason}:${file.path}`);
-  }
-  const unique=[...new Set(reasons)];
   const runtimeChanged=(changeSet?.files??[]).some(file=>!/\.(md|mdx|rst|adoc)$/iu.test(file.path));
   const semanticDocument=(classification.artifactKinds??[]).some(kind=>['product','requirements'].includes(kind));
   const documentationOnly=(changeSet?.files??[]).length>0&&!runtimeChanged;
-  const intentRisk=classification.reasons?.includes('intent-risk-signal');
   const artifactKinds=documentationOnly
     ? [...new Set([...(classification.artifactKinds??[]).filter(kind=>['product','requirements'].includes(kind)),'documentation'])]
     : classification.artifactKinds;
   const problemType=documentationOnly ? 'documentation' : classification.problemType;
   let controlMode=classification.controlMode;
-  if(unique.length) controlMode='controlled';
-  else if(documentationOnly&&!semanticDocument&&classification.structureImpact!=='structural') controlMode='quick';
-  else if(intentRisk&&runtimeChanged) controlMode='controlled';
+  if(documentationOnly&&!semanticDocument&&classification.structureImpact!=='structural'&&operation!=='external-write') controlMode='quick';
   else if(controlMode==='quick'&&runtimeChanged) controlMode='standard';
   if(operation==='external-write') controlMode='controlled';
   if(input.forcedMode){
@@ -162,9 +118,9 @@ export function reclassifyFromChangeSet(classification, changeSet, input = {}) {
   const structureImpact=controlMode==='quick'?'none':classification.structureImpact;
   let continuity=classification.continuity??'ephemeral';
   if(operation==='read') continuity='ephemeral';
-  else if(continuity!=='handoff-required'&&(unique.length>0||controlMode==='controlled'||structureImpact==='structural')) continuity='tracked';
-  const executionRoute=executionRouteFor({operation,continuity,controlMode,structureImpact,riskReasons:unique});
-  return {...classification,operation,executionRoute,controlMode,structureImpact,continuity,artifactKinds,problemType,reclassificationReasons:unique,packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
+  else if(continuity!=='handoff-required'&&input.forcedMode==='controlled') continuity='tracked';
+  const executionRoute=executionRouteFor({operation,continuity});
+  return {...classification,operation,executionRoute,controlMode,structureImpact,continuity,artifactKinds,problemType,reclassificationReasons:[],packageManifestChanges:packageManifestChanges??classification.packageManifestChanges??null,forcedMode:input.forcedMode??null,forceReason:input.forceReason??null};
 }
 
 export function determineEvidenceRequirements(input = {}) {

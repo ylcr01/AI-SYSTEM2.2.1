@@ -986,7 +986,7 @@ test('CLI 轻量交付要求本地 HEAD 并进入按问题类型筛选的轮次�
   const verified=runNode(TASK,[
     '复核直达','--cwd',repo,'--baseline-head',baseline.head,'--baseline-git-root',baseline.gitRoot,
     '--baseline-git-common-dir',baseline.gitCommonDir,'--baseline-branch',baseline.branch,
-    '--intent','修改普通功能','--scope','target.txt','--state-root',stateRoot,
+    '--intent','修改普通功能','--state-root',stateRoot,
   ],{cwd:ROOT});
   assert.equal(verified.status,0,verified.stderr);
   const verification=JSON.parse(verified.stdout);
@@ -995,7 +995,7 @@ test('CLI 轻量交付要求本地 HEAD 并进入按问题类型筛选的轮次�
   for(const args of [['add','target.txt'],['-c','user.email=test@example.com','-c','user.name=AI R&D OS Test','commit','-m','light direct result']])assert.equal(spawnSync('git',['-C',repo,...args],{encoding:'utf8'}).status,0);
   const head=spawnSync('git',['-C',repo,'rev-parse','HEAD'],{encoding:'utf8'}).stdout.trim();
   const delivery = runNode(TASK, [
-    '记录轻量交付', '--cwd', repo, '--commit', head, '--problem-type', 'bugfix', '--scope', 'target.txt', '--state-root', stateRoot,
+    '记录轻量交付', '--cwd', repo, '--commit', head, '--problem-type', 'bugfix', '--state-root', stateRoot,
     '--baseline-head',baseline.head,'--baseline-git-root',baseline.gitRoot,'--baseline-git-common-dir',baseline.gitCommonDir,
     '--verified-change-fingerprint',verification.verifiedSemanticFingerprint,
     '--model','light-model-test','--reasoning-effort','low','--execution-environment','local-direct',

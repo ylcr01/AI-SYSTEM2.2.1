@@ -78,7 +78,6 @@ test('轻量直达只有工作树干净且 HEAD 已本地提交时才形成结�
     commit:head,
     ...binding,
     problemType:'bugfix',
-    scope:['README.md'],
     evaluationContext:EVALUATION_CONTEXT,
   });
   assert.equal(delivered.state, 'delivered');
@@ -92,6 +91,8 @@ test('轻量直达只有工作树干净且 HEAD 已本地提交时才形成结�
   const [event] = readLightOutcomeEvents({ stateRoot });
   assert.equal(event.baselineHead, baseline);
   assert.equal(event.verifiedChangeFingerprint, binding.verifiedChangeFingerprint);
+  assert.deepEqual(event.scopes, ['README.md']);
+  assert.deepEqual(event.changedFiles, ['README.md']);
   assert.deepEqual(event.evaluationContext, EVALUATION_CONTEXT);
 });
 

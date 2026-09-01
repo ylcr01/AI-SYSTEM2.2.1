@@ -34,10 +34,10 @@ test('Preservation 分类：严格表达与参照语义', () => {
 test('Preservation 分类独立于 Control Mode', () => {
   const migrated = classifyTask({ intent: '迁移订单模块到新框架' });
   assert.equal(migrated.preservationMode, 'preserve-unrequested');
-  assert.equal(migrated.controlMode, 'controlled');
-  const bug = classifyTask({ intent: '修复订单分页 Bug' });
-  assert.equal(bug.preservationMode, 'preserve-unrequested');
-  assert.equal(bug.controlMode, 'standard');
+  assert.equal(migrated.controlMode, 'standard');
+  const external = classifyTask({ intent: '迁移订单模块到新框架', operation: 'external-write' });
+  assert.equal(external.preservationMode, 'preserve-unrequested');
+  assert.equal(external.controlMode, 'controlled');
 });
 
 test('normalizePreservation 校验 mode、category、id 唯一与 allowedDifference 引用', () => {

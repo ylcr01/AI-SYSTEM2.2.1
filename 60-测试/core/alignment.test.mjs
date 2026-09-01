@@ -165,10 +165,12 @@ test('Standard 带对齐文件准备时保存语义基线且不把普通保护�
   assert.equal(prepared.task.acceptance.find((item) => item.description === '新增组合测试通过').source, 'requested-outcome');
 });
 
-test('受控任务带 direct 对齐文件时准备失败', (t) => {
+test('权限语义不把 direct 对齐自动升级为受控任务', (t) => {
   const repo = gitRepo(t);
   const file = writeAlignment(t, { ...DIRECT_ALIGNMENT, originalRequest: '修改权限校验逻辑', goal: '修改权限校验逻辑' });
-  assert.throws(() => prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '修改权限校验逻辑', alignmentFile: file, scope: '.' }), /Controlled\/Structural/u);
+  const prepared = prepareTask({ cwd: repo, stateRoot: tempDir(t), intent: '修改权限校验逻辑', alignmentFile: file, scope: '.' });
+  assert.equal(prepared.task.classification.controlMode, 'standard');
+  assert.equal(prepared.task.goal.alignment.mode, 'direct');
 });
 
 test('无对齐文件的 Standard 任务保持旧目标结构', (t) => {

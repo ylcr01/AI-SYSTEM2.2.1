@@ -49,7 +49,6 @@ function normalizedScopes(value) {
   const values = (Array.isArray(value) ? value : value == null ? [] : [value])
     .map((item) => String(item).trim().replaceAll('\\', '/'))
     .filter(Boolean);
-  if (!values.length) throw new Error('轻量交付必须重复 --scope 声明本次提交的精确文件或目录');
   return [...new Set(values.map((item) => {
     if (item.includes(',') || /[*?\[\]]/u.test(item)) throw new Error('轻量交付 scope 不支持逗号或 glob');
     if (path.posix.isAbsolute(item) || path.win32.isAbsolute(item)) throw new Error('轻量交付 scope 必须是 Git Root 内相对路径');
@@ -64,9 +63,10 @@ function assertCommitScope(gitRoot, commit, scopes) {
   if (output === null) throw new Error('无法读取轻量交付提交的 ChangeSet');
   const files = output.split(/\r?\n/u).map((item) => item.trim().replaceAll('\\', '/')).filter(Boolean);
   if (!files.length) throw new Error('轻量交付提交没有可记录的文件变化');
-  const outside = files.filter((file) => !scopes.some((scope) => scope === '.' || file === scope || file.startsWith(`${scope}/`)));
+  const effectiveScopes = scopes.length ? scopes : files;
+  const outside = files.filter((file) => !effectiveScopes.some((scope) => scope === '.' || file === scope || file.startsWith(`${scope}/`)));
   if (outside.length) throw new Error(`轻量交付提交包含 Scope 外文件: ${outside.join(', ')}`);
-  return files;
+  return { changedFiles:files, scopes:effectiveScopes };
 }
 
 export function readLightOutcomeEvents(input = {}) {
@@ -275,8 +275,8 @@ function assertLocalCommit(cwd, input) {
 export function recordLightDelivery(input = {}) {
   const files = ledgerPaths(input.stateRoot);
   const commit = assertLocalCommit(path.resolve(input.cwd ?? process.cwd()), input);
-  const scopes = normalizedScopes(input.scope);
-  const changedFiles = assertCommitScope(commit.gitRoot, commit.commit, scopes);
+  const requestedScopes = normalizedScopes(input.scope);
+  const { changedFiles, scopes } = assertCommitScope(commit.gitRoot, commit.commit, requestedScopes);
   const type = problemType(input.problemType);
   const existingEvents = readLightOutcomeEvents({ stateRoot:files.root });
   const requestedTaskId = String(input.taskId ?? '').trim();

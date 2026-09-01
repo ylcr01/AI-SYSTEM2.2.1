@@ -1,6 +1,7 @@
 ---
 id: DEC-OUTCOME-ROUNDS-AND-LOCAL-COMMIT-004
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-AGENT-INTEGRATION
   - BR-AIRD-ROUTE-001

@@ -6,7 +6,7 @@
 
 AI-SYSTEM 不替代 Codex、Claude Code 等 Coding Agent，也不试图成为 IDE、Agent Runtime、工作流平台或企业治理系统。它通过宿主自定义指令、项目 `AGENTS.md` 和本地 Node.js 工具，为真实软件任务补上少量但关键的纠偏能力：
 
-> **理解用户目标 → 获取正确上下文 → 在授权范围内实现 → 用定点检查证明结果 → 默认本地提交 → 用真实后续衡量完成轮次。**
+> **理解用户目标 → 获取正确上下文 → 模型自主实施最小改动 → 做相称验证 → 展示真实 Git Diff。**
 
 系统不引入常驻服务，不接管模型的分析、设计和编码过程，也不把流程数量当作研发质量。
 
@@ -30,13 +30,13 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。系统�
 ```text
 普通对话        → 直接回答，不建立 Task
 只读工程分析    → operation=read → build-context → 读取最小相关事实
-局部低风险修改  → operation=write → 预检 → 干净 Local / 隔离 Worktree 直达 → 最小 Diff + 定点检查 + 无状态终检 + 本地提交 + 轻量结果
-正式写 Task     → 专属 Worktree → 独立提交 → 隔离应用与重验 → 串行快进目标分支 → 本轮已交付
-Local/主工作区  → 只读分析、合格轻量直达或单一集成者串行集成
+普通仓库修改    → operation=write → 事实预检 → 当前工作区 → 模型自主修改 + 相称检查 + 可见 Diff
+需要真实隔离    → 工作区脏 / 已占用 / 已知并发 / 用户要求 → 独立 Worktree
+显式正式 Task   → 持续跟踪 / 交接 / 并行 / 外部写入 → Scope + Evidence + 集成门禁
 外部写入        → 完整闭环 + 单独明确授权
 ```
 
-低风险局部修改不进入正式 Task 状态机，只追加最小结果事实；模型负责理解、实现、最小 Diff、定点检查和本地提交。正式 Task 只硬控可以机器确认的 Goal、项目身份、Scope、用户已有改动、ChangeSet、Evidence、检查输入和 Worktree 集成新鲜度。显式验收保留为可选强事实，不是交付完成或统计的前置条件。
+普通修改不进入 Task 状态机，不预建 Scope、Evidence 或结果记录，也不默认提交。模型负责理解、探索、实现、验证选择和最小性；系统只硬控 Git 身份、用户已有改动、并发、外部授权和状态真实性。正式 Task 是用户或模型明确选择的持续交付能力，不由意图关键词、目录名或文件类型自动触发。
 
 ## 当前可信边界
 
@@ -46,11 +46,11 @@ Local/主工作区  → 只读分析、合格轻量直达或单一集成者串�
 - Task 写作态、已交付和历史记录分层保存；`ready_to_integrate` 仍占用源 Worktree，集成验证预算续期后仍是待集成，不伪装成已交付或返工。`delivered` 只表示工程门禁通过，`closed` 只表示对话收口，`accepted` 只由用户显式产生。
 - 每次成功交付返回精确 `taskId + deliveryId` continuation。宿主据此记录每个不同 `observationId` 的相关询问、缺陷退回、范围扩展、非正式肯定或话题推进；不扫描“最新任务”，不保存消息正文，也不因后续提问重跑测试。
 - 相同输入失败不能机械重跑；只有真实 ChangeSet、正式重新对齐或受限诊断重试能改变验证路径。
-- 正式写 Task 独占 Worktree；轻量直达只有在 Local 干净、可用且没有已知并发写入，或当前已经是干净隔离 Worktree 时才可实施。终检须原样复核预检给出的 HEAD、branch/detached、`gitRoot`、`gitCommonDir`、最终 Diff、Scope、Manifest 风险和占用；正式集成和目标 HEAD 变化后必须在真实目标提交上重放交付检查。
+- 正式写 Task 独占 Worktree；普通修改在 Local 干净、可用且没有已知并发写入时直接实施。工作区脏、被占用、存在已知并发或状态无法确认时使用 Worktree，只为隔离真实改动，不根据语义关键词自动升级。
 - 显式 Quality 配置的 JSON、shape、路径或参考文件无效时失败关闭，不回退为“没有配置”；Context 只返回授权根内实际可读文件。
 - 退回先落账并使上轮 Evidence、Review、Handoff、Rationale 和 Check Manifest 失效；已集成任务安全恢复专属返工 Worktree，失败则保持 blocked 与诊断。相同 ChangeSet 且未重新对齐时不能再交付。`诊断状态` 分开报告 `storageIntegrity` 和 `acceptanceEligibility`，不再用存储完整性代替当前验收资格。
-- 仓库修改验证通过后默认形成仅包含本次 Scope 的本地 Git 提交；轻量直达再追加最小结果事实。Push、发布、部署和其他外部写入绝不随交付自动发生，仍须单独授权。
-- Goal Card、Change Rationale 和 Task Check 由宿主自动处理，用户不维护内部 JSON 文件。
+- 普通修改默认保持为用户可见 Git Diff；只有用户明确要求提交、交接或跟踪时才形成提交或结果记录。Push、发布、部署和其他外部写入绝不随修改自动发生，仍须单独授权。
+- Goal Card、Change Rationale 和 Task Check 只属于显式正式 Task，并存放在系统状态或临时目录；不得出现在项目工作区和用户更改列表中。
 - 默认回执对 ChangeSet、缺口和诊断列表限量展开，并报告 `total`、`shown`、`truncated`；直接检查不展开成功日志，显式 `--full` 才读取完整记录。
 - `build-context` 返回读取计划的内容指纹；同一输入再次调用时传入 `--known-context-fingerprint <上次指纹>`，未变化则返回空读取计划，项目事实变化后自动恢复完整计划。
 
@@ -86,38 +86,11 @@ node ./40-脚本/build-context.mjs --operation read --cwd <项目路径> --inten
 
 ### 执行修改
 
-宿主先运行只读 `预检`，再以 `--operation write`（外部写入用 `external-write`）读取轻量上下文。结果为 `continuity=ephemeral` 且预检返回 `recommended=local-direct`（或干净隔离 Worktree 的 `current-worktree`）时，可实施最小 Diff 并只运行一次目标检查。Local 脏、被占用、存在已知并发或状态无法确认时，确定性升级到专属 Worktree。
+宿主先运行只读 `预检`，再以 `--operation write`（外部写入用 `external-write`）读取最小项目事实。当前工作区干净、可用且没有已知并发写入时，模型直接阅读相关代码、实施最小修改、运行相称检查并展示 Git Diff。普通修改不调用 `准备`、`交付`、`复核直达` 或 `记录轻量交付`，也不默认提交。
 
-轻量写入完成后必须原样回传同一次预检的完整 `directBaseline`，包括 HEAD、branch 或 detached 标识、`gitRoot` 和 `gitCommonDir`：
+只有用户明确限定文件时，模型才把 Scope 当作实施前硬边界；否则完成后的真实 ChangeSet 就是范围事实。工作区脏、被占用、存在已知并发或状态无法确认时，创建独立 Worktree 保护已有改动。意图关键词、目录名、`api`、`auth`、配置文件或模型主观风险判断都不自动创建 Worktree 或正式 Task。
 
-```powershell
-node ./40-脚本/task.mjs 复核直达 --cwd <项目路径> `
-  --baseline-head <预检 HEAD> --baseline-branch <预检 branch> `
-  --baseline-git-root <预检 gitRoot> `
-  --baseline-git-common-dir <预检 gitCommonDir> `
-  --intent "<目标>" --scope <授权路径>
-```
-
-对 detached Worktree 传入 `--baseline-detached` 代替 `--baseline-branch`。终检会拒绝 HEAD/分支/detached 标识、`gitRoot`、`gitCommonDir` 或路径身份变化，因此同提交同分支的其他 clone 也不能通过；当前占用、Scope 越界、Manifest 实质风险或最终分类升级也失败关闭。它返回绑定 baseline identity 与不含 HEAD 的语义变更指纹的回执，本身不创建正式 Task、Evidence 或交付状态。
-
-终检通过后默认形成只包含本次 Scope 的本地提交，并调用 `记录轻量交付` 写入最小结果事实；不进入正式 Task 或自动集成流程：
-
-```powershell
-git add -- <本次 Scope 内的精确文件>
-git commit -m "<本次修改>"
-node ./40-脚本/task.mjs 记录轻量交付 --cwd <项目路径> `
-  --commit <当前 HEAD> --problem-type bugfix|feature|refactor|migration|integration|documentation|maintenance `
-  --baseline-head <预检 HEAD> --baseline-git-root <预检 gitRoot> `
-  --baseline-git-common-dir <预检 gitCommonDir> `
-  --verified-change-fingerprint <复核直达回执中的语义指纹> `
-  --scope <本次文件或目录>
-```
-
-终检回执只可绑定随后形成的单一本地提交；`记录轻量交付` 会同时复核完整 baseline identity 和语义指纹，不能只凭干净 HEAD/Scope 记成功，也不会执行 Push。若后续缺陷退回，修复并验证、提交后用回执中的原 `taskId` 再次记录，仍然只形成一个问题样本；空提交不算输入变化。
-
-`tracked|handoff-required`、Controlled、Structural、规格/Decision、外部写入或跨仓任务才进入正式 Task：
-
-先为每个正式写 Task 建立专属 Worktree。Codex 桌面端优先选择 managed Worktree；若宿主未能创建或识别，则使用下方 detached Worktree fallback，不能把正式 Task 改在 Local 中执行。
+需要持续跟踪、跨对话交接、并行隔离或已授权外部写入时，用户或模型显式选择正式 Task，并在专属 Worktree 中运行：
 
 ```powershell
 node ./40-脚本/task.mjs 预检 --cwd <项目路径>
@@ -135,9 +108,7 @@ node ./40-脚本/task.mjs 交付 --task-id <编号>
 node ./40-脚本/task.mjs 验收 --task-id <编号> --decision 通过|退回
 ```
 
-`--model`、`--reasoning-effort` 和 `--execution-environment` 都是可选的低敏感评估标签；只在宿主确知时传入，未传入时保持 null，不猜测也不保存密钥或完整环境变量。
-
-正式 Task 会在需要时自动生成 Goal Card、Change Rationale 和定点检查，并使用交付回执里的 continuation 回写每个不同的相关后续。用户只确认会改变业务结果、Scope、权限或外部影响的事项，不操作内部 JSON 文件，也不需要为正常完成再做一次形式确认。轻量直达不生成 Evidence 或正式 `waiting_acceptance`，只生成轻量结果记录。主 Local checkout 可承载合格的轻量直达和串行集成，但正式 Task 在主 checkout 准备仍会被拒绝；显式说“验收通过”才记录为 `accepted`，自然转入新话题只记录为 `closed`。
+正式 Task 才生成 Goal Card、Change Rationale、Task Check、Evidence、结果提交和 continuation。机器交换文件必须位于系统状态或临时目录，不得进入项目和用户更改区域。`--model`、`--reasoning-effort` 和 `--execution-environment` 仅在宿主确知且确有评估需要时传入。
 
 `预检` 只读且不加载工程上下文、不创建 Task；它为合格 `local-direct` 和干净 `current-worktree` 返回直达终检所需的 `directBaseline`。Local 直达还要求执行模型确认没有其他已知写入者；正式 `准备` 会在原子创建时复核。多个精确授权路径可重复传入 `--scope`。
 

@@ -1,6 +1,7 @@
 ---
 id: DEC-RISK-PROPORTIONAL-WRITE-ROUTING-003
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260827011139813-97e8e394
