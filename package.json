@@ -10,16 +10,10 @@
     "spec:map": "node ./40-脚本/spec-map.mjs",
     "spec:check": "node ./40-脚本/spec-consistency.mjs",
     "test:core": "node ./40-脚本/verify-system.mjs --profile tests --group core",
-    "test:integration": "node ./40-脚本/verify-system.mjs --profile tests --group integration",
-    "test:scenarios": "node ./40-脚本/verify-system.mjs --profile tests --group scenarios",
     "test": "node ./40-脚本/verify-system.mjs --profile tests",
     "test:baseline": "node ./40-脚本/verify-system.mjs --profile baseline",
     "release:inventory": "node ./40-脚本/build-release-inventory.mjs",
-    "context": "node ./40-脚本/build-context.mjs",
-    "task": "node ./40-脚本/task.mjs",
-    "checks": "node ./40-脚本/run-checks.mjs",
     "registry": "node ./40-脚本/manage-registry.mjs",
-    "validate:evidence": "node ./40-脚本/validate-evidence.mjs",
     "verify:release": "node ./40-脚本/verify-system.mjs --profile release"
   },
   "engines": {

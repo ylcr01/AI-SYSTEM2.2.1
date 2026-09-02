@@ -79,7 +79,6 @@ function normalizeRule(rule, index) {
   return {
     id,
     paths,
-    keywords: (rule.keywords ?? []).map(String).map((item) => item.trim()).filter(Boolean),
     specificationFiles: normalizedList(rule.specificationFiles, `${id}.specificationFiles`),
     specificationIds: (rule.specificationIds ?? []).map(String).map((item) => item.trim()).filter(Boolean),
     testFiles: normalizedList(rule.testFiles, `${id}.testFiles`),
@@ -312,20 +311,5 @@ export function mapChangedFilesToSpecifications(input = {}) {
     testCoverage: coverage,
     unmappedCodeFiles,
     warnings: unmappedCodeFiles.length ? [`${unmappedCodeFiles.length} 个代码文件没有规格映射`] : []
-  };
-}
-
-export function mapIntentToSpecifications(input = {}) {
-  const gitRoot = path.resolve(input.gitRoot ?? input.cwd ?? process.cwd());
-  const config = input.specMap ?? loadSpecMap(gitRoot, input);
-  const text = String(input.intent ?? '').toLowerCase();
-  const rules = config.mappings.filter((rule) => rule.keywords.some((keyword) => text.includes(keyword.toLowerCase())));
-  const analyses = rules.map((rule) => ({ rule, analysis: ruleAnalysis(gitRoot, rule) }));
-  return {
-    configured: config.configured,
-    matchedRuleIds: rules.map((rule) => rule.id),
-    specificationFiles: [...new Set(analyses.flatMap(({ analysis }) => analysis.specificationFiles))].sort(),
-    specificationIds: [...new Set(analyses.flatMap(({ analysis }) => analysis.specificationIds))].sort(),
-    testFiles: [...new Set(analyses.flatMap(({ analysis }) => analysis.testFiles))].sort()
   };
 }

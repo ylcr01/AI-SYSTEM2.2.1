@@ -11,15 +11,14 @@ const action = args._[0] ?? '检查';
 
 function instructionText(fallback) {
   const fallbackPath = path.resolve(fallback ?? SYSTEM_ROOT);
-  return `# Personal AI R&D Operating System\n\nFor any task that depends on local repository facts, resolve \`AI_RD_OS_ROOT\` and read its \`AGENTS.md\` before acting. If the variable is unavailable or the resolved entry cannot be read, use \`${fallbackPath}\\AGENTS.md\` as the current-machine fallback.\n\nIf neither entry is available, continue only with clear, low-risk work supported by repository facts, report the degraded state, and do not guess project identity or bypass safety requirements.\n\n## Browser verification hard limits\n\n- Delivery smoke tests cover at most 4 critical flows and target 60 seconds: 15 seconds per test, 2 minutes for the batch, and a non-extendable 3-minute outer process timeout.\n- Stop the batch on the first failure or timeout. Do not retry automatically or use fixed sleeps longer than 1 second; wait on state or events.\n- Terminate after 30 seconds without meaningful output and report completed, failed, and blocked counts at least every 30 seconds. Never wait silently.\n- More than 4 flows, an estimate over 2 minutes, or a full historical suite is regression testing. Do not run it during ordinary delivery; create a separate task and obtain explicit user authorization before starting.\n- Report every terminated, failed, skipped, or circuit-broken test truthfully. Other checks cannot substitute for browser verification. When the repository has browser-test configuration, enforce these limits in the runner or outer command as well as in instructions.\n`;
+  return `# Personal AI R&D Operating System\n\nFor work that depends on local repository facts, resolve \`AI_RD_OS_ROOT\` and read its \`AGENTS.md\`. If unavailable, use \`${fallbackPath}\\AGENTS.md\`. If neither can be read, report the degraded state, do not guess the repository or authorization, and continue only with clearly safe work supported by available facts.\n`;
 }
 
 function checkRoot(root) {
   const checks = [
     'AGENTS.md',
     'package.json',
-    '40-脚本/build-context.mjs',
-    '40-脚本/task.mjs',
+    '40-脚本/manage-registry.mjs',
     '40-脚本/spec-consistency.mjs'
   ].map((relative) => {
     const file = path.join(root, relative);

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +10,9 @@ const profiles = new Set(['tests', 'baseline', 'release']);
 if (!profiles.has(profile)) throw new Error(`验证档位无效: ${profile ?? ''}`);
 const groupIndex = process.argv.indexOf('--group');
 const requestedGroup = groupIndex >= 0 ? process.argv[groupIndex + 1] : null;
-const availableGroups = ['core', 'integration', 'scenarios'];
+const availableGroups = ['core'];
 if (requestedGroup && !availableGroups.includes(requestedGroup)) throw new Error(`测试分组无效: ${requestedGroup}`);
 const fullOutput = process.argv.includes('--full');
-const isolatedStateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rd-os-verify-state-'));
 
 function testFiles(group) {
   const directory = path.join(ROOT, '60-测试', group);
@@ -38,7 +36,6 @@ function run(name, args, timeout = 600000) {
   const started = Date.now();
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
-  childEnv.AI_RD_OS_STATE_ROOT = isolatedStateRoot;
   const result = spawnSync(process.execPath, args, {
     cwd: ROOT,
     env: childEnv,
@@ -60,18 +57,14 @@ function run(name, args, timeout = 600000) {
   }
 }
 
-try {
-  if (profile !== 'tests') run('系统自检', ['./40-脚本/check-system.mjs']);
-  const groups = requestedGroup ? [requestedGroup] : availableGroups;
-  run(requestedGroup ? `${requestedGroup} 测试` : '全部测试', [
-    '--test',
-    ...groups.flatMap(testFiles),
-  ]);
-  if (profile === 'release' && !requestedGroup) {
-    run('发布清单', ['./40-脚本/build-release-inventory.mjs']);
-  }
-} finally {
-  fs.rmSync(isolatedStateRoot, { recursive: true, force: true });
+if (profile !== 'tests') run('系统自检', ['./40-脚本/check-system.mjs']);
+const groups = requestedGroup ? [requestedGroup] : availableGroups;
+run(requestedGroup ? `${requestedGroup} 测试` : '全部测试', [
+  '--test',
+  ...groups.flatMap(testFiles),
+]);
+if (profile === 'release' && !requestedGroup) {
+  run('发布清单', ['./40-脚本/build-release-inventory.mjs']);
 }
 
 console.log(JSON.stringify({ ok: true, profile, group: requestedGroup }, null, 2));

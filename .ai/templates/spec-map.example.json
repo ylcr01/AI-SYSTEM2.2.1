@@ -3,7 +3,6 @@
   "mappings": [
     {
       "id": "order-module",
-      "keywords": ["订单", "order", "取消", "退款"],
       "paths": [
         "src/order/**",
         "server/order/**"

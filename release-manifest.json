@@ -1,15 +1,13 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "name": "AI研发操作系统",
   "version": "2.3.0",
-  "packageType": "complete-source-code",
+  "packageType": "lightweight-facts-and-safety",
   "entrypoints": {
     "modelEntry": "40-脚本/configure-model-entry.mjs",
-    "task": "40-脚本/task.mjs",
-    "context": "40-脚本/build-context.mjs",
+    "registry": "40-脚本/manage-registry.mjs",
     "specMap": "40-脚本/spec-map.mjs",
     "specConsistency": "40-脚本/spec-consistency.mjs",
-    "checks": "40-脚本/run-checks.mjs",
     "systemCheck": "40-脚本/check-system.mjs",
     "releaseInventory": "40-脚本/build-release-inventory.mjs"
   },
@@ -17,12 +15,11 @@
     "node": ">=20",
     "externalDependencies": ["git"]
   },
-  "status": "runnable-baseline",
-  "stabilityNote": "自动测试和技术验收通过；长期 stable 仍需 20～30 个真实项目任务验证。",
+  "status": "model-autonomous",
+  "stabilityNote": "中央 Task、Scope、Evidence、自动检查与集成生命周期已退出当前架构；旧运行记录仅作历史证据。",
   "verification": {
     "baselineCommand": "node ./40-脚本/verify-system.mjs --profile baseline",
     "fullCommand": "node ./40-脚本/verify-system.mjs --profile release",
-    "technicalGate": "runtime-verification-required",
     "userAcceptance": "pending"
   },
   "sourceInventory": "运行 release 验证时生成到 80-运行记录/release/release-inventory.json，不作为源码维护"

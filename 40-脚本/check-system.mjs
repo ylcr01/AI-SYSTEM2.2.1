@@ -3,7 +3,6 @@ import path from 'node:path';
 import { SYSTEM_ROOT, loadRegistry, validateRegistry } from './lib/registry.mjs';
 
 const errors = [];
-const warnings = [];
 
 function requireFile(relative) {
   const file = path.join(SYSTEM_ROOT, relative);
@@ -17,87 +16,53 @@ function readJson(relative) {
 }
 
 const pkg = readJson('package.json');
-if (!/^\d+\.\d+\.\d+$/u.test(pkg?.version ?? '')) errors.push('package.json: 版本必须是有效 SemVer');
-if (pkg?.name !== 'personal-ai-rd-operating-system') errors.push('package.json: 产品名称无效');
-const releaseManifest = readJson('release-manifest.json');
-if (releaseManifest?.version !== pkg?.version) errors.push('release-manifest.json: version 必须与 package.json 一致');
-const checkRegistry = readJson('.ai/checks.json');
-for (const check of checkRegistry?.checks ?? []) {
-  if (['npm', 'npx'].includes(check.command)) errors.push(`.ai/checks.json: ${check.name} 必须使用纯 Node 入口`);
-}
+const release = readJson('release-manifest.json');
+if (!/^\d+\.\d+\.\d+$/u.test(pkg?.version ?? '')) errors.push('package.json: 版本必须是 SemVer');
+if (release?.version !== pkg?.version) errors.push('release-manifest.json: version 必须与 package.json 一致');
 
 for (const relative of [
-  'README.md', 'AGENTS.md', '.ai/checks.json', '.ai/spec-map.json', '.github/workflows/ci.yml',
-  '.ai/templates/module-spec-template.md', '.ai/templates/decision-template.md', '.ai/templates/spec-map.example.json', '.ai/templates/spec-policy.example.json',
+  'AGENTS.md',
+  'README.md',
   '00-大模型接入/接入说明.md',
-  '10-注册表/projects.json', '10-注册表/templates.json',
-  '20-能力模块/10-通用工程契约.md', '20-能力模块/manifest.json',
-  '30-知识库/索引.json',
-  '40-脚本/configure-model-entry.mjs', '40-脚本/task.mjs', '40-脚本/spec-map.mjs', '40-脚本/spec-consistency.mjs',
-  '40-脚本/build-release-inventory.mjs', '40-脚本/verify-system.mjs',
-  '40-脚本/lib/state-manager.mjs', '40-脚本/lib/outcome-metrics.mjs', '40-脚本/lib/outcome-ledger.mjs', '40-脚本/lib/evidence.mjs', '40-脚本/lib/task-runner.mjs', '40-脚本/lib/integration-workflow.mjs', '40-脚本/lib/alignment.mjs', '40-脚本/lib/change-rationale.mjs',
-  '40-脚本/lib/spec-mapper.mjs', '40-脚本/lib/spec-consistency.mjs', '40-脚本/lib/spec-service.mjs', '40-脚本/lib/path-boundary.mjs',
-  '40-脚本/lib/experience-candidate.mjs', '40-脚本/lib/experience-dedupe.mjs',
-  '40-脚本/lib/manifest-reader.mjs', '70-文档/25-按需任务规则.md', '70-文档/decisions/DEC-REMOVE-PROJECT-WORKSTATIONS-002.md', '70-文档/decisions/DEC-OUTCOME-ROUNDS-AND-LOCAL-COMMIT-004.md',
-  '70-文档/decisions/DEC-INTEGRATION-FRESHNESS-001.md', '70-文档/decisions/DEC-AUTOMATIC-SERIAL-INTEGRATION-001.md', '70-文档/specifications/quality-profile-and-state.md', '80-运行记录/README.md'
+  '40-脚本/configure-model-entry.mjs',
+  '40-脚本/manage-registry.mjs',
+  '40-脚本/spec-map.mjs',
+  '40-脚本/spec-consistency.mjs',
+  '40-脚本/lib/registry.mjs',
+  '40-脚本/lib/spec-mapper.mjs',
+  '40-脚本/lib/spec-consistency.mjs',
+  '70-文档/10-架构与原则.md',
+  '70-文档/20-可信门禁.md',
+  '70-文档/55-系统演进准入.md',
 ]) requireFile(relative);
 
+for (const retired of [
+  '40-脚本/build-context.mjs',
+  '40-脚本/task.mjs',
+  '40-脚本/run-checks.mjs',
+  '40-脚本/validate-evidence.mjs',
+  '40-脚本/lib/task-runner.mjs',
+  '40-脚本/lib/task-policy.mjs',
+  '40-脚本/lib/state-manager.mjs',
+  '40-脚本/lib/evidence.mjs',
+  '40-脚本/lib/check-planner.mjs',
+  '40-脚本/lib/integration-workflow.mjs',
+]) {
+  if (fs.existsSync(path.join(SYSTEM_ROOT, retired))) errors.push(`${retired}: 已退役机制不应存在`);
+}
+
+const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
+for (const marker of ['模型负责研发', '系统只提供事实与工具', '保留用户已有改动', '默认不 Push', '如实报告']) {
+  if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少 ${marker}`);
+}
+
 try {
-  const result = validateRegistry(loadRegistry());
-  errors.push(...result.errors.map((item) => `${item.location}: ${item.message}`));
-  warnings.push(...result.warnings.map((item) => `${item.location}: ${item.message}`));
+  const registry = validateRegistry(loadRegistry());
+  errors.push(...registry.errors.map((item) => `${item.location}: ${item.message}`));
 } catch (error) {
   errors.push(`注册表: ${error.message}`);
 }
 
-const abilityManifest = readJson('20-能力模块/manifest.json');
-const artifactKinds = new Set(['code','product','requirements','ui','api','data','integration','operations','documentation','knowledge']);
-if (abilityManifest?.schemaVersion !== 3) errors.push('20-能力模块/manifest.json: Schema 必须是 3');
-for (const profile of abilityManifest?.profiles ?? []) {
-  requireFile(profile.contract);
-  if ('skill' in profile) errors.push(`${profile.name}: 质量 Profile 不得声明不可发现的 skill 文件`);
-  if (fs.existsSync(path.join(SYSTEM_ROOT, '20-能力模块', profile.name, 'SKILL.md'))) {
-    errors.push(`${profile.name}: 内部质量资料不得伪装成宿主 SKILL.md`);
-  }
-  for (const kind of profile.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${profile.name}: artifactKind 无效 ${kind}`);
-  for (const item of profile.exemplars ?? []) {
-    if (!['active','observe','retired','deprecated','disabled'].includes(item.status)) errors.push(`${item.id}: lifecycle 无效`);
-    if (item.status === 'active' && item.supersededBy) errors.push(`${item.id}: active 不能同时 superseded`);
-    for (const kind of item.artifactKinds ?? profile.artifactKinds ?? []) if (!artifactKinds.has(kind)) errors.push(`${item.id}: artifactKind 无效 ${kind}`);
-    for (const relative of item.read ?? []) {
-      const file = path.join(SYSTEM_ROOT, '20-能力模块', profile.name, relative);
-      if (!fs.existsSync(file)) errors.push(`${item.id}: Canonical 文件不存在 ${relative}`);
-    }
-  }
-}
-
-const knowledge = readJson('30-知识库/索引.json');
-for (const route of knowledge?.routes ?? []) {
-  if (!['active','observe','retired'].includes(route.lifecycle)) errors.push('知识生命周期无效');
-  for (const file of route.read ?? []) if (!fs.existsSync(path.join(SYSTEM_ROOT, '30-知识库', file))) errors.push(`知识文件不存在: ${file}`);
-}
-
-const specMapExample = readJson('.ai/templates/spec-map.example.json');
-if (specMapExample?.schemaVersion !== 1 || !Array.isArray(specMapExample.mappings)) errors.push('spec-map.example.json: Schema 无效');
-const specPolicyExample = readJson('.ai/templates/spec-policy.example.json');
-if (specPolicyExample?.schemaVersion !== 1 || !['advisory','balanced','strict'].includes(specPolicyExample.mode)) errors.push('spec-policy.example.json: Schema 无效');
-const state = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/state-manager.mjs'), 'utf8');
-if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/withIntegrationLock/u.test(state) || !/CURRENT_SCHEMA = 10/u.test(state) || !/conversationOutcome/u.test(state) || !/outcomeMetrics/u.test(state) || !/ready_to_integrate/u.test(state) || !/待验收/u.test(state)) errors.push('State Manager 缺少 V10 状态分层、对话结果、结果指标、集成转换或并发锁');
-const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
-if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
-const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
-for (const marker of ['普通对话','只读工程分析','仓库写入','模型自主执行','正式写任务','精确 continuation','closed','本地提交','不得 Push','完成轮次','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
-const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
-for (const marker of ['继续验证','重验集成','迁移状态','后续','记录轻量交付','delivery-id','observation-id','--allow-risk-integration','--confirm-only']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续、结果记录、集成或维护命令 ${marker}`);
-if (taskCli.includes('--allow-primary-write')) errors.push('task.mjs: 不得暴露 Local 写入后门');
-
-const result = {
-  ok: errors.length === 0,
-  version: pkg?.version ?? null,
-  qualityProfiles: abilityManifest?.profiles?.length ?? 0,
-  knowledgeRoutes: knowledge?.routes?.length ?? 0,
-  errors,
-  warnings
-};
+const result = { ok: errors.length === 0, version: pkg?.version ?? null, errors };
 console.log(JSON.stringify(result, null, 2));
 if (!result.ok) process.exitCode = 1;
