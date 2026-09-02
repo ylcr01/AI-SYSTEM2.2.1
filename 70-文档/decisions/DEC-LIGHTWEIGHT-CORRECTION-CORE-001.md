@@ -1,6 +1,7 @@
 ---
 id: DEC-LIGHTWEIGHT-CORRECTION-CORE-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-CORE-SLIMMING
   - ARCH-TRUST-GATES

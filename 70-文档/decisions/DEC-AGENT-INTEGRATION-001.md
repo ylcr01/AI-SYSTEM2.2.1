@@ -1,6 +1,7 @@
 ---
 id: DEC-AGENT-INTEGRATION-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260812095713070-9975ae49

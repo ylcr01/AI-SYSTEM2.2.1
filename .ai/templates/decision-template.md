@@ -3,7 +3,6 @@ id: DEC-XXX-001
 status: proposed
 affects:
   - BR-XXX-001
-sourceTaskId: task-YYYYMMDD-xxxxxxxx
 supersedes: []
 ---
 

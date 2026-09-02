@@ -15,7 +15,7 @@ try {
     affectedSpecificationIds: listArg(args['spec-id'])
   });
   const traceability = mapChangedFilesToSpecifications({ gitRoot, changedFiles, configPath: args.config });
-  const result = evaluateSpecConsistency({ gitRoot, taskId: null, specImpact, traceability, policyPath: args.policy });
+  const result = evaluateSpecConsistency({ gitRoot, specImpact, traceability, policyPath: args.policy });
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exitCode = 2;
 } catch (error) {

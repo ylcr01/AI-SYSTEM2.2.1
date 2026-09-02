@@ -2,7 +2,6 @@
 moduleId: MOD-XXX
 title: 模块名称
 status: active
-lastVerifiedTaskId: null
 lastVerifiedCommit: null
 ---
 
@@ -78,4 +77,4 @@ lastVerifiedCommit: null
 
 ## 11. 重大 Decision
 
-重大业务或架构变化使用 `docs/modules/<module>/decisions/DEC-*.md`，并包含 `id/status/affects/sourceTaskId`。普通 Bug 修复和内部重构不强制新增 Decision。
+重大业务或架构变化可使用 `docs/modules/<module>/decisions/DEC-*.md`，并包含 `id/status/affects`。是否新增 Decision 由模型结合当前目标和项目事实判断。

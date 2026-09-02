@@ -1,6 +1,7 @@
 ---
 id: DEC-TRUTH-FIRST-CONTROL-SHRINK-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - MOD-AIRD-QUALITY-STATE
   - ARCH-PROBLEM-DRIVEN-EVOLUTION

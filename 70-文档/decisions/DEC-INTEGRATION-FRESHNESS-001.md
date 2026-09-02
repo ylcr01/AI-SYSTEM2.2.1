@@ -1,6 +1,7 @@
 ---
 id: DEC-INTEGRATION-FRESHNESS-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260815201558017-e7cee129

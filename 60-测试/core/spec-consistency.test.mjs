@@ -44,13 +44,12 @@ test('映射代码未显式声明 specImpact 默认只告警，保持轻量', ()
   assert.ok(result.issues.some((item) => item.id === 'SPEC_IMPACT_UNDECLARED'));
 });
 
-test('decision-required 校验 Decision 的 status、affects 和 sourceTaskId', () => {
+test('decision-required 校验 Decision 的 status 和 affects', () => {
   const result = evaluateSpecConsistency({
-    taskId: 'task-current',
     specImpact: { level: 'decision-required', declared: true, reason: '架构变化', affectedSpecificationIds: ['BR-ORD-001'] },
     traceability: trace([{
       path: 'docs/modules/order/decisions/DEC-001.md', kind: 'decision', specificationIds: ['BR-ORD-001'],
-      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'accepted', affects: [], sourceTaskId: 'task-other' } }
+      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'accepted', affects: [] } }
     }]),
     policy: { mode: 'balanced', configured: false, policyPath: null, blockingRules: ['DECISION_METADATA_INVALID'], requireExplicitImpactForMappedCode: false, requireTestsForAffectedIds: false }
   });
@@ -60,24 +59,22 @@ test('decision-required 校验 Decision 的 status、affects 和 sourceTaskId', 
 
 test('完整 Decision 元数据通过门禁', () => {
   const result = evaluateSpecConsistency({
-    taskId: 'task-current',
     specImpact: { level: 'decision-required', declared: true, reason: '架构变化', affectedSpecificationIds: ['BR-ORD-001'] },
     traceability: trace([{
       path: 'docs/modules/order/decisions/DEC-001.md', kind: 'decision', specificationIds: ['BR-ORD-001'],
-      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'proposed', affects: ['order-cancellation'], sourceTaskId: 'task-current' } }
+      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'proposed', affects: ['order-cancellation'] } }
     }]),
     policy: { mode: 'balanced', configured: false, policyPath: null, blockingRules: ['DECISION_METADATA_INVALID'], requireExplicitImpactForMappedCode: false, requireTestsForAffectedIds: false }
   });
   assert.equal(result.ok, true);
 });
 
-test('集成任务可采纳保留原始来源的历史 Decision', () => {
+test('superseded Decision 声明替代来源后通过', () => {
   const result = evaluateSpecConsistency({
-    taskId: 'task-current',
     specImpact: { level: 'decision-required', declared: true, reason: '采纳已验证的历史决定', affectedSpecificationIds: ['BR-ORD-001'] },
     traceability: trace([{
       path: 'docs/modules/order/decisions/DEC-001.md', kind: 'decision', specificationIds: ['BR-ORD-001'],
-      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'accepted', affects: ['order-cancellation'], sourceTaskId: 'task-origin', adoptedByTaskId: 'task-current' } }
+      decisionMetadata: { present: true, metadata: { id: 'DEC-001', status: 'superseded', affects: ['order-cancellation'], supersededBy: 'DEC-002' } }
     }]),
     policy: { mode: 'balanced', configured: false, policyPath: null, blockingRules: ['DECISION_METADATA_INVALID'], requireExplicitImpactForMappedCode: false, requireTestsForAffectedIds: false }
   });

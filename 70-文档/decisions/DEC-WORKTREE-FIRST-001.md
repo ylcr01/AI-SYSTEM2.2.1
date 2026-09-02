@@ -1,6 +1,7 @@
 ---
 id: DEC-WORKTREE-FIRST-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260814092526757-caabc12d

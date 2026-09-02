@@ -1,6 +1,7 @@
 ---
 id: DEC-CORE-SLIMMING-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-CORE-SLIMMING
 sourceTaskId: task-20260811025819526-411ea09a

@@ -63,7 +63,7 @@ function isBlocking(issueItem, policy) {
   return false;
 }
 
-function decisionMetadataErrors(item, taskId) {
+function decisionMetadataErrors(item) {
   const record = item.decisionMetadata;
   if (!record?.present || !record.metadata) return ['缺少 YAML Front Matter'];
   const metadata = record.metadata;
@@ -71,19 +71,15 @@ function decisionMetadataErrors(item, taskId) {
   if (!/^DEC-[A-Z0-9][A-Z0-9-]*$/u.test(metadata.id ?? '')) errors.push('id 必须使用 DEC-* 稳定格式');
   if (!['proposed', 'accepted', 'superseded'].includes(metadata.status)) errors.push('status 必须是 proposed、accepted 或 superseded');
   if (!Array.isArray(metadata.affects) || metadata.affects.length === 0) errors.push('affects 不能为空');
-  if (!metadata.sourceTaskId) errors.push('sourceTaskId 不能为空');
-  else if (taskId && metadata.sourceTaskId !== taskId && metadata.adoptedByTaskId !== taskId) {
-    errors.push(`sourceTaskId 或 adoptedByTaskId 必须等于当前 Task ${taskId}`);
-  }
   if (metadata.status === 'superseded' && !metadata.supersededBy) errors.push('superseded Decision 必须声明 supersededBy');
   return errors;
 }
 
-function validateChangedDecisions(decisions, taskId) {
+function validateChangedDecisions(decisions) {
   const records = decisions.map((item) => ({
     file: item.path,
     metadata: item.decisionMetadata?.metadata ?? null,
-    errors: decisionMetadataErrors(item, taskId)
+    errors: decisionMetadataErrors(item)
   }));
   const ids = records.map((item) => item.metadata?.id).filter(Boolean);
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
@@ -113,7 +109,7 @@ export function evaluateSpecConsistency(input = {}) {
     issues.push(issue(
       'SPEC_IMPACT_UNDECLARED',
       policy.requireExplicitImpactForMappedCode ? 'error' : 'warning',
-      '代码变化已关联业务规格，但本次任务没有显式声明 specImpact',
+      '代码变化已关联业务规格，但本次检查没有显式声明 specImpact',
       { files: mappedCode.map((item) => item.path), specificationIds: effectiveIds }
     ));
   }
@@ -146,12 +142,12 @@ export function evaluateSpecConsistency(input = {}) {
   }
 
   if (kinds.decisions.length > 0) {
-    const validation = validateChangedDecisions(kinds.decisions, input.taskId);
+    const validation = validateChangedDecisions(kinds.decisions);
     if (!validation.valid || (specImpact.level === 'decision-required' && !validation.hasCurrentDecision)) {
       issues.push(issue(
         'DECISION_METADATA_INVALID',
         'error',
-        'Decision 元数据不完整或与当前 Task 不一致',
+        'Decision 元数据不完整',
         { decisions: validation.records, currentDecisionMissing: specImpact.level === 'decision-required' && !validation.hasCurrentDecision }
       ));
     }

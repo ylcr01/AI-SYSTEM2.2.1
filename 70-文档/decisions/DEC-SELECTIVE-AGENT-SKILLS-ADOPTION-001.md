@@ -1,6 +1,7 @@
 ---
 id: DEC-SELECTIVE-AGENT-SKILLS-ADOPTION-001
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-PROBLEM-DRIVEN-EVOLUTION
   - ARCH-CORE-SLIMMING

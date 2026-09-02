@@ -1,6 +1,7 @@
 ---
 id: DEC-WORKTREE-DEFAULT-002
-status: accepted
+status: superseded
+supersededBy: DEC-MODEL-AUTONOMY-EXECUTION-001
 affects:
   - ARCH-AGENT-INTEGRATION
 sourceTaskId: task-20260825071747201-032e7b26
