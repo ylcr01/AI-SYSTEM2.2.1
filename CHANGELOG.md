@@ -1,8 +1,18 @@
 # CHANGELOG
 
+## V3.0.0
+
+### 模型自主研发内核
+
+- 正式将系统定位收缩为事实与安全层：模型自主负责需求、上下文、范围、文件、实现、验证、Worktree、规格和交付判断。
+- 删除中央 Context Builder、Task、Goal Card、Scope、Evidence、Rationale、Check Manifest、自动检查、结果账本、提交与集成状态机，不再通过关键词、路径、文件类型或风险标签触发研发生命周期。
+- 规格映射、注册表和项目命令保留为模型显式选择的事实工具，不再承担语义分类与流程控制。
+- 保留目标仓库身份、用户已有改动、用户明确范围、外部或不可逆动作授权、默认不 Push 和结果真实性等硬边界。
+- 本版本移除了 `context`、`task`、`checks`、`validate:evidence`、`test:integration` 和 `test:scenarios` 命令，属于不兼容的主版本升级。
+
 ## V2.3.0
 
-### 模型自主架构（当前）
+### 模型自主架构过渡（已由 V3.0.0 正式确立）
 
 - 中央系统收缩为事实与安全层；需求、上下文、范围、文件、实现、测试、构建、异常路径、Worktree、架构、规格和交付时机由模型自主判断。
 - 删除中央 Context Builder、Task、Goal Card、Scope、Evidence、Rationale、Check Manifest、自动检查、结果账本、提交与集成状态机；旧运行记录只作历史证据。

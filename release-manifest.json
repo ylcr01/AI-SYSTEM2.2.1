@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
   "name": "AI研发操作系统",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "packageType": "lightweight-facts-and-safety",
   "entrypoints": {
     "modelEntry": "40-脚本/configure-model-entry.mjs",
