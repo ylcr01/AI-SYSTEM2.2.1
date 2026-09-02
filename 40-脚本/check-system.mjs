@@ -86,7 +86,7 @@ if (!/TRANSITIONS/u.test(state) || !/withFileLock/u.test(state) || !/withIntegra
 const policy = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/lib/task-policy.mjs'), 'utf8');
 if (/autoSpawn|verifierQueue|multiAgentConsensus/u.test(policy)) errors.push('禁止自动 Agent 编排策略');
 const agents = fs.readFileSync(path.join(SYSTEM_ROOT, 'AGENTS.md'), 'utf8');
-for (const marker of ['普通对话','只读工程分析','仓库写任务','waiting_acceptance','continuation.taskId + deliveryId','closed','本地提交','不得 Push','完成轮次','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
+for (const marker of ['普通对话','只读工程分析','仓库写入','模型自主执行','正式写任务','精确 continuation','closed','本地提交','不得 Push','完成轮次','specImpact']) if (!agents.includes(marker)) errors.push(`AGENTS.md: 缺少入口规则 ${marker}`);
 const taskCli = fs.readFileSync(path.join(SYSTEM_ROOT, '40-脚本/task.mjs'), 'utf8');
 for (const marker of ['继续验证','重验集成','迁移状态','后续','记录轻量交付','delivery-id','observation-id','--allow-risk-integration','--confirm-only']) if (!taskCli.includes(marker)) errors.push(`task.mjs: 缺少恢复、对话后续、结果记录、集成或维护命令 ${marker}`);
 if (taskCli.includes('--allow-primary-write')) errors.push('task.mjs: 不得暴露 Local 写入后门');

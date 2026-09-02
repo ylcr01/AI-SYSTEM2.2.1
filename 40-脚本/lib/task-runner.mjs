@@ -1036,7 +1036,7 @@ function assertIntegratedTaskFresh(task) {
   });
   if (!result.ok) throw new Error(`集成门禁已失效: ${result.reason}`);
   if (result.targetCommit !== task.integration.targetCommit) {
-    throw new Error(`集成目标 HEAD 已变化: 已验证 ${task.integration.targetCommit}，当前 ${result.targetCommit}；请运行“task.mjs 重验集成 --task-id ${task.taskId} --cwd <目标工作区>”`);
+    throw new Error(`集成目标 HEAD 已变化: 已验证 ${task.integration.targetCommit}，当前 ${result.targetCommit}；需由执行模型运行“task.mjs 重验集成 --task-id ${task.taskId} --cwd <目标工作区>”`);
   }
   return result;
 }

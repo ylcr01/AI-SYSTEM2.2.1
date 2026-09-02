@@ -54,13 +54,17 @@ AI-SYSTEM 的目标不是增加更多流程，而是减少这些失败。系统�
 - 默认回执对 ChangeSet、缺口和诊断列表限量展开，并报告 `total`、`shown`、`truncated`；直接检查不展开成功日志，显式 `--full` 才读取完整记录。
 - `build-context` 返回读取计划的内容指纹；同一输入再次调用时传入 `--known-context-fingerprint <上次指纹>`，未变化则返回空读取计划，项目事实变化后自动恢复完整计划。
 
-详细规则以 [`AGENTS.md`](AGENTS.md)、[`70-文档/10-架构与原则.md`](70-文档/10-架构与原则.md)、[`70-文档/55-系统演进准入.md`](70-文档/55-系统演进准入.md)、[`20-能力模块/clarify-requirements/CONTRACT.md`](20-能力模块/clarify-requirements/CONTRACT.md) 和 [`70-文档/20-可信门禁.md`](70-文档/20-可信门禁.md) 为准；维护者可运行 `task.mjs --help --full` 查看机器协议。
+详细规则以 [`AGENTS.md`](AGENTS.md)、[`70-文档/10-架构与原则.md`](70-文档/10-架构与原则.md)、[`70-文档/55-系统演进准入.md`](70-文档/55-系统演进准入.md)、[`20-能力模块/clarify-requirements/CONTRACT.md`](20-能力模块/clarify-requirements/CONTRACT.md) 和 [`70-文档/20-可信门禁.md`](70-文档/20-可信门禁.md) 为准；模型可按需运行 `task.mjs --help --full` 读取机器协议。
 
 ## 快速开始
 
 要求：Node.js 20 或 22、Git，以及具备本地文件和终端能力的 Coding Agent。
 
+本节命令是模型或接入自动化使用的机器协议，不要求用户复制、粘贴或主动执行。安全可自动执行的命令由模型完成；只有业务决定、外部授权或宿主确实没有可操作接口时才请求用户介入。
+
 ### 接入模型入口
+
+Codex 自动读取全局和仓库 `AGENTS.md`。模型或接入自动化仅在安装、诊断或其他宿主适配时调用以下命令，不把输出交给用户手工粘贴：
 
 ```powershell
 node ./40-脚本/configure-model-entry.mjs 生成
@@ -90,7 +94,7 @@ node ./40-脚本/build-context.mjs --operation read --cwd <项目路径> --inten
 
 只有用户明确限定文件时，模型才把 Scope 当作实施前硬边界；否则完成后的真实 ChangeSet 就是范围事实。工作区脏、被占用、存在已知并发或状态无法确认时，创建独立 Worktree 保护已有改动。意图关键词、目录名、`api`、`auth`、配置文件或模型主观风险判断都不自动创建 Worktree 或正式 Task。
 
-需要持续跟踪、跨对话交接、并行隔离或已授权外部写入时，用户或模型显式选择正式 Task，并在专属 Worktree 中运行：
+需要持续跟踪、跨对话交接、并行隔离或已授权外部写入时，由用户或模型显式选择正式 Task，具体命令由模型在专属 Worktree 中运行：
 
 ```powershell
 node ./40-脚本/task.mjs 预检 --cwd <项目路径>

@@ -10,10 +10,14 @@ function read(relative) {
   return fs.readFileSync(path.join(ROOT, relative), 'utf8');
 }
 
+function normalizedUtf8Bytes(value) {
+  return Buffer.byteLength(value.replace(/\r\n/g, '\n'));
+}
+
 test('中央入口按需路由系统机制演进', () => {
   const agents = read('AGENTS.md');
   const readme = read('README.md');
-  assert.ok(Buffer.byteLength(agents) < 5000);
+  assert.ok(normalizedUtf8Bytes(agents) < 5000);
   assert.match(agents, /中央机制增删改读 `70-文档\/10-架构与原则\.md`、`70-文档\/55-系统演进准入\.md`/u);
   assert.match(agents, /仅净正向进入默认路径；其余不加载/u);
   assert.match(readme, /70-文档\/10-架构与原则\.md/u);
