@@ -23,16 +23,11 @@
       }
     },
     {
-      "id": "app-uniapp-base",
+      "id": "app-uniapp-domain",
       "role": "app",
       "enabled": true,
-      "repository": {
-        "canonicalRemote": "gitee.com/feige996/unibest",
-        "allowedRemotes": [
-          "gitee.com/feige996/unibest"
-        ]
-      },
-      "localPathKey": "template.app-uniapp-base",
+      "repository": null,
+      "localPathKey": "template.app-uniapp-domain",
       "entrypoints": {
         "agents": "AGENTS.md",
         "manifest": "package.json"

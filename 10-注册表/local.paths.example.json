@@ -1,6 +1,6 @@
 {
   "template.web-admin-domain": "D:/templates/web-admin-domain",
-  "template.app-uniapp-base": "D:/templates/app-uniapp-base",
+  "template.app-uniapp-domain": "D:/templates/app-uniapp-domain",
   "template.server-ruoyi": "D:/templates/server-ruoyi",
   "project.vehicle-reservation": "D:/projects/vehicle-reservation",
   "project.vehicle-reservation.web": "D:/projects/vehicle-reservation/web"
