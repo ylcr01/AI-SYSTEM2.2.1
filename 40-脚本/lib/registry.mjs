@@ -110,9 +110,10 @@ export function validateRegistry(registry) {
   for (const template of templates ?? []) {
     if (!template || !addId(template.id, 'templates')) continue;
     templateById.set(template.id, template);
+    const isLocalTemplate = template.repository === null;
     if (!VALID_ROLES.has(template.role)) errors.push({ location: template.id, message: '模板角色无效' });
     addPathKey(template.localPathKey, template.id);
-    if (template.repository?.allowedRemotes !== undefined && !Array.isArray(template.repository.allowedRemotes)) errors.push({ location: template.id, message: '模板 Allowed Remotes 必须是数组' });
+    if (!isLocalTemplate && template.repository?.allowedRemotes !== undefined && !Array.isArray(template.repository.allowedRemotes)) errors.push({ location: template.id, message: '模板 Allowed Remotes 必须是数组' });
     if (!validRelative(template.entrypoints?.agents) || !validRelative(template.entrypoints?.manifest)) errors.push({ location: template.id, message: '模板入口必须是仓库内相对路径' });
     if (template.quality?.manifest && !validRelative(template.quality.manifest)) errors.push({ location: template.id, message: '质量清单路径无效' });
     if (template.knowledge?.mode && !['in-repo', 'none'].includes(template.knowledge.mode)) errors.push({ location: template.id, message: '模板知识模式无效' });
@@ -123,7 +124,7 @@ export function validateRegistry(registry) {
       && !template.knowledge.manifest.startsWith(`${template.knowledge.root}/`)) {
       errors.push({ location: template.id, message: '模板知识清单必须位于知识根目录内' });
     }
-    if (template.enabled !== false) addIdentity('template', template.id, template.repository?.canonicalRemote);
+    if (template.enabled !== false && !isLocalTemplate) addIdentity('template', template.id, template.repository?.canonicalRemote);
   }
 
   for (const project of projects ?? []) {
@@ -189,8 +190,10 @@ function boundTemplate(registry, module) {
   if (!templateGitRoot || normalizePath(templateGitRoot) !== normalizePath(templatePath)) {
     throw new Error(`模板路径不是独立 Git Root: ${template.id}`);
   }
-  const remote = normalizeRemote(getGitRemote(templateGitRoot));
-  if (!acceptedTemplateRemotes(template).includes(remote)) throw new Error(`模板身份冲突: ${template.id}`);
+  if (template.repository !== null) {
+    const remote = normalizeRemote(getGitRemote(templateGitRoot));
+    if (!acceptedTemplateRemotes(template).includes(remote)) throw new Error(`模板身份冲突: ${template.id}`);
+  }
   return { template, templatePath: realDirectory(templatePath) };
 }
 
@@ -271,7 +274,7 @@ export function resolveContext(options = {}) {
   for (const template of (registry.templates.templates ?? []).filter((item) => item.enabled !== false)) {
     const templatePath = registry.localPaths[template.localPathKey];
     if (templatePath && normalizePath(templatePath) === normalizePath(gitRoot ?? cwd)) {
-      if (!acceptedTemplateRemotes(template).includes(remote)) throw new Error(`模板身份冲突: ${template.id}`);
+      if (template.repository !== null && !acceptedTemplateRemotes(template).includes(remote)) throw new Error(`模板身份冲突: ${template.id}`);
       return { kind: 'template', cwd, gitRoot, remote, registry, template, templatePath };
     }
   }

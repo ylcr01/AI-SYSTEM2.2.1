@@ -1,7 +1,5 @@
 {
-  "template.web-vben": "D:/templates/web-vben",
-  "template.web-vben-lite": "D:/templates/web-vben-lite",
-  "template.app-uniapp": "D:/templates/app-uniapp",
+  "template.web-admin-domain": "D:/templates/web-admin-domain",
   "template.app-uniapp-base": "D:/templates/app-uniapp-base",
   "template.server-ruoyi": "D:/templates/server-ruoyi",
   "project.vehicle-reservation": "D:/projects/vehicle-reservation",

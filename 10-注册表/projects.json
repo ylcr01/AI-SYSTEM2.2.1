@@ -15,8 +15,7 @@
           "role": "web",
           "localPathKey": "project.vehicle-reservation.web",
           "canonicalRemote": "10.40.65.51/sjzwly/vehicle-reservation",
-          "subpath": "yudao-ui/yudao-ui-admin-vben",
-          "templateId": "web-vben"
+          "subpath": "yudao-ui/yudao-ui-admin-vben"
         }
       ]
     }

@@ -2,48 +2,6 @@
   "schemaVersion": 1,
   "templates": [
     {
-      "id": "web-vben",
-      "role": "web",
-      "enabled": true,
-      "repository": {
-        "canonicalRemote": "gitee.com/yudaocode/yudao-ui-admin-vben",
-        "allowedRemotes": [
-          "gitee.com/yudaocode/yudao-ui-admin-vben"
-        ]
-      },
-      "localPathKey": "template.web-vben",
-      "entrypoints": {
-        "agents": "AGENTS.md",
-        "manifest": "package.json"
-      },
-      "knowledge": {
-        "mode": "in-repo",
-        "root": ".ai",
-        "manifest": ".ai/manifest.json"
-      }
-    },
-    {
-      "id": "app-uniapp",
-      "role": "app",
-      "enabled": true,
-      "repository": {
-        "canonicalRemote": "gitee.com/yudaocode/yudao-ui-admin-uniapp",
-        "allowedRemotes": [
-          "gitee.com/yudaocode/yudao-ui-admin-uniapp"
-        ]
-      },
-      "localPathKey": "template.app-uniapp",
-      "entrypoints": {
-        "agents": "AGENTS.md",
-        "manifest": "package.json"
-      },
-      "knowledge": {
-        "mode": "in-repo",
-        "root": ".ai",
-        "manifest": ".ai/manifest.json"
-      }
-    },
-    {
       "id": "server-ruoyi",
       "role": "server",
       "enabled": true,
@@ -86,16 +44,11 @@
       }
     },
     {
-      "id": "web-vben-lite",
+      "id": "web-admin-domain",
       "role": "web",
       "enabled": true,
-      "repository": {
-        "canonicalRemote": "github.com/vbenjs/vue-vben-admin",
-        "allowedRemotes": [
-          "github.com/vbenjs/vue-vben-admin"
-        ]
-      },
-      "localPathKey": "template.web-vben-lite",
+      "repository": null,
+      "localPathKey": "template.web-admin-domain",
       "entrypoints": {
         "agents": "AGENTS.md",
         "manifest": "package.json"

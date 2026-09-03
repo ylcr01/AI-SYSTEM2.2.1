@@ -29,7 +29,7 @@ function help() {
   console.log(`注册表管理命令：
   list
   validate
-  add-template --id <id> --role <role> --remote <git-remote> [--path <local-path>]
+  add-template --id <id> --role <role> [--remote <git-remote>] [--path <local-path>]
   add-project --id <id> [--path <project-path>]
   add-module --project <project-id> --id <id> --role <role> --remote <git-remote>
              [--path <module-path>] [--subpath <git-relative-path>] [--template <template-id>]
@@ -37,6 +37,7 @@ function help() {
   set-enabled --id <template-or-project-id> --enabled <true|false>
   set-path --key <local-path-key> --path <local-path>
 
+不提供 --remote 时必须提供 --path，模板将登记为仅当前机器可用的本地模板。
 登记和绑定只维护身份关系，不复制模板代码。`);
 }
 
@@ -61,13 +62,14 @@ try {
   } else if (command === 'add-template') {
     const id = requiredArg(args, 'id');
     const role = requiredArg(args, 'role');
-    const remote = normalizeRemote(requiredArg(args, 'remote'));
+    const remote = args.remote ? normalizeRemote(args.remote) : null;
+    if (!remote && !args.path) throw new Error('本地模板必须提供 --path');
     const localPathKey = args['path-key'] ?? `template.${id}`;
     registry.templates.templates.push({
       id,
       role,
       enabled: true,
-      repository: { canonicalRemote: remote, allowedRemotes: [remote] },
+      repository: remote ? { canonicalRemote: remote, allowedRemotes: [remote] } : null,
       localPathKey,
       entrypoints: {
         agents: args.agents ?? 'AGENTS.md',
