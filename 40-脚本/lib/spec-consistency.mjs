@@ -189,7 +189,7 @@ export function evaluateSpecConsistency(input = {}) {
     issues.push(issue(
       'SPEC_CHANGED_WITHOUT_TEST_CHANGE',
       'warning',
-      '规格已变化但本次 ChangeSet 没有测试文件变化；已有测试可能足够，需要人工确认',
+      '规格已变化，本次没有修改测试文件；由模型结合实际行为变化判断已有验证是否足够',
       { specificationFiles: kinds.specifications.map((item) => item.path) }
     ));
   }

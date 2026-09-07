@@ -1,6 +1,6 @@
 ---
 id: documentation
-version: 2
+version: 3
 status: active
 artifactKinds: [documentation]
 ---
@@ -14,7 +14,9 @@ artifactKinds: [documentation]
 - 文档与代码、配置和当前环境一致。
 - 不用冗长背景掩盖决定、限制和残留问题。
 
-## 默认结构
+## 按需参考结构
+根据读者和本次文档目标选择相关内容，不要求普通说明补齐全部部分。
+
 目标读者 → 当前结论 → 适用范围 → 操作/接口 → 边界和失败 → 验证 → 历史或参考。
 
 ## 更新
