@@ -41,12 +41,12 @@ node ./40-脚本/configure-model-entry.mjs 初始化项目 --cwd <项目路径>
 # 维护本机项目/模板注册表
 node ./40-脚本/manage-registry.mjs --help
 
-# 在模型认为需要时显式映射或检查规格
-node ./40-脚本/spec-map.mjs --cwd <项目路径> --changed-file <相对路径>
-node ./40-脚本/spec-consistency.mjs --cwd <项目路径> --changed-file <相对路径> --spec-impact <none|updated|decision-required>
+# 仅在需要归档或发布核对时生成一次性源码清单
+node ./40-脚本/build-release-inventory.mjs
+
 ```
 
-这些工具只返回事实或执行显式请求，不决定研发流程。
+这些工具只维护入口、注册事实或执行显式源码盘点，不决定研发流程。发布 inventory 默认不生成，也不代表测试、验收或发布成功。规格影响由模型直接依据目标项目中的代码、规格和 Decision 判断；中央不再维护空映射与一致性策略层。
 
 ## 资料
 
@@ -54,9 +54,8 @@ node ./40-脚本/spec-consistency.mjs --cwd <项目路径> --changed-file <相�
 - [架构与原则](70-文档/10-架构与原则.md)
 - [可信边界](70-文档/20-可信门禁.md)
 - [系统演进准入](70-文档/55-系统演进准入.md)
+- [设计取舍与历史结论](70-文档/60-设计取舍与历史结论.md)
 - [模型自主研发执行方案](70-文档/77-模型自主研发执行方案.md)
-- [交付质量目标与发展建议](70-文档/75-交付质量目标与发展建议.md)
-- [重要设计点子与价值](70-文档/76-重要设计点子与价值.md)
 - [模型自主执行决定](70-文档/decisions/DEC-MODEL-AUTONOMY-EXECUTION-001.md)
 
 `80-运行记录` 中的旧 Task/Evidence 数据仅作为历史证据保留，不再驱动当前研发流程。

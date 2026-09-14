@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const profileIndex = process.argv.indexOf('--profile');
 const profile = profileIndex >= 0 ? process.argv[profileIndex + 1] : 'baseline';
-const profiles = new Set(['tests', 'baseline', 'release']);
+const profiles = new Set(['tests', 'baseline']);
 if (!profiles.has(profile)) throw new Error(`验证档位无效: ${profile ?? ''}`);
 const groupIndex = process.argv.indexOf('--group');
 const requestedGroup = groupIndex >= 0 ? process.argv[groupIndex + 1] : null;
@@ -63,8 +63,4 @@ run(requestedGroup ? `${requestedGroup} 测试` : '全部测试', [
   '--test',
   ...groups.flatMap(testFiles),
 ]);
-if (profile === 'release' && !requestedGroup) {
-  run('发布清单', ['./40-脚本/build-release-inventory.mjs']);
-}
-
 console.log(JSON.stringify({ ok: true, profile, group: requestedGroup }, null, 2));

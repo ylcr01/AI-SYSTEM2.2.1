@@ -26,11 +26,9 @@ for (const relative of [
   '00-大模型接入/接入说明.md',
   '40-脚本/configure-model-entry.mjs',
   '40-脚本/manage-registry.mjs',
-  '40-脚本/spec-map.mjs',
-  '40-脚本/spec-consistency.mjs',
+  '40-脚本/build-release-inventory.mjs',
   '40-脚本/lib/registry.mjs',
-  '40-脚本/lib/spec-mapper.mjs',
-  '40-脚本/lib/spec-consistency.mjs',
+  '40-脚本/lib/source-fingerprint.mjs',
   '70-文档/10-架构与原则.md',
   '70-文档/20-可信门禁.md',
   '70-文档/55-系统演进准入.md',
@@ -51,6 +49,11 @@ for (const retired of [
   '40-脚本/lib/evidence.mjs',
   '40-脚本/lib/check-planner.mjs',
   '40-脚本/lib/integration-workflow.mjs',
+  '.ai/spec-map.json',
+  '40-脚本/spec-map.mjs',
+  '40-脚本/spec-consistency.mjs',
+  '40-脚本/lib/spec-mapper.mjs',
+  '40-脚本/lib/spec-consistency.mjs',
 ]) {
   if (fs.existsSync(path.join(SYSTEM_ROOT, retired))) errors.push(`${retired}: 已退役机制不应存在`);
 }

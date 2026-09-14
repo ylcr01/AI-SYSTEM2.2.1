@@ -18,8 +18,7 @@ function checkRoot(root) {
   const checks = [
     'AGENTS.md',
     'package.json',
-    '40-脚本/manage-registry.mjs',
-    '40-脚本/spec-consistency.mjs'
+    '40-脚本/manage-registry.mjs'
   ].map((relative) => {
     const file = path.join(root, relative);
     return { relative, file, ok: fs.existsSync(file) && fs.statSync(file).isFile() };

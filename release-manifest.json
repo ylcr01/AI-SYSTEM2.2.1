@@ -6,8 +6,6 @@
   "entrypoints": {
     "modelEntry": "40-脚本/configure-model-entry.mjs",
     "registry": "40-脚本/manage-registry.mjs",
-    "specMap": "40-脚本/spec-map.mjs",
-    "specConsistency": "40-脚本/spec-consistency.mjs",
     "systemCheck": "40-脚本/check-system.mjs",
     "releaseInventory": "40-脚本/build-release-inventory.mjs"
   },
@@ -18,9 +16,7 @@
   "status": "model-autonomous",
   "stabilityNote": "中央 Task、Scope、Evidence、自动检查与集成生命周期已退出当前架构；旧运行记录仅作历史证据。",
   "verification": {
-    "baselineCommand": "node ./40-脚本/verify-system.mjs --profile baseline",
-    "fullCommand": "node ./40-脚本/verify-system.mjs --profile release",
-    "userAcceptance": "pending"
-  },
-  "sourceInventory": "运行 release 验证时生成到 80-运行记录/release/release-inventory.json，不作为源码维护"
+    "systemCheck": "node ./40-脚本/check-system.mjs",
+    "coreTests": "node ./40-脚本/verify-system.mjs --profile tests --group core"
+  }
 }

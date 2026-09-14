@@ -7,14 +7,11 @@
   "scripts": {
     "check": "node ./40-脚本/check-system.mjs",
     "entry": "node ./40-脚本/configure-model-entry.mjs",
-    "spec:map": "node ./40-脚本/spec-map.mjs",
-    "spec:check": "node ./40-脚本/spec-consistency.mjs",
     "test:core": "node ./40-脚本/verify-system.mjs --profile tests --group core",
     "test": "node ./40-脚本/verify-system.mjs --profile tests",
     "test:baseline": "node ./40-脚本/verify-system.mjs --profile baseline",
     "release:inventory": "node ./40-脚本/build-release-inventory.mjs",
-    "registry": "node ./40-脚本/manage-registry.mjs",
-    "verify:release": "node ./40-脚本/verify-system.mjs --profile release"
+    "registry": "node ./40-脚本/manage-registry.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -9,6 +9,7 @@
 | 目标 | 资料 |
 |---|---|
 | 澄清真正影响结果的需求歧义 | `clarify-requirements/CONTRACT.md` |
+| 判断修复方案、保留原行为与选择有辨别力的验证 | [根因与方案取舍](../30-知识库/10-通用经验/10-任务理解与根因确认.md)、[状态与依赖样例](../30-知识库/10-通用经验/50-组合状态序列.md) |
 | 设计产品、界面与交互 | `design-product/CONTRACT.md`、`design-ui/CONTRACT.md` |
 | 开发 Web、App 或服务端能力 | `develop-web/CONTRACT.md`、`develop-app/CONTRACT.md`、`develop-server/CONTRACT.md` |
 | 系统联调与环境操作 | `integrate-systems/CONTRACT.md`、`operate-environments/CONTRACT.md` |

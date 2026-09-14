@@ -3,7 +3,7 @@
   "projects": [
     {
       "id": "vehicle-reservation",
-      "enabled": true,
+      "enabled": false,
       "localPathKey": "project.vehicle-reservation",
       "entrypoints": {
         "agents": "AGENTS.md",
