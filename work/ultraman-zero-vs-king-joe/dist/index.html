@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#050a13">
+  <meta name="description" content="赛罗奥特曼与金古桥的原创 SVG 二维循环战斗动画。">
+  <title>赛罗 VS 金古桥 · 矢量战斗动画</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23050a13' d='M0 0h64v64H0z'/%3E%3Cpath fill='%23eaf8ff' d='M32 8 17 19l5 28 10 9 10-9 5-28z'/%3E%3Cpath fill='%2300d8ff' d='m24 25 7 4-7 5-5-4zm16 0-7 4 7 5 5-4z'/%3E%3Cpath fill='%23ef334e' d='m32 8-6 16 6 5 6-5z'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #05070c;
+      --panel: rgba(8, 16, 28, 0.82);
+      --line: rgba(149, 217, 255, 0.22);
+      --text: #eef9ff;
+      --muted: #8ca5b8;
+      --cyan: #29e7ff;
+      --blue: #2979ff;
+      --red: #ff385c;
+      --gold: #ffc83d;
+      --duration: 14s;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 50% 20%, rgba(23, 57, 91, .35), transparent 33%),
+        linear-gradient(180deg, #060b14 0%, #020409 100%);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .page {
+      width: min(1500px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: clamp(14px, 2.4vw, 34px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+    }
+
+    .masthead,
+    .control-deck {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(41, 231, 255, .38);
+      clip-path: polygon(50% 0, 100% 25%, 87% 100%, 13% 100%, 0 25%);
+      background: linear-gradient(145deg, rgba(41, 231, 255, .18), rgba(255, 56, 92, .08));
+      box-shadow: 0 0 22px rgba(41, 231, 255, .12);
+    }
+
+    .brand-mark svg { width: 21px; height: 21px; }
+
+    .eyebrow {
+      margin: 0 0 2px;
+      color: var(--cyan);
+      font: 700 12px/1.1 ui-monospace, "Cascadia Mono", monospace;
+      letter-spacing: .2em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(20px, 2.1vw, 32px);
+      line-height: 1;
+      letter-spacing: .05em;
+      white-space: nowrap;
+    }
+
+    h1 span { color: #74899c; font-weight: 400; margin: 0 .2em; }
+
+    .live-tag {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: #b8c9d5;
+      font: 700 12px/1 ui-monospace, "Cascadia Mono", monospace;
+      letter-spacing: .12em;
+      white-space: nowrap;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 0 4px rgba(255, 56, 92, .12), 0 0 16px var(--red);
+      animation: livePulse 1.2s ease-in-out infinite;
+    }
+
+    .theater {
+      position: relative;
+      align-self: center;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      max-height: calc(100vh - 160px);
+      overflow: hidden;
+      isolation: isolate;
+      border: 1px solid rgba(141, 214, 255, .3);
+      border-radius: 4px;
+      background: #070b12;
+      box-shadow:
+        0 30px 80px rgba(0, 0, 0, .55),
+        inset 0 0 0 1px rgba(255,255,255,.035),
+        inset 0 0 80px rgba(0,0,0,.35);
+    }
+
+    .theater::before,
+    .theater::after {
+      content: "";
+      position: absolute;
+      z-index: 20;
+      pointer-events: none;
+      inset: 0;
+    }
+
+    .theater::before {
+      background: repeating-linear-gradient(180deg, transparent 0 3px, rgba(255,255,255,.025) 4px);
+      mix-blend-mode: soft-light;
+    }
+
+    .theater::after {
+      box-shadow: inset 0 0 100px 25px rgba(0,0,0,.62);
+    }
+
+    .battlefield {
+      display: block;
+      width: 100%;
+      height: 100%;
+      animation: sceneShake var(--duration) linear infinite;
+    }
+
+    .battlefield.paused,
+    .battlefield.paused *,
+    .battlefield.paused *::before,
+    .battlefield.paused *::after {
+      animation-play-state: paused !important;
+    }
+
+    .hud {
+      position: absolute;
+      z-index: 12;
+      top: clamp(10px, 2vw, 26px);
+      left: clamp(10px, 2vw, 26px);
+      right: clamp(10px, 2vw, 26px);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: start;
+      gap: clamp(10px, 3vw, 44px);
+      pointer-events: none;
+    }
+
+    .fighter-card { min-width: 0; }
+    .fighter-card.right { text-align: right; }
+
+    .fighter-name {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 7px;
+      color: #dff7ff;
+      font: 800 clamp(11px, 1.2vw, 17px)/1 ui-monospace, "Cascadia Mono", monospace;
+      letter-spacing: .12em;
+      text-shadow: 0 2px 12px #000;
+    }
+
+    .fighter-card.right .fighter-name { flex-direction: row-reverse; }
+    .fighter-id { color: #7b94a7; font-size: .7em; }
+
+    .energy-bar {
+      height: clamp(4px, .55vw, 8px);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.28);
+      background: rgba(0,0,0,.52);
+      transform: skewX(-18deg);
+    }
+
+    .energy-bar::before {
+      content: "";
+      display: block;
+      height: 100%;
+      width: 100%;
+      transform-origin: left;
+      background: linear-gradient(90deg, var(--blue), var(--cyan), #e6fcff);
+      box-shadow: 0 0 15px var(--cyan);
+      animation: zeroHealth var(--duration) linear infinite;
+    }
+
+    .fighter-card.right .energy-bar::before {
+      transform-origin: right;
+      background: linear-gradient(90deg, #fff4a3, var(--gold), #ff7538);
+      animation-name: kingHealth;
+    }
+
+    .roundel {
+      width: clamp(42px, 5vw, 70px);
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(205, 239, 255, .5);
+      border-radius: 50%;
+      background: rgba(3, 9, 16, .75);
+      box-shadow: 0 0 0 4px rgba(5, 15, 27, .6), 0 0 26px rgba(41, 231, 255, .12);
+      color: white;
+      font: 900 clamp(14px, 1.7vw, 24px)/1 ui-monospace, monospace;
+      letter-spacing: -.12em;
+    }
+
+    .roundel small {
+      display: block;
+      margin-top: 2px;
+      color: var(--red);
+      font-size: .35em;
+      letter-spacing: .16em;
+      text-align: center;
+    }
+
+    .intro-card {
+      position: absolute;
+      z-index: 11;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      pointer-events: none;
+      background: radial-gradient(circle, rgba(10,23,37,.72), rgba(0,0,0,.08) 52%, transparent 70%);
+      animation: introCard var(--duration) linear infinite;
+    }
+
+    .intro-card p { margin: 0; }
+
+    .intro-kicker {
+      color: var(--cyan);
+      font: 700 clamp(10px, 1vw, 14px)/1 ui-monospace, monospace;
+      letter-spacing: .5em;
+      text-shadow: 0 0 18px var(--cyan);
+    }
+
+    .intro-title {
+      margin: .28em 0 .15em !important;
+      font-size: clamp(34px, 7.6vw, 104px);
+      font-weight: 950;
+      line-height: .9;
+      letter-spacing: -.06em;
+      text-shadow: 0 5px 0 rgba(0,0,0,.45), 0 0 35px rgba(255,255,255,.18);
+    }
+
+    .intro-title i { color: var(--red); font-style: normal; font-size: .54em; vertical-align: 20%; margin: 0 .15em; }
+
+    .intro-sub {
+      color: #a2b9c9;
+      font: 700 clamp(10px, 1vw, 14px)/1 ui-monospace, monospace;
+      letter-spacing: .2em;
+    }
+
+    .caption {
+      position: absolute;
+      z-index: 13;
+      left: 50%;
+      bottom: clamp(14px, 2.5vw, 34px);
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: calc(100% - 36px);
+      padding: 8px 14px 7px;
+      border-left: 2px solid var(--cyan);
+      border-right: 2px solid var(--cyan);
+      background: rgba(2, 7, 13, .78);
+      box-shadow: 0 8px 30px rgba(0,0,0,.35);
+      color: #f4fbff;
+      font: 800 clamp(12px, 1.25vw, 17px)/1.25 "Microsoft YaHei", sans-serif;
+      letter-spacing: .16em;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .corner {
+      position: absolute;
+      z-index: 14;
+      width: 30px;
+      height: 30px;
+      pointer-events: none;
+      border-color: rgba(41, 231, 255, .62);
+    }
+    .corner.tl { top: 8px; left: 8px; border-top: 1px solid; border-left: 1px solid; }
+    .corner.tr { top: 8px; right: 8px; border-top: 1px solid; border-right: 1px solid; }
+    .corner.bl { bottom: 8px; left: 8px; border-bottom: 1px solid; border-left: 1px solid; }
+    .corner.br { bottom: 8px; right: 8px; border-bottom: 1px solid; border-right: 1px solid; }
+
+    .control-deck {
+      padding-top: 2px;
+    }
+
+    .controls { display: flex; align-items: center; gap: 9px; }
+
+    .control-btn {
+      min-height: 42px;
+      border: 1px solid rgba(145, 210, 244, .26);
+      border-radius: 3px;
+      padding: 0 15px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #dff7ff;
+      background: linear-gradient(180deg, rgba(16, 32, 49, .9), rgba(5, 12, 21, .9));
+      cursor: pointer;
+      transition: border-color .2s ease, background .2s ease, transform .2s ease;
+      font-weight: 750;
+    }
+
+    .control-btn:hover { border-color: rgba(41, 231, 255, .75); background: #102234; }
+    .control-btn:active { transform: translateY(1px); }
+    .control-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+    .control-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+    .timeline { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 150px; max-width: 520px; }
+
+    .timeline-track {
+      position: relative;
+      flex: 1;
+      height: 4px;
+      overflow: hidden;
+      background: #172737;
+    }
+
+    .timeline-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      background: linear-gradient(90deg, var(--red), var(--cyan));
+      box-shadow: 0 0 12px var(--cyan);
+    }
+
+    .timecode {
+      width: 74px;
+      color: #7f98aa;
+      font: 700 12px/1 ui-monospace, "Cascadia Mono", monospace;
+      white-space: nowrap;
+    }
+
+    .deck-note {
+      color: #60798b;
+      font: 700 11px/1.3 ui-monospace, "Cascadia Mono", monospace;
+      letter-spacing: .1em;
+      text-align: right;
+    }
+
+    /* Scene animation */
+    .star { animation: twinkle 2.8s ease-in-out infinite alternate; }
+    .star:nth-of-type(2n) { animation-delay: -.8s; }
+    .star:nth-of-type(3n) { animation-delay: -1.7s; }
+    .city-glow { animation: cityPulse 3s ease-in-out infinite alternate; }
+    .searchlight { transform-origin: bottom center; animation: search 6s ease-in-out infinite alternate; }
+    .searchlight.two { animation-delay: -2.3s; animation-direction: alternate-reverse; }
+
+    .zero-motion { transform-box: fill-box; transform-origin: center bottom; animation: zeroMotion var(--duration) linear infinite; }
+    .zero-head { transform-box: fill-box; transform-origin: center bottom; animation: zeroHead var(--duration) linear infinite; }
+    .zero-front-arm { transform-box: fill-box; transform-origin: 20% 15%; animation: zeroFrontArm var(--duration) linear infinite; }
+    .zero-back-arm { transform-box: fill-box; transform-origin: 80% 15%; animation: zeroBackArm var(--duration) linear infinite; }
+    .zero-timer { animation: timerPulse .7s ease-in-out infinite alternate; }
+
+    .king-motion { transform-box: fill-box; transform-origin: center bottom; animation: kingMotion var(--duration) linear infinite; }
+    .king-head { transform-box: fill-box; transform-origin: center bottom; animation: kingHead var(--duration) linear infinite; }
+    .king-left-arm { transform-box: fill-box; transform-origin: 80% 10%; animation: kingLeftArm var(--duration) linear infinite; }
+    .king-right-arm { transform-box: fill-box; transform-origin: 20% 10%; animation: kingRightArm var(--duration) linear infinite; }
+    .king-eye { animation: eyePulse .55s ease-in-out infinite alternate; }
+
+    .king-laser { stroke-dasharray: 920; stroke-dashoffset: 920; animation: kingLaser var(--duration) linear infinite; }
+    .zero-beam-core { stroke-dasharray: 760; stroke-dashoffset: 760; animation: zeroBeam var(--duration) linear infinite; }
+    .zero-beam-glow { stroke-dasharray: 760; stroke-dashoffset: 760; animation: zeroBeamGlow var(--duration) linear infinite; }
+    .slash-arc { transform-box: fill-box; transform-origin: center; animation: slashArc var(--duration) linear infinite; }
+    .impact-core { transform-box: fill-box; transform-origin: center; animation: impactCore var(--duration) linear infinite; }
+    .impact-ring { transform-box: fill-box; transform-origin: center; animation: impactRing var(--duration) linear infinite; }
+    .debris { transform-box: fill-box; transform-origin: center; animation: debris var(--duration) linear infinite; }
+    .dust-left { transform-box: fill-box; transform-origin: center bottom; animation: dustLeft var(--duration) linear infinite; }
+    .dust-right { transform-box: fill-box; transform-origin: center bottom; animation: dustRight var(--duration) linear infinite; }
+    .ground-flash { animation: groundFlash var(--duration) linear infinite; }
+
+    @keyframes livePulse { 50% { opacity: .45; transform: scale(.78); } }
+    @keyframes twinkle { from { opacity: .2; } to { opacity: .9; } }
+    @keyframes cityPulse { from { opacity: .35; } to { opacity: .8; } }
+    @keyframes search { from { transform: rotate(-16deg); opacity: .15; } to { transform: rotate(18deg); opacity: .38; } }
+    @keyframes timerPulse { to { filter: drop-shadow(0 0 14px #55f4ff); } }
+    @keyframes eyePulse { to { filter: drop-shadow(0 0 10px #ff3232); opacity: .72; } }
+
+    @keyframes introCard {
+      0%, 2% { opacity: 0; transform: scale(1.08); }
+      5%, 13% { opacity: 1; transform: scale(1); }
+      17%, 100% { opacity: 0; transform: scale(.96); }
+    }
+
+    @keyframes sceneShake {
+      0%, 31%, 36%, 55%, 59%, 76%, 80%, 100% { transform: translate(0); }
+      32% { transform: translate(-3px, 1px); }
+      33% { transform: translate(4px, -2px); }
+      34% { transform: translate(-2px, 2px); }
+      57% { transform: translate(6px, -3px); }
+      58% { transform: translate(-5px, 3px); }
+      78% { transform: translate(7px, 1px); }
+      79% { transform: translate(-5px, -2px); }
+    }
+
+    @keyframes zeroMotion {
+      0%, 8% { opacity: 0; transform: translateX(-210px); }
+      14%, 25% { opacity: 1; transform: translateX(0); }
+      30% { transform: translate(115px, -58px) rotate(-7deg); }
+      34% { transform: translate(260px, -18px) rotate(4deg); }
+      38% { transform: translate(145px, 0) rotate(0); }
+      45%, 59% { transform: translate(65px, 0); }
+      64% { transform: translate(35px, 5px) rotate(2deg); }
+      72% { transform: translate(85px, 0); }
+      77% { transform: translate(235px, -8px) rotate(-5deg); }
+      82% { transform: translate(110px, 0); }
+      89%, 96% { opacity: 1; transform: translate(75px, 0); }
+      100% { opacity: 0; transform: translate(75px, 0); }
+    }
+
+    @keyframes zeroHead {
+      0%, 25%, 42%, 100% { transform: rotate(0); }
+      31% { transform: rotate(-9deg); }
+      57%, 70% { transform: rotate(8deg); }
+      77% { transform: rotate(-6deg); }
+    }
+
+    @keyframes zeroFrontArm {
+      0%, 22% { transform: rotate(-12deg); }
+      28% { transform: rotate(-75deg); }
+      33% { transform: rotate(38deg); }
+      39%, 49% { transform: rotate(0); }
+      56%, 70% { transform: rotate(-98deg) translate(-8px, -5px); }
+      74% { transform: rotate(-40deg); }
+      77% { transform: rotate(46deg); }
+      83%, 100% { transform: rotate(-8deg); }
+    }
+
+    @keyframes zeroBackArm {
+      0%, 25% { transform: rotate(20deg); }
+      33% { transform: rotate(-42deg); }
+      42%, 51% { transform: rotate(9deg); }
+      57%, 70% { transform: rotate(100deg) translate(15px, 5px); }
+      77% { transform: rotate(-30deg); }
+      83%, 100% { transform: rotate(15deg); }
+    }
+
+    @keyframes kingMotion {
+      0%, 7% { opacity: 0; transform: translateY(-310px) rotate(2deg); }
+      13% { opacity: 1; transform: translateY(20px) rotate(-2deg); }
+      17%, 28% { transform: translateY(0); }
+      33% { transform: translate(20px, -4px) rotate(5deg); }
+      38%, 48% { transform: translateX(0); }
+      53% { transform: translateX(-45px) rotate(-3deg); }
+      59% { transform: translateX(18px) rotate(5deg); }
+      64%, 73% { transform: translateX(5px); }
+      78% { transform: translate(105px, -15px) rotate(10deg); }
+      82% { transform: translate(58px, 0) rotate(4deg); }
+      88% { transform: translate(125px, 18px) rotate(14deg); }
+      96% { opacity: 1; transform: translate(145px, 34px) rotate(17deg); }
+      100% { opacity: 0; transform: translate(145px, 34px) rotate(17deg); }
+    }
+
+    @keyframes kingHead {
+      0%, 23%, 100% { transform: rotate(0); }
+      28%, 47% { transform: rotate(-10deg); }
+      56% { transform: rotate(13deg); }
+      70% { transform: rotate(-4deg); }
+      79%, 100% { transform: rotate(16deg); }
+    }
+
+    @keyframes kingLeftArm {
+      0%, 23% { transform: rotate(-8deg); }
+      27%, 44% { transform: rotate(-72deg); }
+      51% { transform: rotate(10deg); }
+      58% { transform: rotate(38deg); }
+      70%, 100% { transform: rotate(-4deg); }
+    }
+
+    @keyframes kingRightArm {
+      0%, 25% { transform: rotate(8deg); }
+      32% { transform: rotate(58deg); }
+      39%, 49% { transform: rotate(18deg); }
+      55% { transform: rotate(-25deg); }
+      70%, 100% { transform: rotate(5deg); }
+    }
+
+    @keyframes kingLaser {
+      0%, 43% { opacity: 0; stroke-dashoffset: 920; }
+      46% { opacity: 1; stroke-dashoffset: 0; }
+      49% { opacity: .9; stroke-dashoffset: -120; }
+      52%, 100% { opacity: 0; stroke-dashoffset: -920; }
+    }
+
+    @keyframes zeroBeam {
+      0%, 58% { opacity: 0; stroke-dashoffset: 760; }
+      61% { opacity: 1; stroke-dashoffset: 0; }
+      69% { opacity: 1; stroke-dashoffset: -70; }
+      72%, 100% { opacity: 0; stroke-dashoffset: -760; }
+    }
+
+    @keyframes zeroBeamGlow {
+      0%, 57% { opacity: 0; stroke-dashoffset: 760; }
+      60%, 70% { opacity: .7; stroke-dashoffset: 0; }
+      73%, 100% { opacity: 0; stroke-dashoffset: -760; }
+    }
+
+    @keyframes slashArc {
+      0%, 73% { opacity: 0; transform: rotate(-45deg) scale(.25); }
+      76% { opacity: 1; transform: rotate(12deg) scale(1); }
+      80% { opacity: .15; transform: rotate(38deg) scale(1.22); }
+      82%, 100% { opacity: 0; transform: rotate(48deg) scale(1.28); }
+    }
+
+    @keyframes impactCore {
+      0%, 31%, 55%, 75%, 100% { opacity: 0; transform: scale(.1); }
+      33%, 57%, 77% { opacity: 1; transform: scale(1.2); }
+      36%, 60%, 81% { opacity: 0; transform: scale(2.3); }
+    }
+
+    @keyframes impactRing {
+      0%, 31%, 55%, 75%, 100% { opacity: 0; transform: scale(.2); }
+      32%, 56%, 76% { opacity: 1; transform: scale(.3); }
+      36%, 60%, 81% { opacity: 0; transform: scale(2.8); }
+    }
+
+    @keyframes debris {
+      0%, 75% { opacity: 0; transform: translate(0) rotate(0); }
+      77% { opacity: 1; transform: translate(0) rotate(0); }
+      85% { opacity: 0; transform: translate(130px, -100px) rotate(210deg); }
+      100% { opacity: 0; }
+    }
+
+    @keyframes dustLeft {
+      0%, 10%, 28%, 100% { opacity: 0; transform: scale(.2); }
+      14% { opacity: .8; transform: scale(1); }
+      19% { opacity: 0; transform: translateX(-35px) scale(1.6); }
+      32% { opacity: .8; transform: scale(1.2); }
+      39% { opacity: 0; transform: translateX(-55px) scale(2); }
+    }
+
+    @keyframes dustRight {
+      0%, 10%, 74%, 100% { opacity: 0; transform: scale(.2); }
+      14% { opacity: .9; transform: scale(1.4); }
+      20% { opacity: 0; transform: translateX(40px) scale(2.2); }
+      78% { opacity: .9; transform: scale(1.2); }
+      86% { opacity: 0; transform: translateX(80px) scale(2.3); }
+    }
+
+    @keyframes groundFlash {
+      0%, 54%, 72%, 100% { opacity: 0; }
+      58%, 78% { opacity: .95; }
+      62%, 82% { opacity: 0; }
+    }
+
+    @keyframes zeroHealth {
+      0%, 44% { transform: scaleX(1); }
+      49%, 100% { transform: scaleX(.72); }
+    }
+
+    @keyframes kingHealth {
+      0%, 56% { transform: scaleX(1); }
+      62% { transform: scaleX(.67); }
+      78%, 100% { transform: scaleX(.24); }
+    }
+
+    @keyframes cityPulse { from { opacity: .38; } to { opacity: .8; } }
+
+    @media (max-width: 700px) {
+      .page { padding: 10px; gap: 10px; }
+      .eyebrow, .live-tag span, .deck-note { display: none; }
+      .brand-mark { width: 30px; height: 30px; flex-basis: 30px; }
+      h1 { font-size: 18px; }
+      .theater { min-height: 56vh; aspect-ratio: auto; }
+      .hud { grid-template-columns: 1fr 38px 1fr; gap: 8px; }
+      .fighter-name { letter-spacing: .04em; }
+      .fighter-id { display: none; }
+      .caption { bottom: 12px; letter-spacing: .06em; }
+      .control-deck { gap: 10px; }
+      .control-btn { min-height: 40px; padding: 0 11px; }
+      .control-btn span { display: none; }
+      .timeline { gap: 8px; }
+      .timecode { width: 65px; font-size: 11px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .live-dot, .star, .city-glow, .searchlight { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path fill="#eaf8ff" d="M12 1 4 7l2.5 13L12 23l5.5-3L20 7z"/><path fill="#29e7ff" d="m7 9 4 2-4 3-2-2zm10 0-4 2 4 3 2-2z"/><path fill="#ff385c" d="m12 1-3 8 3 2 3-2z"/></svg>
+        </div>
+        <div>
+          <p class="eyebrow">ULTRA ARCHIVE / 07</p>
+          <h1>赛罗奥特曼 <span>VS</span> 金古桥</h1>
+        </div>
+      </div>
+      <div class="live-tag"><i class="live-dot" aria-hidden="true"></i><span>VECTOR BATTLE FEED</span></div>
+    </header>
+
+    <section class="theater" aria-label="赛罗奥特曼与金古桥的二维战斗动画">
+      <div class="hud" aria-hidden="true">
+        <div class="fighter-card">
+          <div class="fighter-name"><span>ULTRAMAN ZERO</span><span class="fighter-id">01</span></div>
+          <div class="energy-bar"></div>
+        </div>
+        <div class="roundel">VS<small>ROUND 1</small></div>
+        <div class="fighter-card right">
+          <div class="fighter-name"><span>KING JOE</span><span class="fighter-id">02</span></div>
+          <div class="energy-bar"></div>
+        </div>
+      </div>
+
+      <div class="intro-card" aria-hidden="true">
+        <div>
+          <p class="intro-kicker">ULTRA BATTLE</p>
+          <p class="intro-title">赛罗 <i>VS</i> 金古桥</p>
+          <p class="intro-sub">光之战士 · 对决 · 宇宙机器人</p>
+        </div>
+      </div>
+
+      <svg id="battlefield" class="battlefield" viewBox="0 0 1600 900" role="img" aria-labelledby="scene-title scene-desc" preserveAspectRatio="xMidYMid slice">
+        <title id="scene-title">赛罗奥特曼与金古桥对战</title>
+        <desc id="scene-desc">夜幕城市上空，赛罗向金古桥发动近身攻击与集束光线，金古桥以红色激光还击。</desc>
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#07172b"/>
+            <stop offset=".48" stop-color="#102d48"/>
+            <stop offset="1" stop-color="#371825"/>
+          </linearGradient>
+          <radialGradient id="horizon" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#ff6f6f" stop-opacity=".52"/>
+            <stop offset=".55" stop-color="#344f74" stop-opacity=".18"/>
+            <stop offset="1" stop-color="#071221" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#162634"/>
+            <stop offset="1" stop-color="#03060a"/>
+          </linearGradient>
+          <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#f8fdff"/>
+            <stop offset=".28" stop-color="#8fa9b7"/>
+            <stop offset=".55" stop-color="#e8f1f3"/>
+            <stop offset="1" stop-color="#536b79"/>
+          </linearGradient>
+          <linearGradient id="silverDark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#93a9b5"/>
+            <stop offset="1" stop-color="#314652"/>
+          </linearGradient>
+          <linearGradient id="zeroRed" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ff425d"/>
+            <stop offset="1" stop-color="#9e102e"/>
+          </linearGradient>
+          <linearGradient id="zeroBlue" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#32a9ff"/>
+            <stop offset="1" stop-color="#113cad"/>
+          </linearGradient>
+          <linearGradient id="kingGold" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ffe672"/>
+            <stop offset=".3" stop-color="#e9aa19"/>
+            <stop offset=".68" stop-color="#9c5b06"/>
+            <stop offset="1" stop-color="#ffcf3c"/>
+          </linearGradient>
+          <linearGradient id="kingDark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#71500f"/>
+            <stop offset="1" stop-color="#201b12"/>
+          </linearGradient>
+          <pattern id="grid" width="100" height="58" patternUnits="userSpaceOnUse" patternTransform="skewX(-18)">
+            <path d="M100 0H0V58" fill="none" stroke="#6cd8ff" stroke-opacity=".09" stroke-width="2"/>
+          </pattern>
+          <pattern id="windows" width="28" height="30" patternUnits="userSpaceOnUse">
+            <rect width="11" height="9" x="5" y="7" rx="1" fill="#7fe9ff" fill-opacity=".42"/>
+          </pattern>
+          <filter id="glowCyan" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="9" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glowRed" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="10" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glowGold" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="characterShadow" x="-50%" y="-30%" width="200%" height="180%">
+            <feDropShadow dx="0" dy="14" stdDeviation="11" flood-color="#000" flood-opacity=".65"/>
+          </filter>
+          <clipPath id="stageClip"><rect width="1600" height="900"/></clipPath>
+        </defs>
+
+        <g clip-path="url(#stageClip)">
+          <!-- Atmosphere -->
+          <rect width="1600" height="900" fill="url(#sky)"/>
+          <ellipse cx="800" cy="510" rx="720" ry="400" fill="url(#horizon)"/>
+          <path d="M0 570 130 420l103 92 147-198 118 191 123-132 119 126 169-267 158 244 127-140 122 184 114-102 170 150v125H0z" fill="#08131e" opacity=".92"/>
+          <path d="M0 576 130 426l103 92 147-198 118 191 123-132 119 126 169-267 158 244 127-140 122 184 114-102 170 150" fill="none" stroke="#416580" stroke-opacity=".34" stroke-width="3"/>
+
+          <g fill="#b7f5ff">
+            <circle class="star" cx="90" cy="122" r="2"/><circle class="star" cx="210" cy="188" r="1.5"/><circle class="star" cx="338" cy="96" r="2.4"/>
+            <circle class="star" cx="493" cy="156" r="1.3"/><circle class="star" cx="628" cy="78" r="1.8"/><circle class="star" cx="752" cy="182" r="2"/>
+            <circle class="star" cx="902" cy="104" r="1.5"/><circle class="star" cx="1060" cy="164" r="2.3"/><circle class="star" cx="1210" cy="85" r="1.4"/>
+            <circle class="star" cx="1337" cy="180" r="2.1"/><circle class="star" cx="1489" cy="110" r="1.7"/><circle class="star" cx="1420" cy="280" r="1.2"/>
+          </g>
+          <circle cx="1290" cy="230" r="78" fill="#a9d2de" opacity=".11"/>
+          <circle cx="1265" cy="207" r="17" fill="#0b1c2c" opacity=".4"/>
+          <circle cx="1322" cy="255" r="10" fill="#0b1c2c" opacity=".34"/>
+
+          <path class="searchlight" d="M230 650 372 62 454 650z" fill="#87eaff" opacity=".12"/>
+          <path class="searchlight two" d="M1330 650 1120 80 1230 650z" fill="#ffdc84" opacity=".1"/>
+
+          <!-- City -->
+          <g fill="#081018" stroke="#36566d" stroke-opacity=".36" stroke-width="2">
+            <path d="M0 520h90v152H0z"/><path d="M72 470h120v202H72z"/><path d="M168 542h90v130h-90z"/>
+            <path d="M241 492h125v180H241z"/><path d="M335 560h110v112H335z"/><path d="M420 515h104v157H420z"/>
+            <path d="M1050 525h100v147h-100z"/><path d="M1124 470h128v202h-128z"/><path d="M1225 548h95v124h-95z"/>
+            <path d="M1290 505h114v167h-114z"/><path d="M1380 455h126v217h-126z"/><path d="M1480 532h120v140h-120z"/>
+          </g>
+          <g class="city-glow" fill="url(#windows)" opacity=".56">
+            <path d="M0 520h90v152H0z"/><path d="M72 470h120v202H72z"/><path d="M241 492h125v180H241z"/>
+            <path d="M1050 525h100v147h-100z"/><path d="M1124 470h128v202h-128z"/><path d="M1290 505h114v167h-114z"/>
+            <path d="M1380 455h126v217h-126z"/>
+          </g>
+          <path d="M0 652h1600" stroke="#71dfff" stroke-opacity=".2" stroke-width="4"/>
+          <path d="M0 650h1600v250H0z" fill="url(#ground)"/>
+          <path d="M0 650h1600v250H0z" fill="url(#grid)"/>
+          <path d="M0 780 Q800 690 1600 780" fill="none" stroke="#90e8ff" stroke-opacity=".08" stroke-width="3"/>
+          <ellipse class="ground-flash" cx="880" cy="685" rx="470" ry="70" fill="#5ff7ff" opacity="0" filter="url(#glowCyan)"/>
+
+          <!-- King Joe red eye laser -->
+          <g filter="url(#glowRed)" opacity=".92">
+            <path class="king-laser" d="M1178 348 515 485" fill="none" stroke="#ff263e" stroke-width="25" stroke-linecap="round" opacity=".35"/>
+            <path class="king-laser" d="M1178 348 515 485" fill="none" stroke="#fff4f5" stroke-width="6" stroke-linecap="round"/>
+          </g>
+
+          <!-- Ultraman Zero -->
+          <g transform="translate(470 252)" filter="url(#characterShadow)">
+            <g class="zero-motion">
+              <ellipse cx="2" cy="402" rx="110" ry="20" fill="#000" opacity=".42"/>
+              <g class="zero-back-arm">
+                <path d="M56 133Q95 143 113 194l37 78-36 14-54-77-30-54z" fill="url(#silverDark)" stroke="#cde5ed" stroke-width="3"/>
+                <path d="m112 190 38 82-36 14-30-43z" fill="url(#zeroBlue)"/>
+                <path d="m150 267 19 24-11 22-31-8-13-19z" fill="url(#silver)" stroke="#def6ff" stroke-width="3"/>
+              </g>
+
+              <!-- legs -->
+              <path d="M-57 255-91 349l-10 66 50 1 8-56 41-77z" fill="url(#silver)" stroke="#dff5fb" stroke-width="3"/>
+              <path d="M50 256 88 350l13 65H51l-15-55-41-77z" fill="url(#silver)" stroke="#dff5fb" stroke-width="3"/>
+              <path d="m-48 272-43 77-10 66 24-1 25-75 38-41z" fill="url(#zeroBlue)"/>
+              <path d="m47 273 41 77 13 65-24-1-27-74-36-41z" fill="url(#zeroRed)"/>
+              <path d="M-105 395h58l9 21h-78q-9-9 11-21z" fill="#879ca6" stroke="#dff5fb" stroke-width="3"/>
+              <path d="M48 395h56q21 12 12 21H38z" fill="#879ca6" stroke="#dff5fb" stroke-width="3"/>
+
+              <!-- torso -->
+              <path d="M-58 114Q0 84 58 114l35 105-42 80H-49l-43-80z" fill="url(#silver)" stroke="#ecfbff" stroke-width="4"/>
+              <path d="m-58 114 58 44 58-44 25 42-42 48-20 91h-62l-20-91-42-48z" fill="url(#zeroRed)"/>
+              <path d="M0 158 58 114l20 34-48 58-10 89H0z" fill="url(#zeroBlue)" opacity=".98"/>
+              <path d="M-58 114 0 158l58-44" fill="none" stroke="#e7f8fd" stroke-width="8" stroke-linejoin="round"/>
+              <path d="M-28 176 0 158l28 18-9 47h-38z" fill="#142635" stroke="#b7cbd3" stroke-width="4"/>
+              <ellipse class="zero-timer" cx="0" cy="188" rx="14" ry="18" fill="#79f6ff" stroke="#efffff" stroke-width="5" filter="url(#glowCyan)"/>
+              <path d="M-48 299H49l-13 24h-72z" fill="#273d48" stroke="#b9d1d9" stroke-width="3"/>
+
+              <!-- front arm -->
+              <g class="zero-front-arm">
+                <path d="M-57 129q-45 10-60 59l-25 79 38 11 44-76 30-49z" fill="url(#silver)" stroke="#e7f8fd" stroke-width="3"/>
+                <path d="m-117 188-25 79 38 11 18-40z" fill="url(#zeroRed)"/>
+                <path d="m-142 263-18 25 12 22 31-9 13-23z" fill="url(#silver)" stroke="#e7f8fd" stroke-width="3"/>
+                <path d="m-152 283-17 18 8 22 18-14 14 8 12-16z" fill="#b5c8d0" stroke="#effcff" stroke-width="3"/>
+              </g>
+
+              <!-- head and twin sluggers -->
+              <g class="zero-head">
+                <path d="m-49 31-64-86 36 101z" fill="url(#silver)" stroke="#eaffff" stroke-width="4"/>
+                <path d="m49 31 64-86-36 101z" fill="url(#silver)" stroke="#eaffff" stroke-width="4"/>
+                <path d="m-62 26-29-54 42 42zm124 0 29-54-42 42z" fill="#25a0ff" opacity=".8"/>
+                <path d="M-66 30Q-76-17-39-45L0-61l39 16Q76-17 66 30l-12 62-54 32-54-32z" fill="url(#silver)" stroke="#eaffff" stroke-width="4"/>
+                <path d="M0-61 24-36 12 4 0 21-12 4l-12-40z" fill="url(#zeroRed)"/>
+                <path d="m-57 21 44 11-14 31-41-12zm114 0-44 11 14 31 41-12z" fill="#75f5ff" stroke="#eaffff" stroke-width="4" filter="url(#glowCyan)"/>
+                <path d="M-52 70-16 84 0 104l16-20 36-14-6 28-46 26-46-26z" fill="#7f949e"/>
+                <path d="M0 21v83" stroke="#455e6a" stroke-width="4"/>
+              </g>
+            </g>
+          </g>
+
+          <!-- King Joe -->
+          <g transform="translate(1160 245)" filter="url(#characterShadow)">
+            <g class="king-motion">
+              <ellipse cx="0" cy="410" rx="125" ry="23" fill="#000" opacity=".46"/>
+
+              <!-- legs -->
+              <path d="M-76 249h69l-12 155h-72l5-72z" fill="url(#kingGold)" stroke="#ffea83" stroke-width="4"/>
+              <path d="M9 249h69l10 83 4 72H20z" fill="url(#kingGold)" stroke="#ffea83" stroke-width="4"/>
+              <rect x="-95" y="292" width="78" height="34" rx="10" fill="url(#kingDark)" stroke="#d89516" stroke-width="3"/>
+              <rect x="18" y="292" width="78" height="34" rx="10" fill="url(#kingDark)" stroke="#d89516" stroke-width="3"/>
+              <path d="M-103 389h87l14 26h-115q-9-14 14-26z" fill="#bd7a0d" stroke="#ffe27a" stroke-width="4"/>
+              <path d="M17 389h86q22 12 15 26H3z" fill="#bd7a0d" stroke="#ffe27a" stroke-width="4"/>
+
+              <!-- arms behind -->
+              <g class="king-left-arm">
+                <rect x="-145" y="119" width="66" height="145" rx="27" fill="url(#kingGold)" stroke="#ffe986" stroke-width="4"/>
+                <path d="M-145 157h66M-145 204h66" stroke="#493511" stroke-width="8"/>
+                <circle cx="-112" cy="264" r="34" fill="url(#kingGold)" stroke="#ffe986" stroke-width="4"/>
+                <path d="m-132 258 11 34 15-31 17 25 10-33" fill="none" stroke="#4c350c" stroke-width="8"/>
+              </g>
+              <g class="king-right-arm">
+                <rect x="79" y="119" width="66" height="145" rx="27" fill="url(#kingGold)" stroke="#ffe986" stroke-width="4"/>
+                <path d="M79 157h66M79 204h66" stroke="#493511" stroke-width="8"/>
+                <circle cx="112" cy="264" r="34" fill="url(#kingGold)" stroke="#ffe986" stroke-width="4"/>
+                <path d="m88 253 12 34 14-29 17 24 9-35" fill="none" stroke="#4c350c" stroke-width="8"/>
+              </g>
+
+              <!-- barrel torso -->
+              <rect x="-83" y="89" width="166" height="206" rx="42" fill="url(#kingGold)" stroke="#ffe98c" stroke-width="5"/>
+              <path d="M-83 136H83M-83 235H83" stroke="#65450d" stroke-width="10"/>
+              <path d="M-50 142v87M0 142v87M50 142v87" stroke="#60400c" stroke-width="7"/>
+              <rect x="-57" y="161" width="114" height="50" rx="14" fill="#211d16" stroke="#f6bf31" stroke-width="4"/>
+              <circle cx="-34" cy="186" r="10" fill="#ffb21c" filter="url(#glowGold)"/>
+              <circle cx="0" cy="186" r="10" fill="#ffb21c" filter="url(#glowGold)"/>
+              <circle cx="34" cy="186" r="10" fill="#ffb21c" filter="url(#glowGold)"/>
+              <path d="m-67 254 67 35 67-35" fill="none" stroke="#442f0c" stroke-width="9"/>
+
+              <!-- head -->
+              <g class="king-head">
+                <rect x="-78" y="-27" width="156" height="123" rx="38" fill="url(#kingGold)" stroke="#ffeb91" stroke-width="5"/>
+                <path d="M-78 22H78M-55-17v103M0-27v123M55-17v103" stroke="#60420d" stroke-width="7"/>
+                <rect x="-58" y="31" width="116" height="30" rx="9" fill="#171714" stroke="#9c700e" stroke-width="3"/>
+                <rect class="king-eye" x="-47" y="39" width="35" height="14" rx="7" fill="#ff263e" filter="url(#glowRed)"/>
+                <rect class="king-eye" x="12" y="39" width="35" height="14" rx="7" fill="#ff263e" filter="url(#glowRed)"/>
+                <path d="M-22 73H22" stroke="#201b12" stroke-width="7" stroke-linecap="round"/>
+                <path d="M-44-27-31-56h62l13 29" fill="url(#kingDark)" stroke="#e6a91d" stroke-width="4"/>
+              </g>
+            </g>
+          </g>
+
+          <!-- Zero beam and finishing slash -->
+          <g filter="url(#glowCyan)">
+            <path class="zero-beam-glow" d="M648 439 1118 375" fill="none" stroke="#24eaff" stroke-width="54" stroke-linecap="round" opacity="0"/>
+            <path class="zero-beam-core" d="M648 439 1118 375" fill="none" stroke="#eaffff" stroke-width="13" stroke-linecap="round" opacity="0"/>
+          </g>
+          <path class="slash-arc" d="M780 260Q985 392 1160 637" fill="none" stroke="#c9fbff" stroke-width="18" stroke-linecap="round" opacity="0" filter="url(#glowCyan)"/>
+          <path class="slash-arc" d="M797 252Q994 394 1176 626" fill="none" stroke="#3ceaff" stroke-width="5" stroke-linecap="round" opacity="0"/>
+
+          <!-- Impact graphics -->
+          <g transform="translate(1092 393)">
+            <circle class="impact-ring" r="58" fill="none" stroke="#cfffff" stroke-width="8" opacity="0" filter="url(#glowCyan)"/>
+            <path class="impact-core" d="m0-80 17 56 56-28-36 46 58 13-58 12 36 47-56-29L0 95l-17-58-57 29 37-47-58-12 58-13-37-46 57 28z" fill="#fff" opacity="0" filter="url(#glowGold)"/>
+          </g>
+          <g class="debris" fill="#ffc73d" stroke="#fff1a1" stroke-width="2">
+            <path d="m1100 367 24-31 13 42z"/><path d="m1118 420 41 8-28 31z"/><path d="m1078 430-16 39-18-38z"/>
+            <path d="m1058 373-40-12 29-28z"/><path d="m1090 343-8-40 30 22z"/>
+          </g>
+
+          <!-- Dust -->
+          <g class="dust-left" fill="#aec4ca" opacity="0">
+            <ellipse cx="480" cy="658" rx="80" ry="24"/><circle cx="420" cy="643" r="25"/><circle cx="530" cy="638" r="30"/>
+          </g>
+          <g class="dust-right" fill="#c1b27f" opacity="0">
+            <ellipse cx="1180" cy="662" rx="96" ry="26"/><circle cx="1124" cy="638" r="34"/><circle cx="1240" cy="640" r="31"/>
+          </g>
+
+          <!-- Foreground silhouettes -->
+          <path d="M0 804 88 760l29 17 76-39 84 48 55-22 91 58v78H0zm1600 0-88-44-29 17-76-39-84 48-55-22-91 58v78h423z" fill="#020409" opacity=".92"/>
+        </g>
+      </svg>
+
+      <div id="caption" class="caption" aria-live="polite">目标锁定 · 战斗开始</div>
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    </section>
+
+    <footer class="control-deck">
+      <div class="controls">
+        <button id="pauseButton" class="control-btn" type="button" aria-pressed="false" aria-label="暂停动画">
+          <svg id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
+          <span id="pauseLabel">暂停</span>
+        </button>
+        <button id="replayButton" class="control-btn" type="button" aria-label="重新播放动画">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-5.7 8H4.2A8 8 0 1 0 12 5z"/></svg>
+          <span>重播</span>
+        </button>
+      </div>
+      <div class="timeline" aria-hidden="true">
+        <div class="timeline-track"><div id="timelineFill" class="timeline-fill"></div></div>
+        <div id="timecode" class="timecode">00:00 / 00:14</div>
+      </div>
+      <div class="deck-note">SVG / 1600×900<br>LOOP SEQUENCE</div>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      const duration = 14000;
+      const battlefield = document.getElementById('battlefield');
+      const pauseButton = document.getElementById('pauseButton');
+      const pauseLabel = document.getElementById('pauseLabel');
+      const pauseIcon = document.getElementById('pauseIcon');
+      const replayButton = document.getElementById('replayButton');
+      const timelineFill = document.getElementById('timelineFill');
+      const timecode = document.getElementById('timecode');
+      const caption = document.getElementById('caption');
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      let startedAt = performance.now();
+      let pausedAt = 0;
+      let paused = false;
+
+      const beats = [
+        [0, '目标锁定 · 战斗开始'],
+        [2100, '宇宙机器人 · 金古桥着陆'],
+        [3900, '赛罗 · 极速突进'],
+        [5700, '金古桥 · 佩丹尼姆激光'],
+        [7600, '赛罗 · 集束光线'],
+        [10100, '双重冰斧 · 终结斩击'],
+        [12000, '能量反应下降 · 战斗结束']
+      ];
+
+      function format(ms) {
+        return `00:${String(Math.floor(ms / 1000)).padStart(2, '0')}`;
+      }
+
+      function setPaused(next) {
+        if (paused === next) return;
+        paused = next;
+        battlefield.classList.toggle('paused', paused);
+        pauseButton.setAttribute('aria-pressed', String(paused));
+        pauseButton.setAttribute('aria-label', paused ? '继续播放动画' : '暂停动画');
+        pauseLabel.textContent = paused ? '播放' : '暂停';
+        pauseIcon.innerHTML = paused
+          ? '<path d="m8 5 11 7-11 7z"/>'
+          : '<path d="M7 5h4v14H7zm6 0h4v14h-4z"/>';
+        if (paused) {
+          pausedAt = performance.now();
+        } else {
+          startedAt += performance.now() - pausedAt;
+        }
+      }
+
+      function replay() {
+        battlefield.classList.remove('paused');
+        battlefield.style.animation = 'none';
+        for (const node of battlefield.querySelectorAll('*')) node.style.animation = 'none';
+        void battlefield.getBoundingClientRect();
+        battlefield.style.animation = '';
+        for (const node of battlefield.querySelectorAll('*')) node.style.animation = '';
+        paused = false;
+        pauseButton.setAttribute('aria-pressed', 'false');
+        pauseButton.setAttribute('aria-label', '暂停动画');
+        pauseLabel.textContent = '暂停';
+        pauseIcon.innerHTML = '<path d="M7 5h4v14H7zm6 0h4v14h-4z"/>';
+        startedAt = performance.now();
+      }
+
+      function update(now) {
+        const elapsed = paused ? (pausedAt - startedAt) % duration : (now - startedAt) % duration;
+        const progress = Math.max(0, elapsed / duration);
+        timelineFill.style.width = `${progress * 100}%`;
+        timecode.textContent = `${format(elapsed)} / 00:14`;
+        let currentCaption = beats[0][1];
+        for (const [mark, text] of beats) if (elapsed >= mark) currentCaption = text;
+        if (caption.textContent !== currentCaption) caption.textContent = currentCaption;
+        requestAnimationFrame(update);
+      }
+
+      pauseButton.addEventListener('click', () => setPaused(!paused));
+      replayButton.addEventListener('click', replay);
+      document.addEventListener('keydown', (event) => {
+        if (event.code === 'Space' && event.target === document.body) {
+          event.preventDefault();
+          setPaused(!paused);
+        }
+      });
+
+      if (reducedMotion) setPaused(true);
+      requestAnimationFrame(update);
+    })();
+  </script>
+</body>
+</html>
